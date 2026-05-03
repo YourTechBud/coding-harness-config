@@ -3,6 +3,15 @@ description: |
   Reviews a caller-defined change set against `docs/engineering-guidance`
   and returns structured findings with severity.
 
+  Run this agent as the final review step before returning code changes to the
+  user. Skip it when no code was modified, the change is documentation-only, or
+  the user explicitly opted out.
+
+  To avoid review loops: run on the final change set, not after every edit. If
+  the reviewer reports only minor issues and the caller applies them with high
+  confidence, do not re-run. Re-run only when follow-up changes are substantial
+  or alter design, boundaries, or runtime behavior.
+
   The caller should provide a required `<review_scope>` block describing
   exactly how to determine the changes to inspect.
 
