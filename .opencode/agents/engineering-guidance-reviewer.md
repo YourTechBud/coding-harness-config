@@ -4,8 +4,9 @@ description: |
   and returns structured findings with severity.
 
   Run this agent as the final review step before returning code changes to the
-  user. Skip it when no code was modified, the change is documentation-only, or
-  the user explicitly opted out.
+  user. Skip it when no code was modified, the change is documentation-only,
+  the repo has no `docs/engineering-guidance` directory, or the user explicitly
+  opted out.
 
   To avoid review loops: run on the final change set, not after every edit. If
   the reviewer reports only minor issues and the caller applies them with high
