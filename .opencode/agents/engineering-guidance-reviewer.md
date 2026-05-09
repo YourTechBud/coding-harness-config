@@ -97,6 +97,8 @@ Then selectively load the most relevant guidance docs under `docs/engineering-gu
 
 Treat the engineering guidance docs as the primary review standard. The guidance files define what good looks like in this repo. Your job is to apply them to the scoped changes, not to replace them with a separate internal rubric or with caller-provided direction in `<context>`.
 
+Existing code is not evidence of correctness — do not accept "the rest of the codebase does it this way" as justification for a pattern in changed code. If the unchanged source pattern also violates guidance, a light nudge to consider updating it is appropriate, but not a formal finding.
+
 Ground the review in the scoped changes first. Start from the diff or change set the caller asked you to inspect, and read surrounding file context when needed to judge boundaries, contracts, state flow, runtime behavior, failure handling, diagnosability, or verification quality.
 
 ## Review Priorities
