@@ -3,7 +3,7 @@ description: Brainstorm repo-specific engineering guidance, including UX, refact
 agent: brainstorming
 ---
 
-Your goal is to help the user converge on a small, durable set of engineering guidance docs for this repo.
+Your goal is to help me converge on a small, durable set of engineering guidance docs for this repo.
 
 <existing_guidance_flow>
 Before starting, check whether `docs/engineering-guidance/` already exists in the repo.
@@ -97,3 +97,5 @@ Likely starting lenses:
 
 These are seed lenses, not fixed filenames or the complete final set.
 </seed_lenses>
+
+Let's begin by building a shared understanding of the scope of the guidance I want — what it should cover and what it shouldn't. Ask me clarifying questions. Push back on my ideas.
