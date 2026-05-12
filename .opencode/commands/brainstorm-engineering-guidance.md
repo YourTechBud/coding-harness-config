@@ -49,6 +49,10 @@ Work with the user toward:
 - the guidance docs or lenses to create or update under `docs/engineering-guidance/`
 - what to exclude to avoid bloat
 - a canonical entry point at `docs/engineering-guidance/README.md`
+- how the repo's principles map, at least loosely, onto the reviewer's severity ladder, so the engineering-guidance-reviewer can categorize findings consistently:
+    - `Blocker` — material divergence from guidance; must fix; triggers a re-review after the fix.
+    - `Concern` — design or runtime gap with real consequence; fix directly or surface to the user; re-review only if the fix is substantial.
+    - `Nit` — marginal, optional improvement; terminal — never triggers a re-review on its own, regardless of disposition.
 </goal>
 
 <seed_principles>
