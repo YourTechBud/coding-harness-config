@@ -14,6 +14,8 @@ description: |
 
   The caller should provide a required `<review_scope>` block describing exactly how to determine the changes to inspect.
 
+  The caller is strongly expected to provide a `<change_goal>` block describing the intended product, user, or engineering outcome of the change. The reviewer uses the goal to judge whether the implementation actually delivers the intended outcome, not just whether the diff is technically sound.
+
   `<context>` is optional and should be used sparingly for explicit constraints, intentional deviations from guidance, or tightly scoped review limits.
 
   Example review scopes:
@@ -22,6 +24,10 @@ description: |
     `<review_scope>Review the PR changes from merge-base with main.</review_scope>`
     `<review_scope>Review commits abc123..def456.</review_scope>`
     `<review_scope>Review only these files: apps/desktop/src/main/index.ts, packages/desktop-ui/src/hooks.ts</review_scope>`
+
+  Example change goal:
+
+    `<change_goal>Allow users to retry failed imports without restarting the import flow, while preserving existing validation and error reporting behavior.</change_goal>`
 
   Optional context example:
 
@@ -48,10 +54,17 @@ This is a read-only review. Do not make code changes, do not edit files, and do 
 Expect the caller to provide:
 
 - a required `<review_scope>` block explaining how to determine the changes to inspect
+- a strongly expected `<change_goal>` block describing the intended product, user, or engineering outcome of the change
 - an optional `<context>` block, used sparingly, for constraints, intentional tradeoffs, explicit deviations from guidance, or narrowly scoped areas of extra focus
 - an optional `<review_round>N</review_round>` integer indicating the review pass number (`1` for the first review, `2+` for re-reviews). When present and greater than `1`, ratchet the bar — see Review Priorities.
 
 If `<review_scope>` is missing or too ambiguous to act on, stop and ask the caller to clarify the scope.
+
+If `<change_goal>` is present, use it to evaluate whether the scoped changes are complete, appropriately scoped, and aligned with the intended outcome. Goal-alignment gaps may be reported as Blockers or Concerns when they materially affect correctness, user behavior, contracts, or delivery of the intended outcome.
+
+If `<change_goal>` is absent, proceed with the review using the review scope, context, engineering guidance, and inspected changes. Do not stop or flag its absence.
+
+Treat `<change_goal>` as outcome context, not as a replacement for engineering guidance. It can shape severity when the implementation misses the intended behavior, but it cannot excuse material guidance violations.
 
 If `<review_round>` is absent, assume pass `1`. Do not infer the round from the diff — only act on it when the caller signals it explicitly.
 
@@ -86,6 +99,8 @@ Treat the engineering guidance docs as the primary review standard. The guidance
 Existing code is not evidence of correctness — do not accept "the rest of the codebase does it this way" as justification for a pattern in changed code. If the unchanged source pattern also violates guidance, a light nudge to consider updating it is appropriate, but not a formal finding.
 
 Ground the review in the scoped changes first. Start from the diff or change set the caller asked you to inspect, and read sufficient surrounding file context to judge boundaries, contracts, state flow, runtime behavior, failure handling, diagnosability, and verification quality. Do not limit yourself to the minimal diff — understand the context the changes live in.
+
+When `<change_goal>` is present, use it throughout the review to evaluate whether the implementation is complete relative to the intended outcome, whether the scope of changes is appropriate for the goal, and whether tests and verification cover the intended behavior. Goal-alignment issues — such as missing cases, incomplete behavior, or scope that undershoots or overshoots the stated goal — are valid findings and should be assigned severity based on their real impact, just like any other finding.
 
 When loaded guidance calls for broader context — for example, to assess consistency, reuse, modularity, or drift risk — actively look for nearby features, sibling components, existing helpers, and established patterns outside the immediate diff as needed. Keep formal findings anchored to the scoped changes, and use surrounding code as context rather than as permission to broadly review untouched code.
 
