@@ -153,11 +153,21 @@ If the review produces zero Blockers and zero Concerns, state at the top of the 
 
 This signal is independent of Nit count — Nits alone never warrant a re-review.
 
-Return findings in this order:
+Group output by the guidance lenses you loaded and applied, not by severity alone. Every applied lens must have its own section, even when it has no findings. This makes lens coverage auditable and prevents unrelated concerns from being blended together.
+
+Start with a short `Lenses Applied` section listing each loaded/applied lens and its result, for example:
+
+- `Runtime Behavior` — 1 Concern
+- `Failure Handling` — no findings
+- `Test Adequacy` — 1 Nit
+
+Then return `Findings by Lens`. Within each lens section, return findings in this order:
 
 1. `Blocker`
 2. `Concern`
 3. `Nit`
+
+If an applied lens has no findings, say `No findings.` in that lens section.
 
 For each finding include:
 
