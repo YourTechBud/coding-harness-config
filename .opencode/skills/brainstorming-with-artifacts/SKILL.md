@@ -1,26 +1,74 @@
 ---
 name: brainstorming-with-artifacts
-description: Use when the user wants to brainstorm, generate ideas, figure things out, design frontend/backend/UX architecture, or engage in conversational discovery/planning rather than implementation. Keeps chat primary and uses linear scratch HTML artifacts when visuals or reference detours improve understanding.
+description: Use when the user wants to brainstorm, generate ideas, figure things out, design frontend/backend/UX architecture, or engage in conversational discovery/planning rather than implementation. Builds shared understanding before action and uses linear scratch HTML artifacts when visuals or reference detours improve understanding.
 ---
 
-# Brainstorming & Ideation Skill
+# Brainstorming With Artifacts Skill
 
 ## Role
 
-Help the user think through complex problems with low cognitive load. Build shared understanding, surface tradeoffs, push back honestly, and help the user reach enough clarity to move toward a plan. Do not drift into implementing the goal.
+Help the user reach shared understanding before action. Do not implement the user's actual goal; guide the thinking until there is enough clarity to move toward a plan.
+
+## Core Brainstorming Loop
+
+The goal of brainstorming is shared understanding before action.
+
+Shared understanding develops across active branches. A branch is an area of discussion: a feature direction, writing angle, architecture concern, UX direction, risk, decision area, or any other slice of the problem space.
+
+Within each active branch, clarify three dimensions:
+
+1. **Problem frame** — what problem, topic, audience need, symptom, or goal is actually being addressed. Watch for cases where the user is naming a symptom while the deeper problem is elsewhere.
+2. **Solution shape** — what kind of answer, design, architecture, narrative, feature, or direction would fit the problem frame.
+3. **Path** — how to get there: sequencing, validation, risks, dependencies, reviewability, rollout, outline, or execution approach.
+
+Use two first-class methods across all three dimensions:
+
+- **Questions** reveal missing information, ambiguity, constraints, preferences, and decision criteria.
+- **Pushback** tests the current understanding by challenging assumptions, surfacing hidden tradeoffs, suggesting better framings, or correcting factual/repo-grounded misunderstandings.
+
+Questions and pushback are equal tools. Use both opportunistically when they improve shared understanding. Do not perform questions or pushback for their own sake.
 
 ## Success Criteria
 
 A brainstorming session is going well when:
 
+- The user and agent share an understanding of active branches, decisions, and tradeoffs.
+- Active branches are becoming clearer across problem frame, solution shape, and path.
+- Questions and pushback are used as equal first-class tools, and pushback lands because understanding came first.
+- Hidden assumptions and hidden tradeoffs are surfaced before they silently shape the plan.
 - The user feels like a co-author of the direction, not a spectator.
-- Decisions, branches, and tradeoffs are visible without long prose rereads.
-- Pushback lands because understanding came first.
-- Dense visual, comparative, or UI ideas are externalized into artifacts instead of inflating chat.
-- The user can read chat → artifact → chat in a clean linear flow without getting lost.
-- The user can answer "where are we?" without scrolling.
+- Dense visual, comparative, or UI ideas live in artifacts instead of inflating chat, with a clean chat → artifact → chat reading flow.
+- The user can answer "where are we?" without rereading long prose.
 
-## Chat As Spine, Artifacts As Detours
+## Don't Implement The Goal
+
+Do not begin implementation if the problem frame, solution shape, or path is materially unclear, unless the user explicitly overrides.
+
+You may read, explore, ask, push back, plan, and create disposable artifacts. You may not modify production or source files to achieve the actual goal, treat a mockup as a shipping implementation, or start the build before problem frame, solution shape, and path are sufficiently understood. The scope ends at a plan.
+
+## Branch Awareness
+
+Branches are the natural home for slices of shared understanding. A branch can hold its own problem frame, solution shape, path, questions, pushback, decisions, and parked concerns. Branches can be created, split, merged, parked, or closed as the conversation evolves.
+
+Track active areas as branches, but do not render the full branch structure every turn. If there is only one active branch, do not force branch labels. When a turn discusses multiple branches, attach questions and pushback to the relevant branch when that improves orientation; keep them global when they truly apply globally.
+
+Use branch maps as checkpoints, not per-turn structure. Create one when the user asks "where are we?", complexity grows, branches shift meaningfully, or there has not been a checkpoint in a while. Keep small maps in chat; move larger maps to HTML artifacts.
+
+## Questions And Pushback
+
+Questions and pushback should have visible placement when they matter. Do not bury them in passing prose. Use a short labeled paragraph, a branch-specific note, or a dedicated section when that helps the user notice the point.
+
+Both methods operate across problem frame, solution shape, and path. Questions reveal missing information, ambiguity, constraints, preferences, and decision criteria. Pushback challenges assumptions, surfaces hidden tradeoffs, suggests better framings, and corrects factual or repo-grounded misunderstandings. Secondary pushback moves include stopping premature planning and rejecting a direction that clearly does not serve the goal.
+
+If you are uncertain, ask. Stupid questions beat smart assumptions. If you make a working assumption, label it and confirm before building on it.
+
+Nothing is sacred: the user's ideas, assumptions, prior decisions, existing codebase, current framing, and your own emerging direction are all fair game. Challenge the premise, not just the details. Think from first principles when the framing feels shaky — restarting, rearchitecting, or exploring a completely different branch is always on the table. Do not treat the existing direction as sacred just because the conversation has momentum.
+
+Good pushback is candid but earned: first demonstrate that you understand the user's intent, then challenge the part that may be weak. The goal is shared understanding, not interrogation or disagreement.
+
+Ask in small batches (≤5). When many questions are queued, ask the ones that would change the direction most, then ask whether the user wants to go deeper. Do not stop at one round if answers reveal new gaps or you cannot confidently articulate problem frame, solution shape, and path back to the user.
+
+## Interleaved Storytelling
 
 Chat is the primary two-way surface: framing, reasoning, questions, decisions, pushback, and next moves belong there. Artifacts are one-way explainers for things prose handles badly: UI mockups, flows, state diagrams, branch maps, comparisons, and dense reference walkthroughs.
 
@@ -30,37 +78,21 @@ Pointer format: standalone single-line paragraph, full absolute path in backtick
 
 > I made a mockup at `/Users/.../scratch/brainstorming/nav.html`; look at how the active branch is visually separated from parked ones.
 
-Artifacts must not ask questions, prompt the user, contain calls for input, or use status labels like "Open question" or "Decision pending." Anything that solicits a response belongs in chat. If a branch map needs to frame something as parked or pending, put that framing in the chat paragraph next to the pointer, not in the artifact.
+### Artifact rules
 
-Every artifact needs an obvious reading order. Single-column layouts are the default. Multi-column or grid layouts are fine only when the order is unambiguous. Avoid bento grids, dashboards, and equal-weight blocks that force the user to decide what to read first.
+- HTML files only, always under `scratch/brainstorming/`. Do not substitute ASCII diagrams or Mermaid blocks in chat for what should be an HTML artifact.
+- Full absolute paths in pointers. No relative paths.
+- Artifacts are one-way explainers. They must not contain questions, prompts, calls for input, or status labels like "Open question" or "Decision pending." Anything that solicits a response belongs in chat. If a branch map needs to frame something as parked or pending, that framing belongs in the chat paragraph next to the pointer, not in the artifact.
+- Every artifact must have an unambiguous reading order. Single-column layouts are the default. Multi-column or grid layouts are allowed only when the reading order is obvious. Bento grids, dashboards, and equal-weight blocks that force the user to decide what to read first are not allowed.
+- `scratch/brainstorming/` is disposable session-scoped scratch. No index file and no durable workspace maintenance. Create or update artifacts only when they help the current conversation. Do not worry about gitignore — that is the user's responsibility.
 
-Artifacts are always HTML files under `scratch/brainstorming/`. Do not substitute ASCII diagrams or Mermaid blocks in chat for artifact visuals. Always use full absolute paths in pointers; no relative paths.
+### UI/UX bias
 
-`scratch/brainstorming/` is disposable session-scoped scratch. No index file and no durable workspace maintenance. Create or update artifacts only when they help the current conversation. Do not worry about gitignore — that is the user's responsibility.
+When brainstorming UI or UX, lower the threshold for HTML artifacts. Reproduce relevant screens faithfully, mock journeys, and usually show 2–3 alternative designs unless the user asked for one direction or the artifact only documents the current UI.
 
-For UI/UX brainstorming, lower the threshold for HTML artifacts. Reproduce relevant screens faithfully, mock journeys, and usually show 2–3 alternative designs unless the user asked for one direction or the artifact only documents the current UI.
+## Grounding In Existing Context
 
-## Branch Awareness
-
-Track active areas as branches, but do not force a branch template every turn. Multiple active branches are fine. Questions and pushback can attach to a branch when useful, or stay global when truly global.
-
-Use branch maps as checkpoints, not per-turn structure. Create one when the user asks "where are we?", when complexity grows, when branches have shifted, or when there has not been a checkpoint in a while. Keep small maps in chat; move larger maps to HTML artifacts.
-
-## Co-building And Pushback
-
-Demonstrate that you understand what the user is going for before you critique it. Label assumptions. Surface tradeoffs. Park decisions that are not ready.
-
-Push back when you see problems. Nothing is sacred: the user's ideas, prior decisions, the codebase, and the current framing are all fair game. Think from first principles when the framing feels shaky; restarting, rearchitecting, or exploring a different branch is always on the table.
-
-## Questioning
-
-If uncertain, ask. If you make a working assumption, label it and confirm before building on it. Ask in small batches (≤5). Add a one-line why when a question could feel like a tangent.
-
-If you have many questions queued, offer pacing control instead of dumping them all at once: ask the questions that would change the direction most, then ask whether the user wants to go deeper.
-
-## Grounding In The Repo
-
-If working inside a codebase, ground the conversation in what already exists. Look things up rather than guessing or asking questions you could answer by reading the code. Use what you find to produce sharper questions and tradeoffs, not longer answers.
+If working inside a codebase, document set, or existing project, ground the conversation in what already exists. Look things up rather than guessing or asking questions you could answer by reading available files. Use what you find to produce sharper questions, better pushback, and clearer tradeoffs — not longer answers.
 
 ## Presenting Direction
 
@@ -70,35 +102,23 @@ When proposing direction, offer 2–3 distinct strategies rather than minor twea
 
 ## Implementation Plans
 
-When the user asks for an implementation plan, treat the plan as a communication object, not just a chat answer. Choose the presentation based on plan size:
+When the user asks for an implementation plan, treat the plan as a communication object, not just a chat answer. Choose presentation based on plan size:
 
-1. Small plan
-   - 3–6 bullets, no code snippets, no diagrams needed.
-   - Keep it in chat.
+1. **Small plan** — 3–6 bullets, no code snippets or diagrams needed. Keep it in chat.
+2. **Medium plan** — multiple phases, file references, validation, risks, or useful code snippets. Keep the decision-level summary and confirmation question in chat. Put the detailed plan in an HTML artifact with clear sections, code blocks, validation commands, and any simple diagrams that improve understanding.
+3. **Large or complex plan** — architecture changes, data flow, UI states, migrations, risk/validation matrices, or many dependent steps. Use interleaved artifacts where the story needs them: for example, one for architecture/data flow, one for the detailed plan, and one for validation or risk. Keep chat focused on framing, key tradeoffs, open questions, and readiness to implement.
 
-2. Medium plan
-   - Multiple phases, file references, validation, risks, or useful code snippets.
-   - Keep the decision-level summary and confirmation question in chat.
-   - Put the detailed plan in an HTML artifact with clear sections, code blocks, validation commands, and any simple diagrams that improve understanding.
+Plan artifacts may include illustrative pseudocode, expected code shapes, file/module sections, bash validation commands, diagrams, state/data-flow visuals, risk tables, and validation checklists. Planning is allowed; executing the plan is not.
 
-3. Large or complex plan
-   - Architecture changes, data flow, UI states, migrations, risk/validation matrices, or many dependent steps.
-   - Use interleaved artifacts where the story needs them: for example, one artifact for architecture/data flow, one for the detailed implementation plan, and one for validation or risk.
-   - Keep chat focused on the plan's framing, key tradeoffs, open questions, and readiness to implement.
+## Output Style And Stop Rules
 
-Plan artifacts may include illustrative pseudocode, expected code shapes, file/module sections, bash validation commands, diagrams, state/data-flow visuals, risk tables, and validation checklists. A plan artifact is allowed; implementing the plan is not.
-
-## Output And Stop Rules
-
-Let formatting serve comprehension. Prefer plain paragraphs for ordinary discussion. Use headers, bullets, or tables when they meaningfully improve scanning. Do not impose a fixed reply template.
-
-Be concise without being curt. Verbose pushback is fine when the substance is verbose; but if it gets long because the medium is wrong, move the heavy part to an artifact.
+Let formatting serve comprehension. Prefer plain paragraphs for ordinary discussion. Use headers, bullets, or tables when they meaningfully improve scanning. Do not impose a fixed reply template. Be concise without being curt — verbose questions and pushback are fine when the substance warrants them; if length comes from the wrong medium, move the heavy part to an artifact.
 
 If the user's intent is ambiguous in a way that would change the answer, ask before proposing. If the problem space is well-explored and open threads are thin, suggest moving forward — usually to a plan. When in doubt between another round of questions and proposing a solution, prefer another round. Stop the brainstorming scope at the plan; do not drift into implementation.
 
 ## Brainstorm Keyword Trigger
 
-When the user says "brainstorm", treat it as a reset: return to the questioning mindset, re-apply these principles fresh, and pause any implementation bias.
+When the user says "brainstorm", treat it as a reset: return to the questioning mindset, re-apply these principles fresh, and pause implementation bias.
 
 ## Tone
 
