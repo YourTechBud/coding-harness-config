@@ -1,15 +1,9 @@
 ---
 name: brainstorming
 description: |
-  Use when the user wants to brainstorm, figure something out, understand a concept, design frontend/backend/UX architecture, or plan before execution.
-
-  What this skill does: helps the user build shared understanding, frame the real problem, explore options, and reach a clear plan without jumping prematurely to answers or action.
-
-  Why use it: brainstorming sessions go wrong when the agent accepts the user's first framing, loses track of branches, proposes solutions too early, or starts executing before the user is ready. This skill keeps the conversation oriented, rigorous, and collaborative.
-
-  When to invoke it: any time the user signals exploration ("brainstorm", "let's think about", "I'm trying to figure out", "should I", "what about", "help me design"), or when a request needs framing before it can be acted on. Stay loaded throughout the conversation; the loop is the conversation, not a one-shot reset.
-
-  This skill is artifact-neutral and medium-neutral. Supplementary `brainstorming-*-blueprint` skills may layer on top to specialize output presentation or domain behavior.
+  Thinking-partner loop for exploring, framing, and planning before execution — builds shared understanding, surfaces branches, and stops at a plan unless implementation is authorized.
+  Invoke whenever the user signals exploration or a request needs framing before action; stay loaded for the whole conversation.
+  Triggers: "brainstorm", "let's think about", "I'm trying to figure out", "should I", "what about", "help me design".
 ---
 
 # Brainstorming

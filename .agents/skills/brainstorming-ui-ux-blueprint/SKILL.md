@@ -1,13 +1,8 @@
 ---
 name: brainstorming-ui-ux-blueprint
 description: |
-  Layer on top of the brainstorming loop when the session involves interface, interaction, layout, workflow, visual hierarchy, screen states, user journeys, or any "what should this look and feel like?" question. Grounds UI/UX thinking in the actual user problem and the product's existing taste, then explores variants concretely instead of describing them in prose.
-
-  What this skill does: defines how to brainstorm UI/UX well by refocusing on the problem the interface is solving, inspecting the product's existing styling and components, inferring taste from the repo rather than prescribing it, and showing 2–5 meaningfully distinct variants instead of prose-only descriptions.
-
-  Why use it: UI/UX brainstorming goes wrong when the agent treats the user's requested UI as the answer, invents taste that does not match the product, describes designs in words when a mockup would land faster, or proposes a single direction when alternatives would surface better solutions. This skill keeps the focus on the underlying problem, anchors the visual language in the actual app, and uses variants to reveal tradeoffs.
-
-  When to invoke it: when the user is brainstorming interface, interaction, layout, navigation, forms, dashboards, onboarding, modals, journeys, redesigns, polish passes, or any frontend product decision; or whenever the question is fundamentally "what should this look like, feel like, or behave like?"
+  Layered on brainstorming for interface, interaction, and visual work: refocuses on the underlying user problem, infers taste from the existing repo, and explores 2–5 distinct variants instead of prose descriptions.
+  Invoke for interface, layout, navigation, forms, dashboards, onboarding, modals, journeys, redesigns, or any "what should this look/feel/behave like?" question.
 ---
 
 # Brainstorming UI/UX Blueprint

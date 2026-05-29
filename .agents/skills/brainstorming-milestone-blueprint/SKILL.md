@@ -1,13 +1,8 @@
 ---
 name: brainstorming-milestone-blueprint
 description: |
-  Layer on top of the brainstorming loop when the user wants to turn raw ideas, Sparks, project context, or scattered thoughts into valuable project-scoped milestone directions and lightweight continuation state.
-
-  What this skill does: helps the user discover value, compare possible directions, converge on candidate milestones, harden one direction into an executable milestone, and optionally persist milestones/tasks under `.pi/` when explicitly requested.
-
-  Why use it: AI-assisted work moves fast, and the hard part becomes deciding what valuable work comes next without reorienting from scratch. This blueprint keeps the conversation focused on value, direction, boundaries, continuation, and done conditions without turning planning into bureaucracy.
-
-  When to invoke it: when the user asks what to work on next within a project, wants to shape scattered project ideas into milestones, wants to preserve work momentum, or explicitly mentions milestones, Sparks, continuation, checkpointing, or project work shaping.
+  Layered on brainstorming to turn raw ideas, Sparks, or scattered project context into project-scoped milestone directions ready to execute.
+  Invoke when the user asks what to work on next, wants to shape ideas into milestones, or mentions Sparks or milestone work.
 ---
 
 # Brainstorming Milestone Blueprint

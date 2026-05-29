@@ -1,13 +1,8 @@
 ---
 name: brainstorming-cognitive-load-blueprint
 description: |
-  Layer on top of the brainstorming loop when the session has more density, structure, or comparison than chat alone can carry. Externalizes maps, diagrams, comparisons, plans, and dense explanations into focused supporting artifacts so the conversation stays readable.
-
-  What this skill does: defines how to reduce cognitive load during brainstorming by creating interleaved one-way artifacts that own structural or visual material — branch maps, decision maps, comparison pages, architecture and sequence diagrams, state machines, dependency maps, risk and validation matrices, implementation-plan explainers, concept walkthroughs, and similar explanatory outputs. Chat continues to carry the two-way conversation; artifacts carry the heavy lifting.
-
-  Why use it: when active branches multiply, tradeoffs get hard to hold in head, or an explanation would balloon the chat, prose-only conversation starts to lose the user. This skill keeps chat short and scannable by handing off heavy material to artifacts the user can open, scan, and return from, without losing the thread or rereading long prose.
-
-  When to invoke it: when the user asks for a visual, map, diagram, plan, comparison, or artifact; when multiple active branches or options need orientation; when a flow, state machine, architecture, or relationship would clarify things faster than prose; when a chat reply would otherwise grow long and reread-heavy; or when the user is clearly losing track of what is being discussed.
+  Layered on brainstorming to offload dense or structural material — branch/decision maps, diagrams, comparisons, plans — into focused artifacts so chat stays scannable.
+  Invoke when the user asks for a visual, map, diagram, plan, or comparison; when multiple branches need orientation; when a flow or architecture would clarify faster than prose; or when a reply would otherwise grow long.
 ---
 
 # Brainstorming Cognitive-Load Blueprint
