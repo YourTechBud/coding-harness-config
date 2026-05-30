@@ -1,5 +1,5 @@
 import type { AgentToolResult, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
-import type { Component } from "@earendil-works/pi-tui";
+import { Container, type Component } from "@earendil-works/pi-tui";
 import type { TaskToolDetails, TaskToolResultDetails } from "./runner.ts";
 import type { SubagentTask } from "./state.ts";
 import type { TaskParams } from "./tool-schema.ts";
@@ -114,8 +114,8 @@ export class TaskCard implements Component {
 	}
 }
 
-export function renderTaskCall(args: TaskArgs, theme: Theme): Component {
-	return new TaskCard(undefined, args, theme);
+export function renderTaskCall(_args: TaskArgs, _theme: Theme): Component {
+	return new Container();
 }
 
 export function renderTaskResult(
