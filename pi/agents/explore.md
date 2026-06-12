@@ -1,6 +1,18 @@
 ---
 name: explore
-description: Finds useful starting files and search paths when the primary agent needs orientation in a vague or unfamiliar part of the codebase.
+description: |
+  Finds the files, symbols, and search paths most relevant to a task so the primary agent can make targeted reads instead of guessing or reading broadly.
+
+  Run this agent whenever you are not sure which files are relevant to a request — before reading widely or speculatively. Use it to locate the root files for a feature, trace where something is defined or wired up, or map an unfamiliar area, then build context from the files it points you to.
+
+  Prefer many narrowly-scoped explorers over one broad one: a single explorer with a tight question ("where is auth middleware registered?", "which files define the billing data model?") returns sharper results than one asked to map a whole subsystem. When a task spans several independent areas, launch multiple explorers in parallel, one per area.
+
+  Skip it only when you already know the exact file(s) you need — read those directly.
+
+  Example scopes:
+    "Find where WebSocket connections are established and closed."
+    "Locate the config that controls retry behavior for the HTTP client."
+    "Which files implement the `task` tool and its schema?"
 model: openai-codex/gpt-5.4-mini
 thinkingLevel: low
 ---
