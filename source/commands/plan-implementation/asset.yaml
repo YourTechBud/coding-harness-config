@@ -1,0 +1,10 @@
+kind: command
+frontmatter:
+  description: Turn a brainstorming session into a phased, self-sufficient implementation plan
+targets:
+  opencode: {}
+  pi: {}
+  claude:
+    as: skill
+  codex:
+    as: skill
