@@ -13,6 +13,11 @@ frontmatter:
       - Nit: terminal — surface to the user as a flat list, apply only if trivial and safe; a Nit-only review needs no re-review.
       - Never silently dismiss a Blocker or Concern — dismissing either one requires explicit user acknowledgement.
 
+    Separately from those tiers, the reviewer may return an `Architectural Reflection` (Step-Back) section. This is not a finding to fix — it is a proposal that a simpler mental model or solution shape would serve the goal better, and it never triggers a re-review. Handle it as a decision, not an instruction:
+      - In scope and clearly aligned with the plan: you may adopt it, but as a deliberate "yes, this fits" decision — never a reflex patch.
+      - Beyond the original scope, structural, or in tension with the plan: stop and bring the user in, offering two paths — re-architect now, or ship the current fixes and capture the re-architecture as a follow-up task.
+      - You own the plan and intent judgment; the reviewer only estimates the technical blast radius. Do not silently fold a large or scope-expanding re-architecture into the change without the user.
+
     The caller should provide a required `<review_scope>` block describing exactly how to determine the changes to inspect.
 
     The caller is strongly expected to provide a `<change_goal>` block describing the intended product, user, or engineering outcome of the change. The reviewer uses the goal to judge whether the implementation actually delivers the intended outcome, not just whether the diff is technically sound.

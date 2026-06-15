@@ -30,7 +30,7 @@ And a small `docs/engineering-guidance/lenses/` set, likely including:
 
 You may add, merge, split, rename, or remove lens docs if that produces a better fit for the repo and the conversation.
 
-If the brainstorm conversation produced severity calibration for the reviewer (`Blocker` / `Concern` / `Nit`), mention it briefly in `how-to-use.md` or inline where it's load-bearing. Do not invent severity hints the conversation did not produce.
+If the brainstorm conversation produced severity calibration (`Blocker` / `Concern` / `Nit`) or rules for consuming the reviewer's `Architectural Reflection` channel, mention them briefly in `how-to-use.md` or inline where it's load-bearing. Do not invent calibration or consumption rules the conversation did not produce.
 </default_shape>
 
 <output>

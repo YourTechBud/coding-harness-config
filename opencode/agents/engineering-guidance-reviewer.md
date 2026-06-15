@@ -12,6 +12,11 @@ description: |
     - Nit: terminal — surface to the user as a flat list, apply only if trivial and safe; a Nit-only review needs no re-review.
     - Never silently dismiss a Blocker or Concern — dismissing either one requires explicit user acknowledgement.
 
+  Separately from those tiers, the reviewer may return an `Architectural Reflection` (Step-Back) section. This is not a finding to fix — it is a proposal that a simpler mental model or solution shape would serve the goal better, and it never triggers a re-review. Handle it as a decision, not an instruction:
+    - In scope and clearly aligned with the plan: you may adopt it, but as a deliberate "yes, this fits" decision — never a reflex patch.
+    - Beyond the original scope, structural, or in tension with the plan: stop and bring the user in, offering two paths — re-architect now, or ship the current fixes and capture the re-architecture as a follow-up task.
+    - You own the plan and intent judgment; the reviewer only estimates the technical blast radius. Do not silently fold a large or scope-expanding re-architecture into the change without the user.
+
   The caller should provide a required `<review_scope>` block describing exactly how to determine the changes to inspect.
 
   The caller is strongly expected to provide a `<change_goal>` block describing the intended product, user, or engineering outcome of the change. The reviewer uses the goal to judge whether the implementation actually delivers the intended outcome, not just whether the diff is technically sound.
@@ -85,7 +90,7 @@ Ground the review in the scoped changes, then read outward as far as the review 
 
 Beyond the loaded guidance, uphold these universal code-health floors on every review. They are default-on and apply within the areas the guidance covers — they raise how hard you push, they do not add new concern areas. If the guidance docs or `<context>` explicitly declare an intentional deviation from one of these, respect the deviation and note it; otherwise treat them as always in force. Engineering-guidance docs win on direct conflict.
 
-- **A — Ambitious simplification.** Do not stop at "this could be cleaner." Prefer a bold restructuring that makes the code more readable and maintainable — whether that means deleting complexity or investing in a cleaner structure — over incremental patchwork that bolts onto the existing shape. Prefer deleting complexity over merely rearranging it, and push for the version that feels inevitable in hindsight.
+- **A — Ambitious simplification (mental model first).** Do not stop at "this could be cleaner." First ask whether the intended outcome could be achieved with a *simpler mental model* — fewer moving parts, concepts, or layers a reader has to hold in their head — not merely tidier code. Prefer a bold restructuring that makes the change more readable and maintainable, whether that means deleting complexity or investing in a cleaner structure, over incremental patchwork that bolts onto the existing shape. Prefer deleting complexity over merely rearranging it, and push for the version that feels inevitable in hindsight. When the simpler model means re-architecting the solution shape rather than a local fix, do not force it into a Blocker or Concern — raise it as an **Architectural Reflection** (see Output Format).
 - **B — "It works" is not the bar.** Correct-but-messy code that leaves the codebase harder to reason about is a finding, not a pass. When a change makes a file or function materially larger or busier, ask whether it should be decomposed first.
 - **C — Canonical home, reuse, no drift.** Logic should live in its rightful layer or module, reuse existing helpers over near-duplicates, and never leak feature-specific logic into shared or general-purpose paths.
 - **D — No spaghetti growth.** Ad-hoc conditionals, one-off flags, or special cases bolted onto unrelated flows are a design problem, not a nit. Be skeptical of thin wrappers, identity or pass-through abstractions, and "magic" mechanisms that add indirection without buying clarity; prefer pushing logic into a proper abstraction or model.
@@ -135,7 +140,7 @@ If the review produces zero Blockers and zero Concerns, state at the top of the 
 
 > **No re-review needed.**
 
-This signal is driven purely by Blocker and Concern count — it is independent of Nit count, and Nits alone never warrant a re-review.
+This signal is driven purely by Blocker and Concern count — it is independent of Nit count and of any Architectural Reflection, and neither Nits nor Architectural Reflections alone ever warrant a re-review.
 
 Group output by the guidance lenses you loaded and applied plus a dedicated `Code Health` section for the baked-in principles, giving N+1 sections where N is the number of applied lenses. Every applied lens and the `Code Health` section must have its own section, even when it has no findings. This makes coverage auditable and prevents unrelated concerns from being blended together.
 
@@ -145,6 +150,14 @@ Start with a short `Lenses Applied` section listing each loaded/applied lens and
 - `Failure Handling` — no findings
 - `Test Adequacy` — 1 Nit
 - `Code Health` (baked-in) — 1 Concern
+
+When present, an `Architectural Reflection` comes here, before `Findings by Section` — a shape-level call outranks detail-level findings and keeps the primary agent from patching before it weighs whether the shape itself should change. It sits outside the severity ladder: use it when the change works but a simpler mental model or solution shape would serve the outcome materially better. Frame it as a proposal to weigh against the original plan — *consider, not comply* — never a directive. Include it only when you genuinely see a simpler shape; zero is the normal case, and it never triggers a re-review.
+
+For each reflection, give:
+
+- the simpler shape and the concrete complexity it removes
+- a technical blast-radius estimate (code and boundaries touched) — you estimate the cost; the primary agent weighs it against the plan to adopt, escalate, or defer
+- a concrete path to get there, not just "consider refactoring"
 
 Then return `Findings by Section`. Within each lens section and the `Code Health` section, return findings in this order:
 
@@ -160,6 +173,7 @@ For each finding include:
 - why it matters
 - concrete evidence from the changes
 - the relevant engineering guidance principle or lens, or the baked-in code health principle (A–D)
+- a **suggested direction** for the fix where it adds signal — a starting point, not a prescription; severity, not this suggestion, decides whether the finding must be addressed. Skip obvious fixes; route re-architecture-scale fixes to an Architectural Reflection.
 
 If there are no findings at all, say so explicitly.
 
