@@ -25,8 +25,14 @@ Do not duplicate content that already lives in another artifact. Redact secrets 
 ## Ground, then clarify, then write
 
 1. **Ground yourself.** Mine the conversation for decisions and intent, then do targeted read-only exploration of the repo (relevant files, docs, ADRs) to find the pointers the plan will reference. Look things up rather than guessing.
-2. **Clarify the gaps.** Ask the user only the questions that grounding could not answer — genuine gaps that would change the plan. Do not re-ask what you can find yourself, and do not interrogate.
+2. **Clarify the gaps.** Ask the user only the questions that grounding could not answer — genuine gaps that would change the plan. Do not re-ask what you can find yourself, and do not interrogate. A clean design that breaks public/API/contract/DB-schema compatibility is always such a gap — confirm the break explicitly before writing it into the plan.
 3. **Write** the plan once the gaps are closed.
+
+## Architectural stance
+
+Plan for the cleanest design and the simplest mental model the problem allows — not the smallest diff against what exists today. Bold refactors are on the table: if reshaping existing structure yields a clearer, simpler system, plan for that rather than bending the design to preserve current internals. Where the repo has engineering guidance (e.g. `docs/engineering-guidance`), fold it into the design and honor it.
+
+One hard gate: if the cleanest design **breaks a public contract** — a public/API surface, a wire/contract format, or a DB schema — do not silently bake that into the plan. Treat it as a gap to clarify (see above): surface the break, the cleaner design it buys, and the migration cost, then get explicit confirmation before committing to it. Once confirmed, capture the decision, the break, and the migration/rollout approach as conversation residue in the plan. Internal refactors that cross none of those boundaries need no gate — just plan them boldly.
 
 ## Phasing
 
