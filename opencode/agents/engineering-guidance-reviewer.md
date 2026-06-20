@@ -2,9 +2,9 @@
 description: |
   Reviews a caller-defined change set against `docs/engineering-guidance` and returns structured findings with severity.
 
-  Run this agent as the final review step before returning code changes to the user. Skip it when no code was modified, the change is documentation-only, the repo has no `docs/engineering-guidance` directory, or the user explicitly opted out.
+  Invoke this agent only when the user explicitly asks for an engineering-guidance review.
 
-  Run on the final change set, not after every edit. Re-run after Blockers or Concerns are fixed, or when follow-up changes are substantial or alter design, boundaries, or runtime behavior.
+  Once the user has requested a review, re-run it after Blockers or Concerns are fixed, or when follow-up changes are substantial or alter design, boundaries, or runtime behavior.
 
   Findings come in three tiers — Blocker, Concern, Nit — and each has different handling:
     - Blocker: must fix before returning to the user. Re-review after the fix.
