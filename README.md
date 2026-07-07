@@ -6,7 +6,9 @@ Canonical assets live under `source/`. Harness outputs are generated as direct r
 
 ## Install / sync
 
-Generated assets are copied into each harness home. The installer treats those destination files as managed by this repo and overwrites them on install. `clear` removes the currently generated files from each harness home.
+Generated assets are copied into each harness home. The installer tracks managed top-level units in repo-local manifests under `.install-manifests/`, which is gitignored. Each manifest records the resolved harness home so installs and clears do not accidentally reuse ownership state for a different destination.
+
+The ownership unit is the first child under each installed prefix, such as `skills/brainstorming`, `commands/plan-docs.md`, `agents/reviewer.md`, or `extensions/webfetch`. On install, previously managed units are replaced, stale managed units are removed, and exact unowned matches are adopted into the manifest. Unowned destination collisions that differ from generated output are skipped and reported. `clear` removes manifest-owned units even if they no longer exist in generated output.
 
 Install or refresh all harnesses after generation:
 

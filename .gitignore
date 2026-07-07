@@ -1,5 +1,6 @@
 node_modules/
 **/node_modules/
+.install-manifests/
 .DS_Store
 scratch/**
 TODO.md
