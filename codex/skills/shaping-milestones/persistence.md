@@ -4,12 +4,13 @@ Persistence is a lightweight checkpoint system, not a database. Persist only whe
 
 ## Directory Layout
 
-Use the project-local `.pi/` directory unless local conventions say otherwise.
+Use the project-local `.milestones/` directory unless local conventions say otherwise. Tasks nest under it because tasks only exist under milestones.
 
 ```txt
-.pi/
-  milestones/
+.milestones/
+  <milestone-id>.md
   tasks/
+    <task-id>.md
 ```
 
 The filename stem is the ID.
@@ -17,7 +18,7 @@ The filename stem is the ID.
 Example:
 
 ```txt
-.pi/milestones/improve-correction-confidence.md
+.milestones/improve-correction-confidence.md
 ```
 
 ID:
@@ -33,7 +34,7 @@ Candidate and hardened milestones live in the same directory and are distinguish
 Path:
 
 ```txt
-.pi/milestones/<milestone-id>.md
+.milestones/<milestone-id>.md
 ```
 
 Frontmatter:
@@ -86,7 +87,7 @@ Create task files only for hardened milestones, and only when persistence is exp
 Path:
 
 ```txt
-.pi/tasks/<task-id>.md
+.milestones/tasks/<task-id>.md
 ```
 
 Frontmatter:
