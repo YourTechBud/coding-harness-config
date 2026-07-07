@@ -1,0 +1,16 @@
+kind: skill
+frontmatter:
+  description: |
+    Domain companion for interface, interaction, and visual work — refocuses on the underlying user problem, infers taste from the existing product rather than a generic playbook, and explores 2–5 meaningfully distinct variants the user can see instead of prose descriptions. Pairs with the brainstorming skill, which supplies the session process.
+    Invoke when the user explicitly asks for UI/UX exploration — interfaces, layouts, navigation, forms, dashboards, onboarding, modals, journeys, redesigns, or "what should this look/feel/behave like?".
+targets:
+  opencode: {}
+  pi:
+    frontmatter:
+      disable-model-invocation: true
+  claude:
+    frontmatter:
+      disable-model-invocation: true
+  codex:
+    policy:
+      allow_implicit_invocation: false
