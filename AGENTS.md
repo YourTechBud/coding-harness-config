@@ -33,3 +33,14 @@ Pi specific config
 - All customizations to Pi should be done via the extension only. Never change the core.
 - When planning changes to Pi extensions (new or existing) always take into account how the change will affect other extensions. Don't worry about the `multi-agent` extension. That's legacy.
 - All Pi extension code is present in `source/harnesses/pi/extensions`.
+
+## Rules for authoring sources
+
+- Always follow the prompting guide for the latest models
+  - Fable 5: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5
+  - GPT 5.5: https://developers.openai.com/api/docs/guides/prompt-guidance?model=gpt-5.5
+  - Skill authoring guide:
+    - https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices
+    - https://github.com/mattpocock/skills/raw/refs/heads/main/skills/productivity/writing-great-skills/SKILL.md
+- Always lean in to trust the model's intelligence to follow intent.
+- We always keep decision making and critical thinking to be the responsiblity of the user. Never delegate thinking to agents

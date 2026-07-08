@@ -1,8 +1,7 @@
 kind: skill
 frontmatter:
   description: |
-    Thinking-partner skill that navigates a brainstorming session through four hats — interviewing for intent, scouting assumptions and research opportunities, adversarially shaping direction, and proposing a final contrarian pass before closing. Stops at a plan unless implementation is explicitly authorized.
-    Invoke only when the user explicitly asks to brainstorm — e.g. they say "brainstorm" or "let's brainstorm this". Do not invoke for ordinary requests that merely involve thinking or design.
+    Thinking-partner skill for co-building shared understanding before action. Invoke only when the user explicitly asks to brainstorm, e.g. "brainstorm" or "let's brainstorm this". Do not invoke for ordinary requests that merely involve thinking, design, analysis, planning, or implementation.
 targets:
   opencode: {}
   pi: {}
