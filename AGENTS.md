@@ -34,7 +34,7 @@ Pi specific config
 - When planning changes to Pi extensions (new or existing) always take into account how the change will affect other extensions. Don't worry about the `multi-agent` extension. That's legacy.
 - All Pi extension code is present in `source/harnesses/pi/extensions`.
 
-## Rules for authoring sources
+## Rules for authoring sources (like skills, commands, subagents, workflows)
 
 - Always follow the prompting guide for the latest models
   - Fable 5: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5
