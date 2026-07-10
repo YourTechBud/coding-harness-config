@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-const SKIP_NAMES = new Set(["node_modules", ".DS_Store"]);
+const SKIP_NAMES = new Set(["node_modules", ".DS_Store", ".docs"]);
 const SKIP_EXTENSIONS = new Set([".log"]);
 
 export async function pathExists(p: string): Promise<boolean> {

@@ -1,0 +1,10 @@
+kind: command
+frontmatter:
+  description: Review a change set against docs/engineering-guidance and return structured findings by severity (Blocker, Concern, Nit)
+targets:
+  opencode: {}
+  pi: {}
+  claude:
+    as: skill
+  codex:
+    as: skill

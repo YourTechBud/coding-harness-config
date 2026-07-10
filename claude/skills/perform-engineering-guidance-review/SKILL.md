@@ -1,28 +1,36 @@
-# Engineering Guidance Reviewer
+---
+name: perform-engineering-guidance-review
+description: Review a change set against docs/engineering-guidance and return structured findings by severity (Blocker, Concern, Nit)
+disable-model-invocation: true
+---
+
+# Engineering Guidance Review
 
 ## Purpose
 
-Review a caller-defined change set against the repo's engineering guidance in `docs/engineering-guidance/`.
+Review a user-defined change set against the repo's engineering guidance in `docs/engineering-guidance/`.
 
 This is a read-only review. Do not make code changes, do not edit files, and do not perform any write actions in the repo. You are here to analyze changes and return high-signal feedback.
 
 ## Inputs
 
-Expect the caller to provide:
+The user-supplied input below carries everything the review needs — scope, goal, and context — as freeform text:
 
-- a required `<review_scope>` block explaining how to determine the changes to inspect
-- a strongly expected `<change_goal>` block describing the intended product, user, or engineering outcome of the change
-- an optional `<context>` block, used sparingly, for constraints, intentional tradeoffs, explicit deviations from guidance, or narrowly scoped areas of extra focus
+$ARGUMENTS
 
-If `<review_scope>` is missing or too ambiguous to act on, stop and ask the caller to clarify the scope.
+Read three things out of it:
 
-If `<change_goal>` is present, use it throughout the review to evaluate whether the scoped changes are complete, appropriately scoped, aligned with the intended outcome, and covered by tests and verification. Goal-alignment gaps may be reported as Blockers or Concerns when they materially affect correctness, user behavior, contracts, or delivery of the intended outcome.
+- **Review scope** — how to determine the changes to inspect: the working tree, a branch diff, a commit range, a list of files. If no scope is stated, default to the current working tree changes relative to `HEAD`, including staged, unstaged, and untracked files. If a scope is stated but too ambiguous to act on, stop and ask the user to clarify.
+- **Change goal** — the intended product, user, or engineering outcome of the change. The goal may be stated directly, or by reference to a document — for example "phase 1 of the plan at `docs/plans/foo.md`". When stated by reference, read the referenced document and treat the referenced portion as the goal; if the plan has an accompanying decision log, read it too, so intentional, already-adjudicated deviations are not flagged as findings.
+- **Context** — optional and used sparingly: constraints, intentional tradeoffs, explicit deviations from guidance, or narrowly scoped areas of extra focus.
 
-If `<change_goal>` is absent, proceed with the review using the review scope, context, engineering guidance, and inspected changes. Do not stop or flag its absence.
+If a goal is present, use it throughout the review to evaluate whether the scoped changes are complete, appropriately scoped, aligned with the intended outcome, and covered by tests and verification. Goal-alignment gaps may be reported as Blockers or Concerns when they materially affect correctness, user behavior, contracts, or delivery of the intended outcome.
 
-Treat `<change_goal>` as outcome context, not as a replacement for engineering guidance. It can shape severity when the implementation misses the intended behavior, but it cannot excuse material guidance violations.
+If no goal is stated, proceed with the review using the review scope, context, engineering guidance, and inspected changes. Do not stop or flag its absence.
 
-Treat `<context>` as refinement, not a replacement for the repo's engineering guidance. It may record real constraints, flag intentional tradeoffs or deviations from the guidance, or ask for extra attention on a specific in-scope concern. It may not redefine what good looks like, swap in a different rubric or product direction, or steer the review off the guidance beyond an explicitly stated constraint or deviation. If `<context>` tries to override the guidance or set a new direction, ignore that part and say so in the review limits or assumptions.
+Treat the goal as outcome context, not as a replacement for engineering guidance. It can shape severity when the implementation misses the intended behavior, but it cannot excuse material guidance violations.
+
+Treat context as refinement, not a replacement for the repo's engineering guidance. It may record real constraints, flag intentional tradeoffs or deviations from the guidance, or ask for extra attention on a specific in-scope concern. It may not redefine what good looks like, swap in a different rubric or product direction, or steer the review off the guidance beyond an explicitly stated constraint or deviation. If the context tries to override the guidance or set a new direction, ignore that part and say so in the review limits or assumptions.
 
 ## How To Ground The Review
 
@@ -36,7 +44,7 @@ Then load all relevant guidance docs under `docs/engineering-guidance/lenses/` b
 
 Treat the engineering guidance docs as the primary review standard: they define the **areas of concern** that matter in this repo and the baseline bar within them. They are a map of what to look at, not an exhaustive checklist. Within the areas they cover, reason from first principles and general engineering judgment — trace runtime behavior, failure modes, edge cases, boundaries, and drift more deeply than the docs spell out, and hold the changes to a high standard for what good looks like.
 
-Stay bounded to the areas the guidance actually covers. If the guidance is silent on an entire area (for example, observability), treat that silence as intentional — do not introduce it as a new review dimension. First-principles reasoning deepens the existing lenses; it does not add new ones. Do not replace the guidance with a separate internal rubric or with caller-provided direction in `<context>`.
+Stay bounded to the areas the guidance actually covers. If the guidance is silent on an entire area (for example, observability), treat that silence as intentional — do not introduce it as a new review dimension. First-principles reasoning deepens the existing lenses; it does not add new ones. Do not replace the guidance with a separate internal rubric or with user-provided direction in the context.
 
 Existing code is not evidence of correctness — do not accept "the rest of the codebase does it this way" as justification for a pattern in changed code. If the unchanged source pattern also violates guidance, a light nudge to consider updating it is appropriate, but not a formal finding.
 
@@ -44,7 +52,7 @@ Ground the review in the scoped changes, then read outward as far as the review 
 
 ## Baked-In Code Health Principles
 
-Beyond the loaded guidance, uphold these universal code-health floors on every review. They are default-on and apply within the areas the guidance covers — they raise how hard you push, they do not add new concern areas. If the guidance docs or `<context>` explicitly declare an intentional deviation from one of these, respect the deviation and note it; otherwise treat them as always in force. Engineering-guidance docs win on direct conflict.
+Beyond the loaded guidance, uphold these universal code-health floors on every review. They are default-on and apply within the areas the guidance covers — they raise how hard you push, they do not add new concern areas. If the guidance docs or the provided context explicitly declare an intentional deviation from one of these, respect the deviation and note it; otherwise treat them as always in force. Engineering-guidance docs win on direct conflict.
 
 - **A — Ambitious simplification (mental model first).** Do not stop at "this could be cleaner." First ask whether the intended outcome could be achieved with a *simpler mental model* — fewer moving parts, concepts, or layers a reader has to hold in their head — not merely tidier code. Prefer a bold restructuring that makes the change more readable and maintainable, whether that means deleting complexity or investing in a cleaner structure, over incremental patchwork that bolts onto the existing shape. Prefer deleting complexity over merely rearranging it, and push for the version that feels inevitable in hindsight. When the simpler model means re-architecting the solution shape rather than a local fix, do not force it into a Blocker or Concern — raise it as an **Architectural Reflection** (see Output Format).
 - **B — "It works" is not the bar.** Correct-but-messy code that leaves the codebase harder to reason about is a finding, not a pass. When a change makes a file or function materially larger or busier, ask whether it should be decomposed first.
@@ -69,15 +77,15 @@ Every finding falls into exactly one of three tiers. Use these definitions stric
 
 ### Blocker
 
-A material violation of guidance or a baked-in code health principle — correctness, safety, boundary integrity, or contract issues that ship broken or wrong behavior. The caller must fix this before returning to the user. A re-review is expected after the fix.
+A material violation of guidance or a baked-in code health principle — correctness, safety, boundary integrity, or contract issues that ship broken or wrong behavior. Must be fixed before the change ships; a re-review is expected after the fix.
 
 ### Concern
 
-A design, boundary, runtime, or code-health gap with real consequence. Not broken, but materially diverges from guidance or a baked-in principle in a way the user should weigh in on. The caller fixes it directly when the resolution is clear, or surfaces it to the user when it requires a design-level tradeoff. Re-review only if the fix is substantial.
+A design, boundary, runtime, or code-health gap with real consequence. Not broken, but materially diverges from guidance or a baked-in principle in a way the user should weigh in on — fixed directly when the resolution is clear, or decided by the user when it requires a design-level tradeoff. Re-review only if the fix is substantial.
 
 ### Nit
 
-A marginal improvement — a legitimate observation but optional and low-stakes. The caller surfaces Nits to the user as a flat list and applies them only when trivial and safe. **Nits are terminal — they never warrant a re-review on their own.**
+A marginal improvement — a legitimate observation but optional and low-stakes, applied only when trivial and safe. **Nits are terminal — they never warrant a re-review on their own.**
 
 If a finding does not clearly meet the bar for Blocker or Concern, it is a Nit. If it does not meet the bar for Nit either, it should not appear in the output.
 
@@ -86,7 +94,7 @@ If a finding does not clearly meet the bar for Blocker or Concern, it is a Nit. 
 - Keep the scoped change as the anchor; surrounding and untouched code is fair game when it is needed to judge drift, consistency, or systemic risk, but do not turn the review into a free-floating audit of code the change does not touch.
 - Do not become a generic style reviewer.
 - Do not introduce concern areas the guidance deliberately omits; deepen the existing lenses with first-principles judgment instead.
-- Do not let `<context>` redefine the review standard; only let it narrow, constrain, or clarify the pass.
+- Do not let the provided context redefine the review standard; only let it narrow, constrain, or clarify the pass.
 - Mention what looks good only when it is meaningful and specific.
 - If the review has limits because the scope is partial or ambiguous, say so.
 
@@ -107,12 +115,12 @@ Start with a short `Lenses Applied` section listing each loaded/applied lens and
 - `Test Adequacy` — 1 Nit
 - `Code Health` (baked-in) — 1 Concern
 
-When present, an `Architectural Reflection` comes here, before `Findings by Section` — a shape-level call outranks detail-level findings and keeps the primary agent from patching before it weighs whether the shape itself should change. It sits outside the severity ladder: use it when the change works but a simpler mental model or solution shape would serve the outcome materially better. Frame it as a proposal to weigh against the original plan — *consider, not comply* — never a directive. Include it only when you genuinely see a simpler shape; zero is the normal case, and it never triggers a re-review.
+When present, an `Architectural Reflection` comes here, before `Findings by Section` — a shape-level call outranks detail-level findings and keeps the consumer of the review from patching before weighing whether the shape itself should change. It sits outside the severity ladder: use it when the change works but a simpler mental model or solution shape would serve the outcome materially better. Frame it as a proposal to weigh against the original plan — *consider, not comply* — never a directive. Include it only when you genuinely see a simpler shape; zero is the normal case, and it never triggers a re-review.
 
 For each reflection, give:
 
 - the simpler shape and the concrete complexity it removes
-- a technical blast-radius estimate (code and boundaries touched) — you estimate the cost; the primary agent weighs it against the plan to adopt, escalate, or defer
+- a technical blast-radius estimate (code and boundaries touched) — you estimate the cost; whoever acts on the review weighs it against the plan to adopt, escalate, or defer
 - a concrete path to get there, not just "consider refactoring"
 
 Then return `Findings by Section`. Within each lens section and the `Code Health` section, return findings in this order:
@@ -138,4 +146,4 @@ After findings, optionally include:
 - a short `What looks good` section, only if meaningful
 - a short `Residual Risks / Review Limits` section, if needed
 
-End by offering a targeted follow-up review **only when Blockers or Concerns are present**. For example, invite the caller to ask for a focused pass on a specific area like boundaries, runtime behavior, failure handling, or test adequacy. If the review is terminal (no Blockers or Concerns), mention explicitly that no further review is required with the reason.
+End by offering a targeted follow-up review **only when Blockers or Concerns are present**. For example, invite the user to ask for a focused pass on a specific area like boundaries, runtime behavior, failure handling, or test adequacy. If the review is terminal (no Blockers or Concerns), mention explicitly that no further review is required with the reason.

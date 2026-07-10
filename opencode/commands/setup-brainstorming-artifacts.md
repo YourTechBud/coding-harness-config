@@ -1,6 +1,5 @@
 ---
 description: Set up or revise a repo-local brainstorming artifact workspace under .isagi
-agent: brainstorming
 ---
 
 Set up or revise a brainstorming artifact workspace for this repo.

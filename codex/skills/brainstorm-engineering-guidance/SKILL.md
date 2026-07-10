@@ -62,19 +62,19 @@ Draw on these aggressively as inspiration — adapt, tighten, or omit to fit the
 - Guidance is non-prescriptive, question-driven, and maintainable.
 - Durable engineering principles are separated from repo-specific nuance.
 - The system stays small and coherent rather than a large manual; we're explicit about what to exclude to avoid bloat.
-- Each lens defines its own severity ladder so the engineering-guidance-reviewer can categorize findings consistently:
+- Each lens defines its own severity ladder so the engineering-guidance review can categorize findings consistently:
     - `Blocker` — material divergence from guidance; must fix; triggers a re-review after the fix.
     - `Concern` — design or runtime gap with real consequence; fix directly or surface to the user; re-review only if the fix is substantial.
     - `Nit` — marginal, optional improvement; terminal — never triggers a re-review on its own.
-- The `how-to-use` doc teaches the primary agent how to *consume* reviewer output — not just the severity tiers, but also the reviewer's `Architectural Reflection` (Step-Back) channel (see context below). Surface this as something we can include; if a `how-to-use` doc already exists, offer to fold the consumption guidance into it rather than only writing it fresh.
+- The `how-to-use` doc teaches whoever consumes the review — a person or an agent handed the findings — how to act on its output: not just the severity tiers, but also the `Architectural Reflection` (Step-Back) channel (see context below). Surface this as something we can include; if a `how-to-use` doc already exists, offer to fold the consumption guidance into it rather than only writing it fresh.
 - If guidance already exists under `docs/engineering-guidance/`, build on it rather than re-deriving from scratch.
 
 # Reviewer output contract (context)
 
-Context, not a requirement — so we can decide together how much of it the guidance should reflect. The engineering-guidance-reviewer returns two distinct kinds of output, and the `how-to-use` doc is where a repo teaches its primary agent to interpret them:
+Context, not a requirement — so we can decide together how much of it the guidance should reflect. The engineering-guidance review returns two distinct kinds of output, and the `how-to-use` doc is where a repo teaches the review's consumer to interpret them:
 
 - **Severity findings** — `Blocker` / `Concern` / `Nit`, each a defect to fix, handled per the ladder above.
-- **`Architectural Reflection` (Step-Back)** — a separate channel outside the ladder: a proposal that a simpler mental model or solution shape would serve the goal better, weighed against the original plan rather than applied as a fix, and never triggering a re-review. When it lands beyond the change's scope or in tension with the plan, the primary agent stops and surfaces it to the user rather than applying it.
+- **`Architectural Reflection` (Step-Back)** — a separate channel outside the ladder: a proposal that a simpler mental model or solution shape would serve the goal better, weighed against the original plan rather than applied as a fix, and never triggering a re-review. When it lands beyond the change's scope or in tension with the plan, the consuming agent stops and surfaces it to the user rather than applying it.
 
 # Stop rule
 

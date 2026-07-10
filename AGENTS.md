@@ -36,9 +36,9 @@ Pi specific config
 
 ## Rules for authoring sources (like skills, commands, subagents, workflows)
 
-- Always follow the prompting guide for the latest models
+- Always load the prompting guides:
   - Fable 5: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5
-  - GPT 5.5: https://developers.openai.com/api/docs/guides/prompt-guidance?model=gpt-5.5
+  - GPT 5.6: https://developers.openai.com/api/docs/guides/prompt-guidance?model=gpt-5.6
   - Skill authoring guide:
     - https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices
     - https://github.com/mattpocock/skills/raw/refs/heads/main/skills/productivity/writing-great-skills/SKILL.md
