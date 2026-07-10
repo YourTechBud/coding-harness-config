@@ -23,13 +23,9 @@ Read three things out of it:
 - **Change goal** — the intended product, user, or engineering outcome of the change. The goal may be stated directly, or by reference to a document — for example "phase 1 of the plan at `docs/plans/foo.md`". When stated by reference, read the referenced document and treat the referenced portion as the goal; if the plan has an accompanying decision log, read it too, so intentional, already-adjudicated deviations are not flagged as findings.
 - **Context** — optional and used sparingly: constraints, intentional tradeoffs, explicit deviations from guidance, or narrowly scoped areas of extra focus.
 
-If a goal is present, use it throughout the review to evaluate whether the scoped changes are complete, appropriately scoped, aligned with the intended outcome, and covered by tests and verification. Goal-alignment gaps may be reported as Blockers or Concerns when they materially affect correctness, user behavior, contracts, or delivery of the intended outcome.
+A stated goal shapes the whole review: judge whether the scoped changes are complete, appropriately scoped, and actually deliver the intended outcome — goal-alignment gaps can be Blockers or Concerns when they materially affect correctness, behavior, or contracts. Absent a goal, review from scope, context, and guidance alone, without flagging its absence. The goal is outcome context, not a replacement for engineering guidance: it can shape severity, but it cannot excuse material guidance violations.
 
-If no goal is stated, proceed with the review using the review scope, context, engineering guidance, and inspected changes. Do not stop or flag its absence.
-
-Treat the goal as outcome context, not as a replacement for engineering guidance. It can shape severity when the implementation misses the intended behavior, but it cannot excuse material guidance violations.
-
-Treat context as refinement, not a replacement for the repo's engineering guidance. It may record real constraints, flag intentional tradeoffs or deviations from the guidance, or ask for extra attention on a specific in-scope concern. It may not redefine what good looks like, swap in a different rubric or product direction, or steer the review off the guidance beyond an explicitly stated constraint or deviation. If the context tries to override the guidance or set a new direction, ignore that part and say so in the review limits or assumptions.
+Context refines the review; it never redefines it. It may record real constraints, intentional tradeoffs or deviations from guidance, or ask for extra attention on an in-scope concern — but it may not swap in a different rubric, product direction, or standard of what good looks like. If it tries, ignore that part and say so in the review limits or assumptions.
 
 ## How To Ground The Review
 
@@ -43,17 +39,17 @@ Then load all relevant guidance docs under `docs/engineering-guidance/lenses/` b
 
 Treat the engineering guidance docs as the primary review standard: they define the **areas of concern** that matter in this repo and the baseline bar within them. They are a map of what to look at, not an exhaustive checklist. Within the areas they cover, reason from first principles and general engineering judgment — trace runtime behavior, failure modes, edge cases, boundaries, and drift more deeply than the docs spell out, and hold the changes to a high standard for what good looks like.
 
-Stay bounded to the areas the guidance actually covers. If the guidance is silent on an entire area (for example, observability), treat that silence as intentional — do not introduce it as a new review dimension. First-principles reasoning deepens the existing lenses; it does not add new ones. Do not replace the guidance with a separate internal rubric or with user-provided direction in the context.
+Stay bounded to the areas the guidance actually covers. If the guidance is silent on an entire area (for example, observability), treat that silence as intentional — do not introduce it as a new review dimension. First-principles reasoning deepens the existing lenses; it does not add new ones.
 
 Existing code is not evidence of correctness — do not accept "the rest of the codebase does it this way" as justification for a pattern in changed code. If the unchanged source pattern also violates guidance, a light nudge to consider updating it is appropriate, but not a formal finding.
 
-Ground the review in the scoped changes, then read outward as far as the review needs. Read enough surrounding file context to judge boundaries, contracts, state flow, runtime behavior, failure handling, diagnosability, and verification quality — do not limit yourself to the minimal diff. Be ambitious where it serves the review: to assess architectural drift, cross-cutting consistency, reuse, modularity, or systemic risk, actively read nearby features, sibling components, existing helpers, and established patterns outside the diff. A finding about untouched code is valid when the scoped change introduces, amplifies, or cements drift or inconsistency — but do not turn the review into a free-floating audit of code the change does not touch. The scoped change stays the anchor and the thing findings are ultimately about.
+Ground the review in the scoped changes, then read as far outward as the review needs — surrounding context, sibling components, existing helpers, established patterns — to judge boundaries, contracts, runtime behavior, failure handling, drift, and verification quality. A finding about untouched code is valid when the scoped change introduces, amplifies, or cements drift or inconsistency, but the scoped change stays the anchor: this is not a free-floating audit of code the change does not touch.
 
 ## Baked-In Code Health Principles
 
-Beyond the loaded guidance, uphold these universal code-health floors on every review. They are default-on and apply within the areas the guidance covers — they raise how hard you push, they do not add new concern areas. If the guidance docs or the provided context explicitly declare an intentional deviation from one of these, respect the deviation and note it; otherwise treat them as always in force. Engineering-guidance docs win on direct conflict.
+Beyond the loaded guidance, uphold these universal code-health floors on every review. They raise how hard you push within the areas the guidance covers — they do not add new concern areas — and engineering-guidance docs win on direct conflict. Respect and note deviations the guidance or context explicitly declares.
 
-- **A — Ambitious simplification (mental model first).** Do not stop at "this could be cleaner." First ask whether the intended outcome could be achieved with a *simpler mental model* — fewer moving parts, concepts, or layers a reader has to hold in their head — not merely tidier code. Prefer a bold restructuring that makes the change more readable and maintainable, whether that means deleting complexity or investing in a cleaner structure, over incremental patchwork that bolts onto the existing shape. Prefer deleting complexity over merely rearranging it, and push for the version that feels inevitable in hindsight. When the simpler model means re-architecting the solution shape rather than a local fix, do not force it into a Blocker or Concern — raise it as an **Architectural Reflection** (see Output Format).
+- **A — Ambitious simplification (mental model first).** Do not stop at "this could be cleaner." Ask whether the intended outcome could be achieved with a *simpler mental model* — fewer moving parts, concepts, or layers a reader has to hold in their head — and prefer the bold restructuring that deletes complexity over incremental patchwork that bolts onto the existing shape. When the simpler model means re-architecting the solution shape rather than a local fix, raise it as an **Architectural Reflection** (see Output Format) rather than a Blocker or Concern.
 - **B — "It works" is not the bar.** Correct-but-messy code that leaves the codebase harder to reason about is a finding, not a pass. When a change makes a file or function materially larger or busier, ask whether it should be decomposed first.
 - **C — Canonical home, reuse, no drift.** Logic should live in its rightful layer or module, reuse existing helpers over near-duplicates, and never leak feature-specific logic into shared or general-purpose paths.
 - **D — No spaghetti growth.** Ad-hoc conditionals, one-off flags, or special cases bolted onto unrelated flows are a design problem, not a nit. Be skeptical of thin wrappers, identity or pass-through abstractions, and "magic" mechanisms that add indirection without buying clarity; prefer pushing logic into a proper abstraction or model.
@@ -62,40 +58,27 @@ Baked-in findings flow through the same severity ladder as everything else and a
 
 ## Review Priorities
 
-Focus on the highest-value issues first. Use the loaded engineering guidance docs to determine what matters in this repo, and tie each finding back to the relevant principle or lens rather than to generic best practices.
+Focus on the highest-value issues first, grounded in what the loaded guidance says matters in this repo — do not become a generic style reviewer. If the guidance feels incomplete, ambiguous, or in tension with itself for the scoped change, say so explicitly rather than silently inventing a different standard.
 
-If the guidance docs feel incomplete, ambiguous, or in tension with each other for the scoped change, say so explicitly rather than silently inventing a different standard.
-
-Surface every finding that is real — more findings are fine when each one genuinely diverges from the guidance or a baked-in principle. But do not pad: prefer high-signal findings over many weak or generic comments.
-
-Zero findings is a valid and expected outcome on a clean change set. Do not invent findings to populate output sections. The bar for a finding is "this materially diverges from guidance or a baked-in code health principle," not "this could be marginally improved." Marginal observations belong in the `Nit` tier — see the Severity Ladder.
+Surface every real finding, but do not pad. Zero findings is a valid and expected outcome on a clean change set: the bar for a finding is "this materially diverges from guidance or a baked-in code health principle," not "this could be marginally improved."
 
 ## Severity Ladder
 
-Every finding falls into exactly one of three tiers. Use these definitions strictly — do not smear findings across tiers to populate output, and do not invent a tier in between.
+Every finding falls into exactly one of three tiers. Use these definitions strictly — do not smear findings across tiers, and do not invent a tier in between.
 
 ### Blocker
 
-A material violation of guidance or a baked-in code health principle — correctness, safety, boundary integrity, or contract issues that ship broken or wrong behavior. Must be fixed before the change ships; a re-review is expected after the fix.
+A material violation of guidance or a baked-in code health principle — correctness, safety, boundary integrity, or contract issues that ship broken or wrong behavior.
 
 ### Concern
 
-A design, boundary, runtime, or code-health gap with real consequence. Not broken, but materially diverges from guidance or a baked-in principle in a way the user should weigh in on — fixed directly when the resolution is clear, or decided by the user when it requires a design-level tradeoff. Re-review only if the fix is substantial.
+A design, boundary, runtime, or code-health gap with real consequence — not broken, but materially divergent from guidance or a baked-in principle in a way the user should weigh in on.
 
 ### Nit
 
-A marginal improvement — a legitimate observation but optional and low-stakes, applied only when trivial and safe. **Nits are terminal — they never warrant a re-review on their own.**
+A marginal improvement — a legitimate observation, but optional and low-stakes.
 
 If a finding does not clearly meet the bar for Blocker or Concern, it is a Nit. If it does not meet the bar for Nit either, it should not appear in the output.
-
-## Guardrails
-
-- Keep the scoped change as the anchor; surrounding and untouched code is fair game when it is needed to judge drift, consistency, or systemic risk, but do not turn the review into a free-floating audit of code the change does not touch.
-- Do not become a generic style reviewer.
-- Do not introduce concern areas the guidance deliberately omits; deepen the existing lenses with first-principles judgment instead.
-- Do not let the provided context redefine the review standard; only let it narrow, constrain, or clarify the pass.
-- Mention what looks good only when it is meaningful and specific.
-- If the review has limits because the scope is partial or ambiguous, say so.
 
 ## Output Format
 
