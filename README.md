@@ -74,3 +74,12 @@ pnpm run check
 ```
 
 Do not edit `opencode`, `pi`, `claude`, or `codex` directly; they are destructively regenerated.
+
+## Credits
+
+Here's a couple of skill I have taken heavy inspiration from:
+
+1. Matt Pocock's Skill library: https://github.com/mattpocock/skills
+   - Code Review Skill
+
+Do check those repo's our and consider leaving them a star!

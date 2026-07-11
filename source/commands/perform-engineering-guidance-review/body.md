@@ -18,7 +18,7 @@ Read three things out of it:
 - **Change goal** — the intended product, user, or engineering outcome of the change. The goal may be stated directly, or by reference to a document — for example "phase 1 of the plan at `docs/plans/foo.md`". When stated by reference, read the referenced document and treat the referenced portion as the goal; if the plan has an accompanying decision log, read it too, so intentional, already-adjudicated deviations are not flagged as findings.
 - **Context** — optional and used sparingly: constraints, intentional tradeoffs, explicit deviations from guidance, or narrowly scoped areas of extra focus.
 
-A stated goal shapes the whole review: judge whether the scoped changes are complete, appropriately scoped, and actually deliver the intended outcome — goal-alignment gaps can be Blockers or Concerns when they materially affect correctness, behavior, or contracts. Absent a goal, review from scope, context, and guidance alone, without flagging its absence. The goal is outcome context, not a replacement for engineering guidance: it can shape severity, but it cannot excuse material guidance violations.
+A stated goal shapes the whole review: judge whether the scoped changes are complete, appropriately scoped, and actually deliver the intended outcome — goal-alignment gaps flow through the normal severity ladder and are reported in the dedicated `Goal Alignment` output section. Absent a goal, review from scope, context, and guidance alone — the absence is never a finding, though the `Goal Alignment` section states it factually as `No goal supplied.` The goal is outcome context, not a replacement for engineering guidance: it can shape severity, but it cannot excuse material guidance violations.
 
 Context refines the review; it never redefines it. It may record real constraints, intentional tradeoffs or deviations from guidance, or ask for extra attention on an in-scope concern — but it may not swap in a different rubric, product direction, or standard of what good looks like. If it tries, ignore that part and say so in the review limits or assumptions.
 
@@ -48,6 +48,7 @@ Beyond the loaded guidance, uphold these universal code-health floors on every r
 - **B — "It works" is not the bar.** Correct-but-messy code that leaves the codebase harder to reason about is a finding, not a pass. When a change makes a file or function materially larger or busier, ask whether it should be decomposed first.
 - **C — Canonical home, reuse, no drift.** Logic should live in its rightful layer or module, reuse existing helpers over near-duplicates, and never leak feature-specific logic into shared or general-purpose paths.
 - **D — No spaghetti growth.** Ad-hoc conditionals, one-off flags, or special cases bolted onto unrelated flows are a design problem, not a nit. Be skeptical of thin wrappers, identity or pass-through abstractions, and "magic" mechanisms that add indirection without buying clarity; prefer pushing logic into a proper abstraction or model.
+- **E — Names and types carry the meaning.** A name that does not reveal what a thing does or holds is a finding — and when no honest name can be found, treat that as evidence the design itself is murky, not as a naming problem to wordsmith around. A domain concept smeared across primitives, or a clump of parameters that keeps traveling together, deserves its own type.
 
 Baked-in findings flow through the same severity ladder as everything else and are reported in their own `Code Health` section — see Output Format.
 
@@ -83,14 +84,19 @@ If the review produces zero Blockers and zero Concerns, state at the top of the 
 
 This signal is driven purely by Blocker and Concern count — it is independent of Nit count and of any Architectural Reflection, and neither Nits nor Architectural Reflections alone ever warrant a re-review.
 
-Group output by the guidance lenses you loaded and applied plus a dedicated `Code Health` section for the baked-in principles, giving N+1 sections where N is the number of applied lenses. Every applied lens and the `Code Health` section must have its own section, even when it has no findings. This makes coverage auditable and prevents unrelated concerns from being blended together.
+Group output by a dedicated `Goal Alignment` section, the guidance lenses you loaded and applied, plus a dedicated `Code Health` section for the baked-in principles, giving N+2 sections where N is the number of applied lenses. The `Goal Alignment` section, every applied lens, and the `Code Health` section must each have their own section, even when they have no findings. This makes coverage auditable and prevents unrelated concerns from being blended together.
 
-Start with a short `Lenses Applied` section listing each loaded/applied lens and the `Code Health` (baked-in) entry with its result, for example:
+Start with a short `Lenses Applied` section listing the `Goal Alignment` entry, each loaded/applied lens, and the `Code Health` (baked-in) entry with its result, for example:
 
+- `Goal Alignment` — no findings
 - `Runtime Behavior` — 1 Concern
 - `Failure Handling` — no findings
 - `Test Adequacy` — 1 Nit
 - `Code Health` (baked-in) — 1 Concern
+
+`Goal Alignment` comes first among the findings sections: what the change delivers outranks how it is built. When no goal was supplied, its entire content is `No goal supplied.` When a goal was supplied, it holds three kinds of findings, all flowing through the normal severity ladder: parts of the goal that are missing or only partially delivered, behavior or contract changes the goal did not ask for (behavior-neutral cleanup is not a finding), and parts that look implemented but implement the goal wrongly.
+
+Boundary rule: `Goal Alignment` holds findings about **what** the change delivers versus the stated goal; lens and `Code Health` sections hold findings about **how** it is built. Every finding lives in exactly one section — a failure-handling bug belongs in its lens even though it also leaves the goal short.
 
 When present, an `Architectural Reflection` comes here, before `Findings by Section` — a shape-level call outranks detail-level findings and keeps the consumer of the review from patching before weighing whether the shape itself should change. It sits outside the severity ladder: use it when the change works but a simpler mental model or solution shape would serve the outcome materially better. Frame it as a proposal to weigh against the original plan — *consider, not comply* — never a directive. Include it only when you genuinely see a simpler shape; zero is the normal case, and it never triggers a re-review.
 
@@ -100,20 +106,20 @@ For each reflection, give:
 - a technical blast-radius estimate (code and boundaries touched) — you estimate the cost; whoever acts on the review weighs it against the plan to adopt, escalate, or defer
 - a concrete path to get there, not just "consider refactoring"
 
-Then return `Findings by Section`. Within each lens section and the `Code Health` section, return findings in this order:
+Then return `Findings by Section`, starting with `Goal Alignment`. Within the `Goal Alignment` section, each lens section, and the `Code Health` section, return findings in this order:
 
 1. `Blocker`
 2. `Concern`
 3. `Nit`
 
-If an applied lens or the `Code Health` section has no findings, say `No findings.` in that section.
+If a section has no findings, say `No findings.` in that section — except `Goal Alignment` when no goal was supplied, which says `No goal supplied.` instead.
 
 For each finding include:
 
 - a short title
 - why it matters
 - concrete evidence from the changes
-- the relevant engineering guidance principle or lens, or the baked-in code health principle (A–D)
+- the relevant engineering guidance principle or lens, the baked-in code health principle (A–E), or the part of the stated goal the finding is judged against
 - a **suggested direction** for the fix where it adds signal — a starting point, not a prescription; severity, not this suggestion, decides whether the finding must be addressed. Skip obvious fixes; route re-architecture-scale fixes to an Architectural Reflection.
 
 If there are no findings at all, say so explicitly.
