@@ -1,0 +1,10 @@
+kind: command
+frontmatter:
+  description: Walk through and revise an implementation plan with the user until its architecture is understood and internally consistent
+targets:
+  opencode: {}
+  pi: {}
+  claude:
+    as: skill
+  codex:
+    as: skill

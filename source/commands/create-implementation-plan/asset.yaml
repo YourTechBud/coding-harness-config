@@ -1,6 +1,6 @@
 kind: command
 frontmatter:
-  description: Turn a brainstorming session into a phased, self-sufficient implementation plan
+  description: Create a phased, self-sufficient implementation plan from the current brainstorming context
 targets:
   opencode: {}
   pi: {}
