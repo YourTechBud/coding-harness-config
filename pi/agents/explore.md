@@ -13,7 +13,7 @@ description: |
     "Find where WebSocket connections are established and closed."
     "Locate the config that controls retry behavior for the HTTP client."
     "Which files implement the `task` tool and its schema?"
-model: openai-codex/gpt-5.4-mini
+model: openai-codex/gpt-5.6-luna
 thinkingLevel: low
 ---
 
