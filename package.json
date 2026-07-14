@@ -14,7 +14,9 @@
     "pi:install": "tsx generator/harness-install.ts install pi",
     "pi:clear": "tsx generator/harness-install.ts clear pi",
     "claude:install": "tsx generator/harness-install.ts install claude",
-    "claude:clear": "tsx generator/harness-install.ts clear claude"
+    "claude:clear": "tsx generator/harness-install.ts clear claude",
+    "isagi:install": "tsx generator/harness-install.ts install isagi",
+    "isagi:clear": "tsx generator/harness-install.ts clear isagi"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

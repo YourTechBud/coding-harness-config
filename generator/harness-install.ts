@@ -9,7 +9,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const MANIFEST_ROOT = path.join(REPO_ROOT, ".install-manifests");
 const LEGACY_MANIFEST_RELATIVE_PATH = path.join(".managed", "coding-harness-config", "manifest.json");
 
-const HARNESSES = ["codex", "opencode", "pi", "claude"] as const;
+const HARNESSES = ["codex", "opencode", "pi", "claude", "isagi"] as const;
 type HarnessName = (typeof HARNESSES)[number];
 type Command = "install" | "clear";
 type SettingsMode = "setIfMissing" | "appendIfMissing";
@@ -100,6 +100,12 @@ const HARNESS_CONFIG: Record<HarnessName, HarnessConfig> = {
 			{ sourcePrefix: "skills", destPrefix: "skills" },
 			{ sourcePrefix: "agents", destPrefix: "agents" },
 		],
+	},
+	isagi: {
+		displayName: "Isagi",
+		generatedDir: "isagi",
+		home: () => path.join(os.homedir(), ".isagi"),
+		mappings: [{ sourcePrefix: "workflows", destPrefix: "workflows" }],
 	},
 };
 

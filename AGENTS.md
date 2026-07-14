@@ -13,18 +13,18 @@ Canonical source
 
 Generated harness directories
 
-- `opencode`, `pi`, `claude`, and `codex` are fully generated. Do not edit them directly.
+- `opencode`, `pi`, `claude`, `codex`, and `isagi` are fully generated. Do not edit them directly.
 - These directories are destructively recreated by `pnpm run generate`; make all changes under `source/` instead.
 - Generated outputs are committed so consumers can use the repo without running generation after every pull.
 
 Generation and install commands
 
-- `pnpm run generate`: recreate `opencode`, `pi`, `claude`, and `codex` from `source/`, then run `npm install` in generated Pi extension folders that contain a `package.json`.
+- `pnpm run generate`: recreate `opencode`, `pi`, `claude`, `codex`, and `isagi` from `source/`, run `npm install` in generated Pi extension folders that contain a `package.json`, and run `pnpm install --frozen-lockfile` in generated Isagi workflow folders that contain a `package.json`.
 - `pnpm run check`: verify committed generated outputs match `source/`.
-- `pnpm run harness:install`: copy generated assets for Codex, OpenCode, Pi, and Claude Code into each harness home, overwriting repo-managed destination files.
+- `pnpm run harness:install`: copy generated assets for Codex, OpenCode, Pi, Claude Code, and Isagi into each harness home, overwriting repo-managed destination files.
 - `pnpm run harness:clear`: remove the currently generated repo-managed files from each harness home.
 - `pnpm run harness:sync`: run generation once, then install all harnesses.
-- Per-harness install/clear scripts also exist: `codex:*`, `opencode:*`, `pi:*`, and `claude:*`.
+- Per-harness install/clear scripts also exist: `codex:*`, `opencode:*`, `pi:*`, `claude:*`, and `isagi:*`.
 
 After changing canonical assets or generator behavior, suggest that the user run `pnpm run generate` and `pnpm run harness:install` so generated outputs and global harness installs are refreshed.
 

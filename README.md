@@ -1,8 +1,8 @@
 # coding-harness-config
 
-Shared config directory containing **skills**, **commands/prompts**, **agents**, and **extensions** for the various coding harnesses YourTechBud uses (OpenCode, Pi, Claude Code, Codex).
+Shared config directory containing **skills**, **commands/prompts**, **agents**, **extensions**, and **workflows** for the various coding harnesses YourTechBud uses (OpenCode, Pi, Claude Code, Codex, Isagi).
 
-Canonical assets live under `source/`. Harness outputs are generated as direct root directories (`opencode`, `pi`, `claude`, `codex`) and committed for direct consumption.
+Canonical assets live under `source/`. Harness outputs are generated as direct root directories (`opencode`, `pi`, `claude`, `codex`, `isagi`) and committed for direct consumption.
 
 ## Install / sync
 
@@ -35,6 +35,7 @@ pnpm run codex:install   # or codex:clear
 pnpm run opencode:install
 pnpm run pi:install
 pnpm run claude:install
+pnpm run isagi:install
 ```
 
 ## Install locations
@@ -45,6 +46,7 @@ pnpm run claude:install
 | OpenCode    | `${OPENCODE_CONFIG_DIR:-~/.config/opencode}/skills`, `commands`, `agents`       |
 | Pi          | `${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills`, `prompts`, `agents`, `extensions` |
 | Claude Code | `${CLAUDE_CONFIG_DIR:-~/.claude}/skills`, `agents`                              |
+| Isagi       | `~/.isagi/workflows`                                                            |
 
 ## Settings operations
 
@@ -59,7 +61,7 @@ OpenCode settings operations target `${OPENCODE_CONFIG_DIR:-~/.config/opencode}/
 
 The installer copies Pi skills, prompts, agents, and extensions directly from `pi/` into `${PI_CODING_AGENT_DIR:-~/.pi/agent}`, so Pi settings do not need repo-local `skills`, `prompts`, `agents`, or `extensions` paths.
 
-`pnpm run generate` runs `npm install` for generated Pi extensions that contain a `package.json`. `pnpm run harness:install` then copies the generated extensions, including installed `node_modules`, into the Pi agent home.
+`pnpm run generate` runs `npm install` for generated Pi extensions and `pnpm install --frozen-lockfile` for generated Isagi workflows that contain a `package.json`. `pnpm run harness:install` copies those generated packages, including installed `node_modules`, into their harness homes. Managed packages are removed in full before replacements are copied.
 
 The Pi `codex-fast-model` extension reads `codexFastModels` and registers `openai-codex/gpt-5.5-fast` as a local alias that sends upstream requests to `gpt-5.5` with `service_tier: "priority"`.
 
@@ -73,7 +75,7 @@ pnpm run harness:install
 pnpm run check
 ```
 
-Do not edit `opencode`, `pi`, `claude`, or `codex` directly; they are destructively regenerated.
+Do not edit `opencode`, `pi`, `claude`, `codex`, or `isagi` directly; they are destructively regenerated.
 
 ## Credits
 

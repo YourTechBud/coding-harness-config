@@ -6,3 +6,7 @@ scratch/**
 TODO.md
 source/skills/brainstorming-blog-scope-blueprint
 dist
+!source/harnesses/isagi/**/dist/
+!source/harnesses/isagi/**/dist/**
+!isagi/**/dist/
+!isagi/**/dist/**

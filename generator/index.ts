@@ -15,7 +15,7 @@ import { renderCodex } from "./renderers/codex.ts";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_DIR = path.join(REPO_ROOT, "source");
-const OUTPUT_DIRS = ["opencode", "pi", "claude", "codex"];
+const OUTPUT_DIRS = ["opencode", "pi", "claude", "codex", "isagi"];
 const LEGACY_OUTPUT_DIRS = ["generated", ".opencode", ".pi", ".claude", ".codex"];
 
 interface RenderedFile {
@@ -144,16 +144,15 @@ async function writeRendered(outputRoot: string, files: RenderedFile[]): Promise
   }
 }
 
-async function findPiExtensionPackageDirs(outputRoot: string): Promise<string[]> {
+async function findPackageDirs(parentDir: string): Promise<string[]> {
   const packageDirs: string[] = [];
-  const piExtensionsDir = path.join(outputRoot, "pi", "extensions");
-  if (!(await pathExists(piExtensionsDir))) return packageDirs;
+  if (!(await pathExists(parentDir))) return packageDirs;
 
-  const entries = await fs.readdir(piExtensionsDir, { withFileTypes: true });
+  const entries = await fs.readdir(parentDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name === "node_modules") continue;
-    const extensionDir = path.join(piExtensionsDir, entry.name);
-    if (await pathExists(path.join(extensionDir, "package.json"))) packageDirs.push(extensionDir);
+    const packageDir = path.join(parentDir, entry.name);
+    if (await pathExists(path.join(packageDir, "package.json"))) packageDirs.push(packageDir);
   }
 
   return packageDirs.sort();
@@ -174,9 +173,14 @@ async function runCommand(command: string, args: string[], cwd: string): Promise
 }
 
 async function runPostGenerateHooks(outputRoot: string): Promise<void> {
-  for (const packageDir of await findPiExtensionPackageDirs(outputRoot)) {
+  for (const packageDir of await findPackageDirs(path.join(outputRoot, "pi", "extensions"))) {
     console.log(`Installing npm dependencies in ${path.relative(REPO_ROOT, packageDir)}`);
     await runCommand("npm", ["install"], packageDir);
+  }
+
+  for (const packageDir of await findPackageDirs(path.join(outputRoot, "isagi", "workflows"))) {
+    console.log(`Installing pnpm dependencies in ${path.relative(REPO_ROOT, packageDir)}`);
+    await runCommand("pnpm", ["install", "--frozen-lockfile"], packageDir);
   }
 }
 
@@ -195,6 +199,7 @@ async function generateTo(outputRoot: string, resetOutputs: boolean, runHooks: b
   }
 
   await copyHarnesses(outputRoot);
+  await fs.mkdir(path.join(outputRoot, "isagi", "workflows"), { recursive: true });
   const assets = await discoverAssets();
   await writeRendered(outputRoot, renderAssets(assets));
   if (runHooks) await runPostGenerateHooks(outputRoot);
