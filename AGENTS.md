@@ -34,6 +34,10 @@ Pi specific config
 - When planning changes to Pi extensions (new or existing) always take into account how the change will affect other extensions. Don't worry about the `multi-agent` extension. That's legacy.
 - All Pi extension code is present in `source/harnesses/pi/extensions`.
 
+Isagi specific config
+
+- ALl Isagi workflows is present in `source/harnesses/isagi/workflows`.
+
 ## Rules for authoring sources (like skills, commands, subagents, workflows)
 
 - Always load the prompting guides:

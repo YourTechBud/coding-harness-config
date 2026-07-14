@@ -1,0 +1,23 @@
+{
+  "name": "isagi-workflow-implement-phase-wise-plan",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.4.0",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=node --target=node22 --log-override:unsupported-dynamic-import=error --outfile=dist/index.js",
+    "verify": "isagi-workflow-verify --workflow ."
+  },
+  "dependencies": {
+    "@yourtechbudstudio/isagi-workflow-sdk": "0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@yourtechbudstudio/isagi-workflow-verifier": "0.0.1",
+    "esbuild": "0.28.0",
+    "tsx": "4.21.0",
+    "typescript": "7.0.2"
+  }
+}
