@@ -39,3 +39,13 @@ export const headlessJudgment = {
   readonly model: string;
   readonly effort: string;
 };
+
+export const draftCommitter = {
+  harness: "codex",
+  model: "gpt-5.6-luna",
+  effort: "low",
+} satisfies {
+  readonly harness: WorkflowAgentHarness;
+  readonly model: string;
+  readonly effort: string;
+};

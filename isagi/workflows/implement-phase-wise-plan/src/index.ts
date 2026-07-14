@@ -9,17 +9,23 @@ import {
   type WorkflowConversationMessage,
   type WorkflowContext,
   type WorkflowResult,
-} from "@yourtechbudstudio/isagi-workflow-sdk";
+} from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import {
+  draftCommitter,
   headlessJudgment,
   implementerGeneric,
   implementerProseHeavy,
   implementerUiHeavy,
   type ImplementerKind,
   type ImplementerProfile,
-} from "./constants.js";
-import { setWorkflowStatus } from "./feedback.js";
+} from './constants.js';
+import {
+  completedSingleDraftCommitResult,
+  draftCommitPrompt,
+  parseDraftCommitResult,
+} from './draft-commit.js';
+import { setWorkflowStatus } from './feedback.js';
 import {
   classifyImplementerOutcomePrompt,
   classifyPhaseImplementationKindPrompt,
@@ -34,18 +40,18 @@ import {
   parsePlannerOutcomeResult,
   type NormalizedDiscoveryResult,
   type PlannerOutcome,
-} from "./judgments.js";
+} from './judgments.js';
 
 type CommonState = {
-  readonly stateVersion: 2;
+  readonly stateVersion: 4;
+  readonly autoCommit: boolean;
+  readonly autoReview: boolean;
   readonly humanInTheLoop: boolean;
   readonly plannerSessionId: number;
 };
 
 type DiscoveryState = CommonState & {
-  readonly stage:
-    | { readonly kind: "discover-plan" }
-    | { readonly kind: "await-plan-discovery" };
+  readonly stage: { readonly kind: 'discover-plan' } | { readonly kind: 'await-plan-discovery' };
 };
 
 type PlanContext = {
@@ -61,54 +67,67 @@ type Implementer = {
   readonly paneId: number;
 };
 
-type ImplementerActivity = "alignment" | "implementation";
+type ImplementerActivity = 'alignment' | 'implementation';
 
 type ActiveStage =
-  | { readonly kind: "confirm-plan" }
-  | { readonly kind: "select-implementer" }
-  | { readonly kind: "await-implementer-selection" }
+  | { readonly kind: 'confirm-plan' }
+  | { readonly kind: 'select-implementer' }
+  | { readonly kind: 'await-implementer-selection' }
   | {
-      readonly kind: "spawn-implementer";
+      readonly kind: 'spawn-implementer';
       readonly profile: ImplementerProfile;
     }
   | {
-      readonly kind: "await-implementer-turn";
+      readonly kind: 'await-implementer-turn';
       readonly implementer: Implementer;
       readonly activity: ImplementerActivity;
       readonly exchangeNumber: number;
     }
   | {
-      readonly kind: "await-implementer-outcome";
+      readonly kind: 'await-implementer-outcome';
       readonly implementer: Implementer;
       readonly implementerTurn: string;
       readonly exchangeNumber: number;
     }
   | {
-      readonly kind: "await-planner-turn";
+      readonly kind: 'await-planner-turn';
       readonly implementer: Implementer;
       readonly exchangeNumber: number;
     }
   | {
-      readonly kind: "await-planner-outcome";
+      readonly kind: 'await-planner-outcome';
       readonly implementer: Implementer;
       readonly plannerTurn: string;
       readonly exchangeNumber: number;
     }
   | {
-      readonly kind: "await-severe-flag-resolution";
+      readonly kind: 'await-severe-flag-resolution';
       readonly implementer: Implementer;
       readonly exchangeNumber: number;
     }
   | {
-      readonly kind: "await-phase-review";
+      readonly kind: 'await-auto-review';
+      readonly implementer: Implementer;
+      readonly runId: number;
+    }
+  | {
+      readonly kind: 'await-phase-review';
       readonly implementer: Implementer;
     }
   | {
-      readonly kind: "advance-phase";
+      readonly kind: 'start-draft-commit';
       readonly implementer: Implementer;
     }
   | {
-      readonly kind: "done";
+      readonly kind: 'await-draft-commit';
+      readonly implementer: Implementer;
+    }
+  | {
+      readonly kind: 'advance-phase';
+      readonly implementer: Implementer;
+    }
+  | {
+      readonly kind: 'done';
       readonly finalImplementer?: Implementer | undefined;
     };
 
@@ -120,55 +139,79 @@ type ActiveState = CommonState & {
 type State = DiscoveryState | ActiveState;
 
 type Variables = {
+  readonly autoCommit?: unknown;
+  readonly autoReview?: unknown;
   readonly humanInTheLoop?: unknown;
 };
 
-const humanInTheLoopInput = {
-  kind: "select" as const,
-  key: "humanInTheLoop",
-  label: "Human in the loop",
+const autoCommitInput = {
+  kind: 'select' as const,
+  key: 'autoCommit',
+  label: 'Automatic draft commit',
   options: [
-    { value: "yes", label: "Yes, pause after each phase" },
-    { value: "no", label: "No, run through phases" },
+    { value: 'yes', label: 'Yes, create a draft commit after each phase' },
+    { value: 'no', label: 'No, leave phase changes uncommitted' },
   ],
-  default: "yes",
+  default: 'yes',
+};
+
+const autoReviewInput = {
+  kind: 'select' as const,
+  key: 'autoReview',
+  label: 'Automatic engineering guidance review',
+  options: [
+    { value: 'yes', label: 'Yes, review every completed phase' },
+    { value: 'no', label: 'No, skip automatic review' },
+  ],
+  default: 'yes',
+};
+
+const humanInTheLoopInput = {
+  kind: 'select' as const,
+  key: 'humanInTheLoop',
+  label: 'Human in the loop',
+  options: [
+    { value: 'yes', label: 'Yes, pause after each phase' },
+    { value: 'no', label: 'No, run through phases' },
+  ],
+  default: 'yes',
 };
 
 export default defineWorkflow<State, Variables>({
   command: () => ({
-    title: "Implement Phase-wise Plan",
-    description:
-      "Route a phase-wise plan through a fresh implementer per phase.",
-    inputs: [humanInTheLoopInput],
+    title: 'Implement Phase-wise Plan',
+    description: 'Route a phase-wise plan through a fresh implementer per phase.',
+    inputs: [humanInTheLoopInput, autoReviewInput, autoCommitInput],
   }),
   validate: (launchCtx, variables) => {
-    if (
-      launchCtx.agentSessionId === null ||
-      launchCtx.agentSessionId === undefined
-    ) {
-      throw new Error("Start this workflow from the planner agent pane.");
+    if (launchCtx.agentSessionId === null || launchCtx.agentSessionId === undefined) {
+      throw new Error('Start this workflow from the planner agent pane.');
     }
     parseHumanInTheLoop(variables.humanInTheLoop);
+    parseAutoReview(variables.autoReview);
+    parseAutoCommit(variables.autoCommit);
   },
   init: (launchCtx, variables): State => ({
-    stateVersion: 2,
-    humanInTheLoop: parseHumanInTheLoop(variables.humanInTheLoop) === "yes",
+    stateVersion: 4,
+    autoCommit: parseAutoCommit(variables.autoCommit) === 'yes',
+    autoReview: parseAutoReview(variables.autoReview) === 'yes',
+    humanInTheLoop: parseHumanInTheLoop(variables.humanInTheLoop) === 'yes',
     plannerSessionId: launchCtx.agentSessionId as number,
-    stage: { kind: "discover-plan" },
+    stage: { kind: 'discover-plan' },
   }),
   step: async (ctx, state, event) => {
     await logTransition(ctx, state);
 
     switch (state.stage.kind) {
-      case "discover-plan": {
-        await setWorkflowStatus(ctx, { kind: "discovering-plan" });
+      case 'discover-plan': {
+        await setWorkflowStatus(ctx, { kind: 'discovering-plan' });
         const plannerConversation = await fullConversationTextOrFail(ctx, {
           agentSessionId: state.plannerSessionId,
-          label: "planner",
+          label: 'planner',
         });
         if (!plannerConversation.ok) return plannerConversation.result;
         return startHeadlessJudgment(ctx, {
-          judgment: "discoverPlan",
+          judgment: 'discoverPlan',
           prompt: discoverPlanPrompt({
             worktreePath: ctx.worktreePath,
             plannerSessionId: state.plannerSessionId,
@@ -176,35 +219,31 @@ export default defineWorkflow<State, Variables>({
           }),
           nextState: {
             ...state,
-            stage: { kind: "await-plan-discovery" },
+            stage: { kind: 'await-plan-discovery' },
           } satisfies State,
         });
       }
 
-      case "await-plan-discovery": {
+      case 'await-plan-discovery': {
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "discoverPlan",
-          failureMessage: "The current plan could not be discovered",
+          name: 'discoverPlan',
+          failureMessage: 'The current plan could not be discovered',
           parse: parseDiscoveryResult,
         });
         if (!judgment.ok) return judgment.result;
-        const discovery = await normalizeDiscoveryOrFail(
-          ctx,
-          judgment.value,
-          ctx.worktreePath,
-        );
+        const discovery = await normalizeDiscoveryOrFail(ctx, judgment.value, ctx.worktreePath);
         if (!discovery.ok) return discovery.result;
         const normalized = discovery.value;
         if (!normalized) {
           return failWorkflow(
             ctx,
-            "No phase-wise plan was found in the planner conversation",
-            "No phase-wise plan was found during discovery.",
+            'No phase-wise plan was found in the planner conversation',
+            'No phase-wise plan was found during discovery.',
           );
         }
         const activeState = activatePlan(state, normalized);
         await setWorkflowStatus(ctx, {
-          kind: "plan-ready",
+          kind: 'plan-ready',
           entryPlanPath: activeState.plan.entryPlanPath,
           decisionLogPath: activeState.plan.decisionLogPath,
           phaseCount: activeState.plan.phaseCount,
@@ -212,45 +251,45 @@ export default defineWorkflow<State, Variables>({
           nextPhase: activeState.plan.currentPhase,
         });
         await ctx.log(
-          "info",
+          'info',
           `Plan found at ${activeState.plan.entryPlanPath} with ${activeState.plan.phaseCount} phases. Decision log: ${activeState.plan.decisionLogPath}. Completed phases: ${activeState.plan.completedPhaseCount}. Next phase: ${activeState.plan.currentPhase}.`,
         );
         return suspend(activeState, wait.userContinue());
       }
 
-      case "confirm-plan": {
+      case 'confirm-plan': {
         const activeState = requireActiveState(state);
         if (!workflowEvent.isUserContinue(event)) {
           return failWorkflow(
             ctx,
-            "Plan confirmation could not be resumed",
-            "Plan confirmation resumed with an unexpected event.",
+            'Plan confirmation could not be resumed',
+            'Plan confirmation resumed with an unexpected event.',
           );
         }
         if (activeState.plan.currentPhase > activeState.plan.phaseCount) {
-          await setWorkflowStatus(ctx, { kind: "complete" });
+          await setWorkflowStatus(ctx, { kind: 'complete' });
           await ctx.log(
-            "info",
+            'info',
             `The decision log already contains all ${activeState.plan.phaseCount} phase decisions.`,
           );
-          return cont(withStage(activeState, { kind: "done" }) satisfies State);
+          return cont(withStage(activeState, { kind: 'done' }) satisfies State);
         }
         return cont(
           withStage(activeState, {
-            kind: "select-implementer",
+            kind: 'select-implementer',
           }) satisfies State,
         );
       }
 
-      case "select-implementer": {
+      case 'select-implementer': {
         const activeState = requireActiveState(state);
         await setWorkflowStatus(ctx, {
-          kind: "preparing-phase",
+          kind: 'preparing-phase',
           phase: activeState.plan.currentPhase,
           phaseCount: activeState.plan.phaseCount,
         });
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyPhaseImplementationKind",
+          judgment: 'classifyPhaseImplementationKind',
           prompt: classifyPhaseImplementationKindPrompt({
             worktreePath: ctx.worktreePath,
             phaseNumber: activeState.plan.currentPhase,
@@ -258,39 +297,37 @@ export default defineWorkflow<State, Variables>({
             entryPlanPath: activeState.plan.entryPlanPath,
           }),
           nextState: withStage(activeState, {
-            kind: "await-implementer-selection",
+            kind: 'await-implementer-selection',
           }),
         });
       }
 
-      case "await-implementer-selection": {
+      case 'await-implementer-selection': {
         const activeState = requireActiveState(state);
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyPhaseImplementationKind",
+          name: 'classifyPhaseImplementationKind',
           failureMessage: `The implementer for phase ${activeState.plan.currentPhase} could not be selected`,
           parse: parsePhaseImplementationKindResult,
         });
         if (!judgment.ok) return judgment.result;
-        const profile = selectImplementerProfile(
-          judgment.value.implementationKind,
-        );
+        const profile = selectImplementerProfile(judgment.value.implementationKind);
         await ctx.log(
-          "info",
+          'info',
           `Selected the ${profile.kind} implementer profile for phase ${activeState.plan.currentPhase}.`,
         );
         return cont(
           withStage(activeState, {
-            kind: "spawn-implementer",
+            kind: 'spawn-implementer',
             profile,
           }) satisfies State,
         );
       }
 
-      case "spawn-implementer": {
+      case 'spawn-implementer': {
         const activeState = requireActiveState(state);
         const profile = state.stage.profile;
         await setWorkflowStatus(ctx, {
-          kind: "implementer-aligning",
+          kind: 'implementer-aligning',
           phase: activeState.plan.currentPhase,
           phaseCount: activeState.plan.phaseCount,
         });
@@ -308,35 +345,35 @@ export default defineWorkflow<State, Variables>({
           paneId: spawned.paneId,
         } satisfies Implementer;
         await ctx.log(
-          "info",
+          'info',
           `Spawned ${profile.kind} implementer for phase ${activeState.plan.currentPhase}/${activeState.plan.phaseCount}: harness=${profile.harness}, model=${profile.model}, effort=${profile.effort}, agentSessionId=${implementer.agentSessionId}, paneId=${implementer.paneId}.`,
         );
         return suspend(
           withStage(activeState, {
-            kind: "await-implementer-turn",
+            kind: 'await-implementer-turn',
             implementer,
-            activity: "alignment",
+            activity: 'alignment',
             exchangeNumber: 1,
           }),
           wait.agentTurn(spawned),
         );
       }
 
-      case "await-implementer-turn": {
+      case 'await-implementer-turn': {
         const activeState = requireActiveState(state);
         const ended = await requireEndedTurn(ctx, event, {
-          role: "implementer",
+          role: 'implementer',
           phaseNumber: activeState.plan.currentPhase,
         });
         if (!ended.ok) return ended.result;
         const implementerTurn = await latestAssistantTurnOrFail(ctx, {
           agentSessionId: state.stage.implementer.agentSessionId,
-          label: "implementer",
+          label: 'implementer',
           phaseNumber: activeState.plan.currentPhase,
         });
         if (!implementerTurn.ok) return implementerTurn.result;
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyImplementerOutcome",
+          judgment: 'classifyImplementerOutcome',
           prompt: classifyImplementerOutcomePrompt({
             worktreePath: ctx.worktreePath,
             phaseNumber: activeState.plan.currentPhase,
@@ -345,7 +382,7 @@ export default defineWorkflow<State, Variables>({
             implementerTurn: implementerTurn.text,
           }),
           nextState: withStage(activeState, {
-            kind: "await-implementer-outcome",
+            kind: 'await-implementer-outcome',
             implementer: state.stage.implementer,
             implementerTurn: implementerTurn.text,
             exchangeNumber: state.stage.exchangeNumber,
@@ -353,15 +390,15 @@ export default defineWorkflow<State, Variables>({
         });
       }
 
-      case "await-implementer-outcome": {
+      case 'await-implementer-outcome': {
         const activeState = requireActiveState(state);
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyImplementerOutcome",
+          name: 'classifyImplementerOutcome',
           failureMessage: `The implementer response for phase ${activeState.plan.currentPhase} could not be classified`,
           parse: parseImplementerOutcomeResult,
         });
         if (!judgment.ok) return judgment.result;
-        if (judgment.value.outcome === "phase-complete") {
+        if (judgment.value.outcome === 'phase-complete') {
           return completePhase(ctx, activeState, state.stage.implementer);
         }
         return routeImplementerTurnToPlanner(ctx, activeState, {
@@ -371,28 +408,28 @@ export default defineWorkflow<State, Variables>({
         });
       }
 
-      case "await-planner-turn": {
+      case 'await-planner-turn': {
         const activeState = requireActiveState(state);
         const ended = await requireEndedTurn(ctx, event, {
-          role: "planner",
+          role: 'planner',
           phaseNumber: activeState.plan.currentPhase,
         });
         if (!ended.ok) return ended.result;
         const plannerTurn = await latestAssistantTurnOrFail(ctx, {
           agentSessionId: activeState.plannerSessionId,
-          label: "planner",
+          label: 'planner',
           phaseNumber: activeState.plan.currentPhase,
         });
         if (!plannerTurn.ok) return plannerTurn.result;
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyPlannerOutcome",
+          judgment: 'classifyPlannerOutcome',
           prompt: classifyPlannerOutcomePrompt({
             phaseNumber: activeState.plan.currentPhase,
             phaseCount: activeState.plan.phaseCount,
             plannerTurn: plannerTurn.text,
           }),
           nextState: withStage(activeState, {
-            kind: "await-planner-outcome",
+            kind: 'await-planner-outcome',
             implementer: state.stage.implementer,
             plannerTurn: plannerTurn.text,
             exchangeNumber: state.stage.exchangeNumber,
@@ -400,26 +437,26 @@ export default defineWorkflow<State, Variables>({
         });
       }
 
-      case "await-planner-outcome": {
+      case 'await-planner-outcome': {
         const activeState = requireActiveState(state);
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyPlannerOutcome",
+          name: 'classifyPlannerOutcome',
           failureMessage: `The planner response for phase ${activeState.plan.currentPhase} could not be classified`,
           parse: parsePlannerOutcomeResult,
         });
         if (!judgment.ok) return judgment.result;
-        if (judgment.value.outcome === "severe-flag") {
+        if (judgment.value.outcome === 'severe-flag') {
           await setWorkflowStatus(ctx, {
-            kind: "severe-flag",
+            kind: 'severe-flag',
             phase: activeState.plan.currentPhase,
           });
           await ctx.log(
-            "warning",
+            'warning',
             `Planner raised a severe flag during phase ${activeState.plan.currentPhase}; waiting for human resolution.`,
           );
           return suspend(
             withStage(activeState, {
-              kind: "await-severe-flag-resolution",
+              kind: 'await-severe-flag-resolution',
               implementer: state.stage.implementer,
               exchangeNumber: state.stage.exchangeNumber,
             }),
@@ -434,23 +471,23 @@ export default defineWorkflow<State, Variables>({
         });
       }
 
-      case "await-severe-flag-resolution": {
+      case 'await-severe-flag-resolution': {
         const activeState = requireActiveState(state);
         if (!workflowEvent.isUserContinue(event)) {
           return failWorkflow(
             ctx,
             `The severe flag pause for phase ${activeState.plan.currentPhase} could not be resumed`,
-            "Severe flag resolution resumed with an unexpected event.",
+            'Severe flag resolution resumed with an unexpected event.',
           );
         }
         const plannerTurn = await latestAssistantTurnOrFail(ctx, {
           agentSessionId: activeState.plannerSessionId,
-          label: "planner",
+          label: 'planner',
           phaseNumber: activeState.plan.currentPhase,
         });
         if (!plannerTurn.ok) return plannerTurn.result;
         await ctx.log(
-          "info",
+          'info',
           `Human continued after the severe flag in phase ${activeState.plan.currentPhase}; sending the latest planner turn verbatim without reclassification.`,
         );
         return sendRawPlannerTurnAfterHumanResolution(ctx, activeState, {
@@ -460,44 +497,109 @@ export default defineWorkflow<State, Variables>({
         });
       }
 
-      case "await-phase-review": {
+      case 'await-auto-review': {
+        const activeState = requireActiveState(state);
+        const reviewResult = readSuccessfulReviewChildResult(event, state.stage.runId);
+        if (!reviewResult.ok) {
+          return failWorkflow(
+            ctx,
+            `Automatic review failed for phase ${activeState.plan.currentPhase}`,
+            `Automatic review child workflow ${state.stage.runId} failed: ${reviewResult.reason}`,
+          );
+        }
+        await ctx.log(
+          'info',
+          `Automatic review child workflow ${state.stage.runId} completed phase ${activeState.plan.currentPhase} after ${reviewResult.reviewCount} review rounds.`,
+        );
+        return continueAfterAutoReview(ctx, activeState, state.stage.implementer);
+      }
+
+      case 'await-phase-review': {
         const activeState = requireActiveState(state);
         if (!workflowEvent.isUserContinue(event)) {
           return failWorkflow(
             ctx,
             `Phase ${activeState.plan.currentPhase} review could not be resumed`,
-            "Phase review resumed with an unexpected event.",
+            'Phase review resumed with an unexpected event.',
           );
         }
+        await ctx.log('info', `Human review completed for phase ${activeState.plan.currentPhase}.`);
+        return continueAfterHumanApproval(activeState, state.stage.implementer);
+      }
+
+      case 'start-draft-commit': {
+        const activeState = requireActiveState(state);
+        await setWorkflowStatus(ctx, {
+          kind: 'draft-commit',
+          phase: activeState.plan.currentPhase,
+          phaseCount: activeState.plan.phaseCount,
+        });
+        const op = await ctx.runHeadlessAgent({
+          harness: draftCommitter.harness,
+          model: draftCommitter.model,
+          effort: draftCommitter.effort,
+          prompt: draftCommitPrompt({
+            worktreePath: ctx.worktreePath,
+            phaseNumber: activeState.plan.currentPhase,
+            phaseCount: activeState.plan.phaseCount,
+            entryPlanPath: activeState.plan.entryPlanPath,
+          }),
+        });
         await ctx.log(
-          "info",
-          `Human review completed for phase ${activeState.plan.currentPhase}.`,
+          'info',
+          `Started draft commit op ${op.opId} for phase ${activeState.plan.currentPhase}.`,
         );
+        return suspend(
+          withStage(activeState, {
+            kind: 'await-draft-commit',
+            implementer: state.stage.implementer,
+          }),
+          wait.headlessAgent(op),
+        );
+      }
+
+      case 'await-draft-commit': {
+        const activeState = requireActiveState(state);
+        try {
+          const result = completedSingleDraftCommitResult(event);
+          const commit = parseDraftCommitResult(result.output ?? '');
+          await ctx.log(
+            'info',
+            `Created draft commit ${commit.commit} for phase ${activeState.plan.currentPhase}: ${commit.subject}.`,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return failWorkflow(
+            ctx,
+            `Draft commit failed for phase ${activeState.plan.currentPhase}`,
+            `Draft commit failed for phase ${activeState.plan.currentPhase}: ${message}`,
+          );
+        }
         return cont(
           withStage(activeState, {
-            kind: "advance-phase",
+            kind: 'advance-phase',
             implementer: state.stage.implementer,
           }) satisfies State,
         );
       }
 
-      case "advance-phase": {
+      case 'advance-phase': {
         const activeState = requireActiveState(state);
         if (activeState.plan.currentPhase >= activeState.plan.phaseCount) {
-          await setWorkflowStatus(ctx, { kind: "complete" });
+          await setWorkflowStatus(ctx, { kind: 'complete' });
           await ctx.log(
-            "info",
+            'info',
             `Plan implementation completed after phase ${activeState.plan.currentPhase}/${activeState.plan.phaseCount}. Final implementer pane remains open.`,
           );
           return cont(
             withStage(activeState, {
-              kind: "done",
+              kind: 'done',
               finalImplementer: state.stage.implementer,
             }) satisfies State,
           );
         }
         await ctx.log(
-          "info",
+          'info',
           `Closing implementer pane ${state.stage.implementer.paneId} after phase ${activeState.plan.currentPhase}.`,
         );
         await ctx.closePane(state.stage.implementer.paneId);
@@ -507,11 +609,11 @@ export default defineWorkflow<State, Variables>({
             ...activeState.plan,
             currentPhase: activeState.plan.currentPhase + 1,
           },
-          stage: { kind: "select-implementer" },
+          stage: { kind: 'select-implementer' },
         } satisfies State);
       }
 
-      case "done": {
+      case 'done': {
         const activeState = requireActiveState(state);
         return done({
           entryPlanPath: activeState.plan.entryPlanPath,
@@ -529,12 +631,11 @@ export default defineWorkflow<State, Variables>({
   },
 });
 
-function activatePlan(
-  state: CommonState,
-  discovered: NormalizedDiscoveryResult,
-): ActiveState {
+function activatePlan(state: CommonState, discovered: NormalizedDiscoveryResult): ActiveState {
   return {
     stateVersion: state.stateVersion,
+    autoCommit: state.autoCommit,
+    autoReview: state.autoReview,
     humanInTheLoop: state.humanInTheLoop,
     plannerSessionId: state.plannerSessionId,
     plan: {
@@ -544,13 +645,13 @@ function activatePlan(
       completedPhaseCount: discovered.completedPhaseCount,
       currentPhase: discovered.nextPhaseToImplement,
     },
-    stage: { kind: "confirm-plan" },
+    stage: { kind: 'confirm-plan' },
   };
 }
 
 async function normalizeDiscoveryOrFail(
   ctx: WorkflowContext,
-  result: Parameters<typeof normalizeDiscoveryResult>[0]["result"],
+  result: Parameters<typeof normalizeDiscoveryResult>[0]['result'],
   worktreePath: string,
 ): Promise<
   | { readonly ok: true; readonly value: NormalizedDiscoveryResult | null }
@@ -584,12 +685,12 @@ async function routeImplementerTurnToPlanner(
   },
 ): Promise<WorkflowResult> {
   await setWorkflowStatus(ctx, {
-    kind: "planner-reviewing",
+    kind: 'planner-reviewing',
     phase: state.plan.currentPhase,
     phaseCount: state.plan.phaseCount,
   });
   await ctx.log(
-    "info",
+    'info',
     `Sending implementer exchange ${input.exchangeNumber} for phase ${state.plan.currentPhase} to planner session ${state.plannerSessionId}.`,
   );
   const sent = await ctx.sendAgentPrompt({
@@ -601,7 +702,7 @@ async function routeImplementerTurnToPlanner(
   });
   return suspend(
     withStage(state, {
-      kind: "await-planner-turn",
+      kind: 'await-planner-turn',
       implementer: input.implementer,
       exchangeNumber: input.exchangeNumber,
     }),
@@ -615,33 +716,31 @@ async function sendPlannerTurnToImplementer(
   input: {
     readonly implementer: Implementer;
     readonly plannerTurn: string;
-    readonly outcome: Exclude<PlannerOutcome, "severe-flag">;
+    readonly outcome: Exclude<PlannerOutcome, 'severe-flag'>;
     readonly exchangeNumber: number;
   },
 ): Promise<WorkflowResult> {
-  const approved = input.outcome === "approved";
+  const approved = input.outcome === 'approved';
   await setWorkflowStatus(ctx, {
-    kind: approved ? "implementing" : "implementer-aligning",
+    kind: approved ? 'implementing' : 'implementer-aligning',
     phase: state.plan.currentPhase,
     phaseCount: state.plan.phaseCount,
   });
   await ctx.log(
-    "info",
+    'info',
     approved
       ? `Planner approved phase ${state.plan.currentPhase}; sending its response verbatim to implementer session ${input.implementer.agentSessionId}.`
       : `Planner returned feedback for phase ${state.plan.currentPhase}; sending its response with the alignment footer to implementer session ${input.implementer.agentSessionId}.`,
   );
   const sent = await ctx.sendAgentPrompt({
     agentSessionId: input.implementer.agentSessionId,
-    prompt: approved
-      ? input.plannerTurn
-      : implementerFollowUpPrompt(input.plannerTurn),
+    prompt: approved ? input.plannerTurn : implementerFollowUpPrompt(input.plannerTurn),
   });
   return suspend(
     withStage(state, {
-      kind: "await-implementer-turn",
+      kind: 'await-implementer-turn',
       implementer: input.implementer,
-      activity: approved ? "implementation" : "alignment",
+      activity: approved ? 'implementation' : 'alignment',
       exchangeNumber: input.exchangeNumber + 1,
     }),
     wait.agentTurn(sent),
@@ -658,7 +757,7 @@ async function sendRawPlannerTurnAfterHumanResolution(
   },
 ): Promise<WorkflowResult> {
   await setWorkflowStatus(ctx, {
-    kind: "implementing",
+    kind: 'implementing',
     phase: state.plan.currentPhase,
     phaseCount: state.plan.phaseCount,
   });
@@ -668,9 +767,9 @@ async function sendRawPlannerTurnAfterHumanResolution(
   });
   return suspend(
     withStage(state, {
-      kind: "await-implementer-turn",
+      kind: 'await-implementer-turn',
       implementer: input.implementer,
-      activity: "implementation",
+      activity: 'implementation',
       exchangeNumber: input.exchangeNumber + 1,
     }),
     wait.agentTurn(sent),
@@ -689,33 +788,125 @@ async function completePhase(
     ...state,
     plan: {
       ...state.plan,
-      completedPhaseCount: Math.max(
-        state.plan.completedPhaseCount,
-        state.plan.currentPhase,
-      ),
+      completedPhaseCount: Math.max(state.plan.completedPhaseCount, state.plan.currentPhase),
     },
   } satisfies ActiveState;
-  await ctx.log(
-    "info",
-    `Phase ${state.plan.currentPhase}/${state.plan.phaseCount} completed.`,
-  );
+  await ctx.log('info', `Phase ${state.plan.currentPhase}/${state.plan.phaseCount} completed.`);
+  if (state.autoReview) {
+    await setWorkflowStatus(ctx, {
+      kind: 'auto-review',
+      phase: state.plan.currentPhase,
+      phaseCount: state.plan.phaseCount,
+    });
+    const context = `We are currently implementing phase ${state.plan.currentPhase} of the plan in ${state.plan.entryPlanPath}. Review all the changes since HEAD.`;
+    const runId = await ctx.startWorkflow('engineering-guidance-review-loop', { context });
+    await ctx.log(
+      'info',
+      `Started automatic review child workflow ${runId} for phase ${state.plan.currentPhase}.`,
+    );
+    return suspend(
+      withStage(completedState, {
+        kind: 'await-auto-review',
+        implementer,
+        runId,
+      }),
+      wait.workflow(runId),
+    );
+  }
+  return continueAfterAutoReview(ctx, completedState, implementer);
+}
+
+async function continueAfterAutoReview(
+  ctx: WorkflowContext,
+  state: ActiveState,
+  implementer: Implementer,
+): Promise<WorkflowResult> {
   if (state.humanInTheLoop) {
     await setWorkflowStatus(ctx, {
-      kind: "phase-review",
+      kind: 'phase-review',
       phase: state.plan.currentPhase,
       phaseCount: state.plan.phaseCount,
     });
     return suspend(
-      withStage(completedState, { kind: "await-phase-review", implementer }),
+      withStage(state, { kind: 'await-phase-review', implementer }),
       wait.userContinue(),
     );
   }
+  return continueAfterHumanApproval(state, implementer);
+}
+
+function continueAfterHumanApproval(state: ActiveState, implementer: Implementer): WorkflowResult {
   return cont(
-    withStage(completedState, {
-      kind: "advance-phase",
+    withStage(state, {
+      kind: state.autoCommit ? 'start-draft-commit' : 'advance-phase',
       implementer,
     }) satisfies State,
   );
+}
+
+function readSuccessfulReviewChildResult(
+  event: unknown,
+  expectedRunId: number,
+):
+  | { readonly ok: true; readonly reviewCount: number }
+  | { readonly ok: false; readonly reason: string } {
+  const results = workflowEvent.getWorkflowResults(event);
+  if (!results) {
+    return { ok: false, reason: 'workflow resumed with a non-workflow event' };
+  }
+  if (results.length !== 1) {
+    return {
+      ok: false,
+      reason: `expected one child result, received ${results.length}`,
+    };
+  }
+  const child = results[0];
+  if (!child || child.runId !== expectedRunId) {
+    return {
+      ok: false,
+      reason: `expected child run ${expectedRunId}, received ${child?.runId ?? 'none'}`,
+    };
+  }
+  if (child.status !== 'done') {
+    return {
+      ok: false,
+      reason: `child run failed${child.error === undefined ? '' : `: ${describeUnknown(child.error)}`}`,
+    };
+  }
+  if (!child.result || typeof child.result !== 'object' || Array.isArray(child.result)) {
+    return { ok: false, reason: 'child result was not an object' };
+  }
+  const result = child.result as Record<string, unknown>;
+  const keys = Object.keys(result).sort();
+  if (keys.length !== 2 || keys[0] !== 'outcome' || keys[1] !== 'reviewCount') {
+    return {
+      ok: false,
+      reason: 'child result did not match the review workflow success contract',
+    };
+  }
+  if (result.outcome !== 'workflow-executed-successfully') {
+    return {
+      ok: false,
+      reason: 'child result did not report workflow-executed-successfully',
+    };
+  }
+  if (
+    typeof result.reviewCount !== 'number' ||
+    !Number.isInteger(result.reviewCount) ||
+    result.reviewCount < 1
+  ) {
+    return { ok: false, reason: 'child result reviewCount was invalid' };
+  }
+  return { ok: true, reviewCount: result.reviewCount };
+}
+
+function describeUnknown(value: unknown): string {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 async function startHeadlessJudgment(
@@ -726,17 +917,14 @@ async function startHeadlessJudgment(
     readonly nextState: State;
   },
 ): Promise<WorkflowResult> {
-  await ctx.log("info", `Starting ${input.judgment} headless judgment.`);
+  await ctx.log('info', `Starting ${input.judgment} headless judgment.`);
   const op = await ctx.runHeadlessAgent({
     harness: headlessJudgment.harness,
     model: headlessJudgment.model,
     effort: headlessJudgment.effort,
     prompt: input.prompt,
   });
-  await ctx.log(
-    "info",
-    `Started ${input.judgment} headless judgment op ${op.opId}.`,
-  );
+  await ctx.log('info', `Started ${input.judgment} headless judgment op ${op.opId}.`);
   return suspend(input.nextState, wait.headlessAgent(op));
 }
 
@@ -756,23 +944,17 @@ async function readHeadlessJudgment<Result>(
   const rawOutput = headlessRawOutput(event);
   try {
     const result = completedSingleHeadlessJudgmentResult(event);
-    const value = input.parse(result.output ?? "");
-    await ctx.log(
-      "info",
-      `Parsed ${input.name} result: ${JSON.stringify(value)}.`,
-    );
+    const value = input.parse(result.output ?? '');
+    await ctx.log('info', `Parsed ${input.name} result: ${JSON.stringify(value)}.`);
     return { ok: true, value };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.log(
-      "error",
-      `${input.name} failed in ${state.stage.kind}: ${message}`,
-    );
+    await ctx.log('error', `${input.name} failed in ${state.stage.kind}: ${message}`);
     if (rawOutput.length > 0) {
-      await ctx.log("error", `Raw ${input.name} output: ${rawOutput}`);
+      await ctx.log('error', `Raw ${input.name} output: ${rawOutput}`);
     }
     await setWorkflowStatus(ctx, {
-      kind: "failed",
+      kind: 'failed',
       message: input.failureMessage,
     });
     return { ok: false, result: fail(`${input.name} failed: ${message}`) };
@@ -783,15 +965,12 @@ async function requireEndedTurn(
   ctx: WorkflowContext,
   event: unknown,
   input: {
-    readonly role: "planner" | "implementer";
+    readonly role: 'planner' | 'implementer';
     readonly phaseNumber: number;
   },
-): Promise<
-  | { readonly ok: true }
-  | { readonly ok: false; readonly result: WorkflowResult }
-> {
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly result: WorkflowResult }> {
   if (workflowEvent.isAgentTurnEnded(event)) return { ok: true };
-  const role = input.role === "planner" ? "Planner" : "Implementer";
+  const role = input.role === 'planner' ? 'Planner' : 'Implementer';
   if (workflowEvent.isAgentTurnFailed(event)) {
     return {
       ok: false,
@@ -816,7 +995,7 @@ async function latestAssistantTurnOrFail(
   ctx: WorkflowContext,
   input: {
     readonly agentSessionId: number;
-    readonly label: "planner" | "implementer";
+    readonly label: 'planner' | 'implementer';
     readonly phaseNumber: number;
   },
 ): Promise<
@@ -838,7 +1017,7 @@ async function latestAssistantTurnOrFail(
 
 async function fullConversationTextOrFail(
   ctx: WorkflowContext,
-  input: { readonly agentSessionId: number; readonly label: "planner" },
+  input: { readonly agentSessionId: number; readonly label: 'planner' },
 ): Promise<
   | { readonly ok: true; readonly text: string }
   | { readonly ok: false; readonly result: WorkflowResult }
@@ -850,27 +1029,25 @@ async function fullConversationTextOrFail(
     ok: false,
     result: await failWorkflow(
       ctx,
-      "The planner conversation is empty",
+      'The planner conversation is empty',
       `${input.label} session ${input.agentSessionId} has no conversation text to inspect.`,
     ),
   };
 }
 
-function formatConversationHistory(
-  history: readonly WorkflowConversationMessage[],
-): string {
+function formatConversationHistory(history: readonly WorkflowConversationMessage[]): string {
   return history
     .map((message, index) => {
       const text = message.parts
-        .filter((part) => part.type === "text")
+        .filter((part) => part.type === 'text')
         .map((part) => part.text)
-        .join("\n")
+        .join('\n')
         .trim();
-      if (!text) return "";
+      if (!text) return '';
       return `Message ${index + 1} (${message.role}):\n${text}`;
     })
     .filter((entry) => entry.length > 0)
-    .join("\n\n");
+    .join('\n\n');
 }
 
 function initialImplementerPrompt(input: {
@@ -920,11 +1097,11 @@ I want you to:
 
 function selectImplementerProfile(kind: ImplementerKind): ImplementerProfile {
   switch (kind) {
-    case "ui-heavy":
+    case 'ui-heavy':
       return implementerUiHeavy;
-    case "prose-heavy":
+    case 'prose-heavy':
       return implementerProseHeavy;
-    case "generic":
+    case 'generic':
       return implementerGeneric;
     default:
       return assertNever(kind);
@@ -934,16 +1111,16 @@ function selectImplementerProfile(kind: ImplementerKind): ImplementerProfile {
 function activateCommonState(state: State): CommonState {
   return {
     stateVersion: state.stateVersion,
+    autoCommit: state.autoCommit,
+    autoReview: state.autoReview,
     humanInTheLoop: state.humanInTheLoop,
     plannerSessionId: state.plannerSessionId,
   };
 }
 
 function requireActiveState(state: State): ActiveState {
-  if (!("plan" in state)) {
-    throw new Error(
-      `Workflow stage ${state.stage.kind} requires an active plan.`,
-    );
+  if (!('plan' in state)) {
+    throw new Error(`Workflow stage ${state.stage.kind} requires an active plan.`);
   }
   return state;
 }
@@ -952,19 +1129,30 @@ function withStage(state: ActiveState, stage: ActiveStage): ActiveState {
   return { ...activateCommonState(state), plan: state.plan, stage };
 }
 
-function parseHumanInTheLoop(value: unknown): "yes" | "no" {
-  if (value === undefined) return "yes";
-  if (value === "yes" || value === "no") return value;
-  throw new Error("Human in the loop must be yes or no.");
+function parseHumanInTheLoop(value: unknown): 'yes' | 'no' {
+  if (value === undefined) return 'yes';
+  if (value === 'yes' || value === 'no') return value;
+  throw new Error('Human in the loop must be yes or no.');
+}
+
+function parseAutoReview(value: unknown): 'yes' | 'no' {
+  if (value === undefined) return 'yes';
+  if (value === 'yes' || value === 'no') return value;
+  throw new Error('Automatic review must be yes or no.');
+}
+
+function parseAutoCommit(value: unknown): 'yes' | 'no' {
+  if (value === undefined) return 'yes';
+  if (value === 'yes' || value === 'no') return value;
+  throw new Error('Automatic draft commit must be yes or no.');
 }
 
 function headlessRawOutput(event: unknown): string {
-  if (!event || typeof event !== "object") return "";
+  if (!event || typeof event !== 'object') return '';
   const results = (event as { readonly results?: unknown }).results;
-  if (!Array.isArray(results)) return "";
-  const output = (results[0] as { readonly output?: unknown } | undefined)
-    ?.output;
-  return typeof output === "string" ? output : "";
+  if (!Array.isArray(results)) return '';
+  const output = (results[0] as { readonly output?: unknown } | undefined)?.output;
+  return typeof output === 'string' ? output : '';
 }
 
 async function failWorkflow(
@@ -972,23 +1160,16 @@ async function failWorkflow(
   userMessage: string,
   diagnostic: string,
 ): Promise<WorkflowResult> {
-  await setWorkflowStatus(ctx, { kind: "failed", message: userMessage });
-  await ctx.log("error", diagnostic);
+  await setWorkflowStatus(ctx, { kind: 'failed', message: userMessage });
+  await ctx.log('error', diagnostic);
   return fail(diagnostic);
 }
 
-async function logTransition(
-  ctx: WorkflowContext,
-  state: State,
-): Promise<void> {
-  const phase =
-    "plan" in state
-      ? `${state.plan.currentPhase}/${state.plan.phaseCount}`
-      : "unknown";
-  const completed =
-    "plan" in state ? state.plan.completedPhaseCount : "unknown";
+async function logTransition(ctx: WorkflowContext, state: State): Promise<void> {
+  const phase = 'plan' in state ? `${state.plan.currentPhase}/${state.plan.phaseCount}` : 'unknown';
+  const completed = 'plan' in state ? state.plan.completedPhaseCount : 'unknown';
   await ctx.log(
-    "debug",
+    'debug',
     `Workflow step stage=${state.stage.kind}, phase=${phase}, completedPhaseCount=${completed}.`,
   );
 }

@@ -104,10 +104,236 @@ test('severe flag continuation sends the latest planner turn verbatim without re
   assert.equal(harness.headlessLaunchCount, 0);
 });
 
-function activeState(stage: Record<string, unknown>): WorkflowState {
+test('automatic review and commit inputs default to yes', async () => {
+  const launchCtx = {
+    worktreeId: 1,
+    worktreePath: '/workspace',
+    surfaceId: 7,
+    agentSessionId: 11,
+  };
+  const manifest = await workflow.command(launchCtx);
+  assert.deepEqual(
+    (manifest.inputs ?? []).map((input) => input.key),
+    ['humanInTheLoop', 'autoReview', 'autoCommit'],
+  );
+  const initialized = await workflow.init(launchCtx, { humanInTheLoop: 'no' });
+  assert.equal(initialized.autoReview, true);
+  assert.equal(initialized.autoCommit, true);
+});
+
+test('completed phase starts the review child with phase-specific context', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: 'await-implementer-outcome',
+        implementer: { agentSessionId: 22, paneId: 32 },
+        implementerTurn: 'Phase complete.',
+        activity: 'implementation',
+        exchangeNumber: 3,
+      },
+      { autoReview: true },
+    ),
+    headlessResult('{"outcome":"phase-complete"}'),
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.deepEqual(result.type === 'suspend' ? result.condition : undefined, {
+    kind: 'workflow',
+    runIds: [44],
+  });
+  assert.deepEqual(harness.startedWorkflows, [
+    {
+      workflowKey: 'engineering-guidance-review-loop',
+      variables: {
+        context:
+          'We are currently implementing phase 2 of the plan in docs/plan.md. Review all the changes since HEAD.',
+      },
+    },
+  ]);
+});
+
+test('disabled auto review skips directly to draft commit when no human approval is required', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState({
+      kind: 'await-implementer-outcome',
+      implementer: { agentSessionId: 22, paneId: 32 },
+      implementerTurn: 'Phase complete.',
+      activity: 'implementation',
+      exchangeNumber: 3,
+    }),
+    headlessResult('{"outcome":"phase-complete"}'),
+  );
+
+  assert.equal(result.type, 'cont');
+  assert.equal(
+    result.type === 'cont' ? (result.state as WorkflowState).stage.kind : undefined,
+    'start-draft-commit',
+  );
+  assert.equal(harness.startedWorkflows.length, 0);
+});
+
+test('disabled auto commit advances without launching the draft commit agent', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: 'await-implementer-outcome',
+        implementer: { agentSessionId: 22, paneId: 32 },
+        implementerTurn: 'Phase complete.',
+        activity: 'implementation',
+        exchangeNumber: 3,
+      },
+      { autoCommit: false },
+    ),
+    headlessResult('{"outcome":"phase-complete"}'),
+  );
+
+  assert.equal(result.type, 'cont');
+  assert.equal(
+    result.type === 'cont' ? (result.state as WorkflowState).stage.kind : undefined,
+    'advance-phase',
+  );
+  assert.equal(harness.headlessLaunchCount, 0);
+});
+
+test('successful auto review waits for human approval when enabled', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: 'await-auto-review',
+        implementer: { agentSessionId: 22, paneId: 32 },
+        runId: 44,
+      },
+      { autoReview: true, humanInTheLoop: true },
+    ),
+    workflowResult(44, {
+      outcome: 'workflow-executed-successfully',
+      reviewCount: 2,
+    }),
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.equal(result.type === 'suspend' ? result.condition.kind : undefined, 'user_continue');
+});
+
+test('malformed review child success stops the parent workflow', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState({
+      kind: 'await-auto-review',
+      implementer: { agentSessionId: 22, paneId: 32 },
+      runId: 44,
+    }),
+    workflowResult(44, { reviewCount: 2 }),
+  );
+
+  assert.equal(result.type, 'fail');
+  assert.match(result.type === 'fail' ? result.reason : '', /success contract/);
+});
+
+test('human approval proceeds to the draft commit stage', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: 'await-phase-review',
+        implementer: { agentSessionId: 22, paneId: 32 },
+      },
+      { humanInTheLoop: true },
+    ),
+    { kind: 'user_continue' },
+  );
+
+  assert.equal(result.type, 'cont');
+  assert.equal(
+    result.type === 'cont' ? (result.state as WorkflowState).stage.kind : undefined,
+    'start-draft-commit',
+  );
+});
+
+test('human approval respects disabled auto commit', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: 'await-phase-review',
+        implementer: { agentSessionId: 22, paneId: 32 },
+      },
+      { autoCommit: false, humanInTheLoop: true },
+    ),
+    { kind: 'user_continue' },
+  );
+
+  assert.equal(result.type, 'cont');
+  assert.equal(
+    result.type === 'cont' ? (result.state as WorkflowState).stage.kind : undefined,
+    'advance-phase',
+  );
+});
+
+test('draft commit stage launches the operational agent with strong commit instructions', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState({
+      kind: 'start-draft-commit',
+      implementer: { agentSessionId: 22, paneId: 32 },
+    }),
+    null,
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.equal(result.type === 'suspend' ? result.condition.kind : undefined, 'headless_agent');
+  assert.match(harness.headlessLaunches[0]?.prompt ?? '', /Create the Git commit yourself now/);
+  assert.match(harness.headlessLaunches[0]?.prompt ?? '', /git add -A/);
+  assert.match(harness.headlessLaunches[0]?.prompt ?? '', /untracked files/);
+  assert.match(harness.headlessLaunches[0]?.prompt ?? '', /draft:/);
+});
+
+test('verified draft commit advances the phase', async () => {
+  const harness = workflowHarness();
+  const commit = 'a'.repeat(40);
+  const result = await workflow.step(
+    harness.ctx,
+    activeState({
+      kind: 'await-draft-commit',
+      implementer: { agentSessionId: 22, paneId: 32 },
+    }),
+    headlessResult(
+      `{"outcome":"draft-commit-created","commit":"${commit}","subject":"draft: implement phase 2"}`,
+    ),
+  );
+
+  assert.equal(result.type, 'cont');
+  assert.equal(
+    result.type === 'cont' ? (result.state as WorkflowState).stage.kind : undefined,
+    'advance-phase',
+  );
+});
+
+function activeState(
+  stage: Record<string, unknown>,
+  input?: {
+    readonly autoCommit?: boolean;
+    readonly autoReview?: boolean;
+    readonly humanInTheLoop?: boolean;
+  },
+): WorkflowState {
   return {
-    stateVersion: 2,
-    humanInTheLoop: false,
+    stateVersion: 4,
+    autoCommit: input?.autoCommit ?? true,
+    autoReview: input?.autoReview ?? false,
+    humanInTheLoop: input?.humanInTheLoop ?? false,
     plannerSessionId: 11,
     plan: {
       entryPlanPath: 'docs/plan.md',
@@ -124,6 +350,11 @@ function workflowHarness(input?: {
   readonly conversationHistory?: Awaited<ReturnType<WorkflowContext['getConversationHistory']>>;
 }) {
   const sentPrompts: Array<{ readonly agentSessionId: number; readonly text: string }> = [];
+  const headlessLaunches: Array<Parameters<WorkflowContext['runHeadlessAgent']>[0]> = [];
+  const startedWorkflows: Array<{
+    readonly workflowKey: string;
+    readonly variables: Record<string, unknown> | undefined;
+  }> = [];
   let headlessLaunchCount = 0;
   const ctx: WorkflowContext = {
     worktreePath: '/workspace',
@@ -135,17 +366,32 @@ function workflowHarness(input?: {
     },
     closePane: async () => unexpected('closePane'),
     getConversationHistory: async () => input?.conversationHistory ?? [],
-    runHeadlessAgent: async () => {
+    runHeadlessAgent: async (headlessInput) => {
       headlessLaunchCount += 1;
-      return unexpected('runHeadlessAgent');
+      headlessLaunches.push(headlessInput);
+      return {
+        opId: 'op-1',
+        launch: {
+          prompt: headlessInput.prompt ?? '',
+          harness: headlessInput.harness,
+          model: headlessInput.model,
+          effort: headlessInput.effort,
+          timeoutMs: headlessInput.timeoutMs ?? 900_000,
+        },
+      };
     },
-    startWorkflow: async () => unexpected('startWorkflow'),
+    startWorkflow: async (workflowKey, variables) => {
+      startedWorkflows.push({ workflowKey, variables });
+      return 44;
+    },
     log: async () => {},
     setUiFeedback: async () => {},
   };
   return {
     ctx,
     sentPrompts,
+    headlessLaunches,
+    startedWorkflows,
     get headlessLaunchCount() {
       return headlessLaunchCount;
     },
@@ -156,6 +402,13 @@ function headlessResult(output: string) {
   return {
     kind: 'headless_agent',
     results: [{ opId: 'op-1', status: 'completed', output }],
+  };
+}
+
+function workflowResult(runId: number, result: unknown) {
+  return {
+    kind: 'workflow',
+    results: [{ runId, status: 'done', result }],
   };
 }
 

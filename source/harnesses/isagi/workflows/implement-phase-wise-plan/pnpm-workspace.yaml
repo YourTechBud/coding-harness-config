@@ -3,6 +3,7 @@ packages:
 
 allowBuilds:
   esbuild: true
+
 minimumReleaseAgeExclude:
   - '@yourtechbudstudio/isagi-workflow-sdk@0.0.1'
   - '@yourtechbudstudio/isagi-workflow-verifier@0.0.1'

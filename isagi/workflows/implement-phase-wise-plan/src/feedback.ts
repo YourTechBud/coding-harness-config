@@ -15,7 +15,9 @@ export type WorkflowStatus =
   | { readonly kind: 'planner-reviewing'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'implementing'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'severe-flag'; readonly phase: number }
+  | { readonly kind: 'auto-review'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'phase-review'; readonly phase: number; readonly phaseCount: number }
+  | { readonly kind: 'draft-commit'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'complete' }
   | { readonly kind: 'failed'; readonly message: string };
 
@@ -78,11 +80,23 @@ export function renderWorkflowStatus(status: WorkflowStatus): WorkflowUiFeedback
         phase: 'human-intervention',
         message: `Phase ${status.phase} paused — the planner raised a severe flag.\n\nResolve it in the planner pane, then Continue. The latest planner response will be sent to the implementer verbatim.`,
       };
+    case 'auto-review':
+      return {
+        kind: 'info',
+        phase: 'phase-auto-review',
+        message: `Reviewing phase ${status.phase} of ${status.phaseCount}`,
+      };
     case 'phase-review':
       return {
         kind: 'info',
         phase: 'phase-review',
-        message: `Phase ${status.phase} of ${status.phaseCount} is ready for your review`,
+        message: `Phase ${status.phase} of ${status.phaseCount} is ready for approval. Continue to create its draft commit.`,
+      };
+    case 'draft-commit':
+      return {
+        kind: 'info',
+        phase: 'phase-draft-commit',
+        message: `Creating a draft commit for phase ${status.phase} of ${status.phaseCount}`,
       };
     case 'complete':
       return {

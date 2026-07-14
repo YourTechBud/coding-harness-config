@@ -120,6 +120,100 @@ var headlessJudgment = {
   model: "gpt-5.6-luna",
   effort: "medium"
 };
+var draftCommitter = {
+  harness: "codex",
+  model: "gpt-5.6-luna",
+  effort: "low"
+};
+
+// src/draft-commit.ts
+function draftCommitPrompt(input) {
+  return `You are the unattended draft-commit agent for an Isagi workflow.
+
+Create the Git commit yourself now. Do not merely describe commands, suggest a commit message, or stop after inspecting the worktree.
+
+Worktree root:
+${input.worktreePath}
+
+Current phase:
+${input.phaseNumber} of ${input.phaseCount}
+
+Plan file, relative to the worktree root:
+${input.entryPlanPath}
+
+Required procedure:
+1. Change to the worktree root and inspect the current Git status.
+2. Stage every change with \`git add -A\`. This must include already-staged changes, tracked unstaged changes, deletions, and untracked files.
+3. Confirm that the index contains changes to commit. A clean index is a failure; do not report success.
+4. Choose a concise commit subject describing the completed phase. The subject must begin with the exact prefix \`draft:\`.
+5. Execute \`git commit --signoff\` yourself using that subject.
+6. Verify the created commit with Git. Confirm its full commit hash and confirm that its subject begins with \`draft:\`.
+
+Safety rules:
+- Never amend an existing commit.
+- Never reset, restore, checkout, clean, discard, or otherwise remove worktree changes.
+- Never push.
+- Do not create more than one commit.
+- If any command fails, stop and report the failure instead of claiming success.
+
+After the commit is created and verified, return exactly one JSON object with exactly these fields and no markdown or commentary:
+{"outcome":"draft-commit-created","commit":"<full commit hash>","subject":"draft: <subject>"}`;
+}
+function completedSingleDraftCommitResult(event) {
+  const results = s.getHeadlessAgentResults(event);
+  if (!results) {
+    throw new Error("Workflow resumed with a non-headless draft commit event.");
+  }
+  if (results.length !== 1) {
+    throw new Error(
+      `Expected exactly one draft commit result, received ${results.length}.`
+    );
+  }
+  const result = results[0];
+  if (!result || result.status !== "completed") {
+    const error = result?.error ? `: ${result.error}` : "";
+    throw new Error(`Draft commit agent did not complete${error}.`);
+  }
+  return result;
+}
+function parseDraftCommitResult(output) {
+  const value = JSON.parse(extractJsonObject(output));
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Draft commit result must be a JSON object.");
+  }
+  const record = value;
+  const keys = Object.keys(record).sort();
+  const expected = ["commit", "outcome", "subject"];
+  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
+    throw new Error(
+      `Draft commit result must contain exactly these fields: ${expected.join(", ")}.`
+    );
+  }
+  if (record.outcome !== "draft-commit-created") {
+    throw new Error("Draft commit outcome must be draft-commit-created.");
+  }
+  if (typeof record.commit !== "string" || !/^[0-9a-f]{40,64}$/u.test(record.commit)) {
+    throw new Error(
+      "Draft commit hash must be a full hexadecimal Git object id."
+    );
+  }
+  if (typeof record.subject !== "string" || !record.subject.startsWith("draft:")) {
+    throw new Error("Draft commit subject must begin with draft:.");
+  }
+  return {
+    outcome: record.outcome,
+    commit: record.commit,
+    subject: record.subject
+  };
+}
+function extractJsonObject(output) {
+  const first = output.indexOf("{");
+  const last = output.lastIndexOf("}");
+  if (first < 0 || last < first) {
+    throw new Error("Draft commit output did not contain a JSON object.");
+  }
+  return output.slice(first, last + 1);
+}
 
 // src/feedback.ts
 function setWorkflowStatus(ctx, status) {
@@ -179,11 +273,23 @@ function renderWorkflowStatus(status) {
 
 Resolve it in the planner pane, then Continue. The latest planner response will be sent to the implementer verbatim.`
       };
+    case "auto-review":
+      return {
+        kind: "info",
+        phase: "phase-auto-review",
+        message: `Reviewing phase ${status.phase} of ${status.phaseCount}`
+      };
     case "phase-review":
       return {
         kind: "info",
         phase: "phase-review",
-        message: `Phase ${status.phase} of ${status.phaseCount} is ready for your review`
+        message: `Phase ${status.phase} of ${status.phaseCount} is ready for approval. Continue to create its draft commit.`
+      };
+    case "draft-commit":
+      return {
+        kind: "info",
+        phase: "phase-draft-commit",
+        message: `Creating a draft commit for phase ${status.phase} of ${status.phaseCount}`
       };
     case "complete":
       return {
@@ -410,10 +516,10 @@ function messageText(message) {
   return message.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n").trim();
 }
 function parseJsonObject(output) {
-  const jsonText = extractJsonObject(output);
+  const jsonText = extractJsonObject2(output);
   return JSON.parse(jsonText);
 }
-function extractJsonObject(output) {
+function extractJsonObject2(output) {
   const first = output.indexOf("{");
   const last = output.lastIndexOf("}");
   if (first < 0 || last < first) {
@@ -554,6 +660,26 @@ function assertRealPathInsideWorktree(input) {
 }
 
 // src/index.ts
+var autoCommitInput = {
+  kind: "select",
+  key: "autoCommit",
+  label: "Automatic draft commit",
+  options: [
+    { value: "yes", label: "Yes, create a draft commit after each phase" },
+    { value: "no", label: "No, leave phase changes uncommitted" }
+  ],
+  default: "yes"
+};
+var autoReviewInput = {
+  kind: "select",
+  key: "autoReview",
+  label: "Automatic engineering guidance review",
+  options: [
+    { value: "yes", label: "Yes, review every completed phase" },
+    { value: "no", label: "No, skip automatic review" }
+  ],
+  default: "yes"
+};
 var humanInTheLoopInput = {
   kind: "select",
   key: "humanInTheLoop",
@@ -568,16 +694,20 @@ var index_default = r({
   command: () => ({
     title: "Implement Phase-wise Plan",
     description: "Route a phase-wise plan through a fresh implementer per phase.",
-    inputs: [humanInTheLoopInput]
+    inputs: [humanInTheLoopInput, autoReviewInput, autoCommitInput]
   }),
   validate: (launchCtx, variables) => {
     if (launchCtx.agentSessionId === null || launchCtx.agentSessionId === void 0) {
       throw new Error("Start this workflow from the planner agent pane.");
     }
     parseHumanInTheLoop(variables.humanInTheLoop);
+    parseAutoReview(variables.autoReview);
+    parseAutoCommit(variables.autoCommit);
   },
   init: (launchCtx, variables) => ({
-    stateVersion: 2,
+    stateVersion: 4,
+    autoCommit: parseAutoCommit(variables.autoCommit) === "yes",
+    autoReview: parseAutoReview(variables.autoReview) === "yes",
     humanInTheLoop: parseHumanInTheLoop(variables.humanInTheLoop) === "yes",
     plannerSessionId: launchCtx.agentSessionId,
     stage: { kind: "discover-plan" }
@@ -612,11 +742,7 @@ var index_default = r({
           parse: parseDiscoveryResult
         });
         if (!judgment.ok) return judgment.result;
-        const discovery = await normalizeDiscoveryOrFail(
-          ctx,
-          judgment.value,
-          ctx.worktreePath
-        );
+        const discovery = await normalizeDiscoveryOrFail(ctx, judgment.value, ctx.worktreePath);
         if (!discovery.ok) return discovery.result;
         const normalized = discovery.value;
         if (!normalized) {
@@ -692,9 +818,7 @@ var index_default = r({
           parse: parsePhaseImplementationKindResult
         });
         if (!judgment.ok) return judgment.result;
-        const profile = selectImplementerProfile(
-          judgment.value.implementationKind
-        );
+        const profile = selectImplementerProfile(judgment.value.implementationKind);
         await ctx.log(
           "info",
           `Selected the ${profile.kind} implementer profile for phase ${activeState.plan.currentPhase}.`
@@ -874,6 +998,22 @@ var index_default = r({
           exchangeNumber: state.stage.exchangeNumber
         });
       }
+      case "await-auto-review": {
+        const activeState = requireActiveState(state);
+        const reviewResult = readSuccessfulReviewChildResult(event, state.stage.runId);
+        if (!reviewResult.ok) {
+          return failWorkflow(
+            ctx,
+            `Automatic review failed for phase ${activeState.plan.currentPhase}`,
+            `Automatic review child workflow ${state.stage.runId} failed: ${reviewResult.reason}`
+          );
+        }
+        await ctx.log(
+          "info",
+          `Automatic review child workflow ${state.stage.runId} completed phase ${activeState.plan.currentPhase} after ${reviewResult.reviewCount} review rounds.`
+        );
+        return continueAfterAutoReview(ctx, activeState, state.stage.implementer);
+      }
       case "await-phase-review": {
         const activeState = requireActiveState(state);
         if (!s.isUserContinue(event)) {
@@ -883,10 +1023,56 @@ var index_default = r({
             "Phase review resumed with an unexpected event."
           );
         }
+        await ctx.log("info", `Human review completed for phase ${activeState.plan.currentPhase}.`);
+        return continueAfterHumanApproval(activeState, state.stage.implementer);
+      }
+      case "start-draft-commit": {
+        const activeState = requireActiveState(state);
+        await setWorkflowStatus(ctx, {
+          kind: "draft-commit",
+          phase: activeState.plan.currentPhase,
+          phaseCount: activeState.plan.phaseCount
+        });
+        const op = await ctx.runHeadlessAgent({
+          harness: draftCommitter.harness,
+          model: draftCommitter.model,
+          effort: draftCommitter.effort,
+          prompt: draftCommitPrompt({
+            worktreePath: ctx.worktreePath,
+            phaseNumber: activeState.plan.currentPhase,
+            phaseCount: activeState.plan.phaseCount,
+            entryPlanPath: activeState.plan.entryPlanPath
+          })
+        });
         await ctx.log(
           "info",
-          `Human review completed for phase ${activeState.plan.currentPhase}.`
+          `Started draft commit op ${op.opId} for phase ${activeState.plan.currentPhase}.`
         );
+        return a(
+          withStage(activeState, {
+            kind: "await-draft-commit",
+            implementer: state.stage.implementer
+          }),
+          o.headlessAgent(op)
+        );
+      }
+      case "await-draft-commit": {
+        const activeState = requireActiveState(state);
+        try {
+          const result = completedSingleDraftCommitResult(event);
+          const commit = parseDraftCommitResult(result.output ?? "");
+          await ctx.log(
+            "info",
+            `Created draft commit ${commit.commit} for phase ${activeState.plan.currentPhase}: ${commit.subject}.`
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          return failWorkflow(
+            ctx,
+            `Draft commit failed for phase ${activeState.plan.currentPhase}`,
+            `Draft commit failed for phase ${activeState.plan.currentPhase}: ${message}`
+          );
+        }
         return i(
           withStage(activeState, {
             kind: "advance-phase",
@@ -942,6 +1128,8 @@ var index_default = r({
 function activatePlan(state, discovered) {
   return {
     stateVersion: state.stateVersion,
+    autoCommit: state.autoCommit,
+    autoReview: state.autoReview,
     humanInTheLoop: state.humanInTheLoop,
     plannerSessionId: state.plannerSessionId,
     plan: {
@@ -1048,16 +1236,34 @@ async function completePhase(ctx, state, implementer) {
     ...state,
     plan: {
       ...state.plan,
-      completedPhaseCount: Math.max(
-        state.plan.completedPhaseCount,
-        state.plan.currentPhase
-      )
+      completedPhaseCount: Math.max(state.plan.completedPhaseCount, state.plan.currentPhase)
     }
   };
-  await ctx.log(
-    "info",
-    `Phase ${state.plan.currentPhase}/${state.plan.phaseCount} completed.`
-  );
+  await ctx.log("info", `Phase ${state.plan.currentPhase}/${state.plan.phaseCount} completed.`);
+  if (state.autoReview) {
+    await setWorkflowStatus(ctx, {
+      kind: "auto-review",
+      phase: state.plan.currentPhase,
+      phaseCount: state.plan.phaseCount
+    });
+    const context = `We are currently implementing phase ${state.plan.currentPhase} of the plan in ${state.plan.entryPlanPath}. Review all the changes since HEAD.`;
+    const runId = await ctx.startWorkflow("engineering-guidance-review-loop", { context });
+    await ctx.log(
+      "info",
+      `Started automatic review child workflow ${runId} for phase ${state.plan.currentPhase}.`
+    );
+    return a(
+      withStage(completedState, {
+        kind: "await-auto-review",
+        implementer,
+        runId
+      }),
+      o.workflow(runId)
+    );
+  }
+  return continueAfterAutoReview(ctx, completedState, implementer);
+}
+async function continueAfterAutoReview(ctx, state, implementer) {
   if (state.humanInTheLoop) {
     await setWorkflowStatus(ctx, {
       kind: "phase-review",
@@ -1065,16 +1271,73 @@ async function completePhase(ctx, state, implementer) {
       phaseCount: state.plan.phaseCount
     });
     return a(
-      withStage(completedState, { kind: "await-phase-review", implementer }),
+      withStage(state, { kind: "await-phase-review", implementer }),
       o.userContinue()
     );
   }
+  return continueAfterHumanApproval(state, implementer);
+}
+function continueAfterHumanApproval(state, implementer) {
   return i(
-    withStage(completedState, {
-      kind: "advance-phase",
+    withStage(state, {
+      kind: state.autoCommit ? "start-draft-commit" : "advance-phase",
       implementer
     })
   );
+}
+function readSuccessfulReviewChildResult(event, expectedRunId) {
+  const results = s.getWorkflowResults(event);
+  if (!results) {
+    return { ok: false, reason: "workflow resumed with a non-workflow event" };
+  }
+  if (results.length !== 1) {
+    return {
+      ok: false,
+      reason: `expected one child result, received ${results.length}`
+    };
+  }
+  const child = results[0];
+  if (!child || child.runId !== expectedRunId) {
+    return {
+      ok: false,
+      reason: `expected child run ${expectedRunId}, received ${child?.runId ?? "none"}`
+    };
+  }
+  if (child.status !== "done") {
+    return {
+      ok: false,
+      reason: `child run failed${child.error === void 0 ? "" : `: ${describeUnknown(child.error)}`}`
+    };
+  }
+  if (!child.result || typeof child.result !== "object" || Array.isArray(child.result)) {
+    return { ok: false, reason: "child result was not an object" };
+  }
+  const result = child.result;
+  const keys = Object.keys(result).sort();
+  if (keys.length !== 2 || keys[0] !== "outcome" || keys[1] !== "reviewCount") {
+    return {
+      ok: false,
+      reason: "child result did not match the review workflow success contract"
+    };
+  }
+  if (result.outcome !== "workflow-executed-successfully") {
+    return {
+      ok: false,
+      reason: "child result did not report workflow-executed-successfully"
+    };
+  }
+  if (typeof result.reviewCount !== "number" || !Number.isInteger(result.reviewCount) || result.reviewCount < 1) {
+    return { ok: false, reason: "child result reviewCount was invalid" };
+  }
+  return { ok: true, reviewCount: result.reviewCount };
+}
+function describeUnknown(value) {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 async function startHeadlessJudgment(ctx, input) {
   await ctx.log("info", `Starting ${input.judgment} headless judgment.`);
@@ -1084,10 +1347,7 @@ async function startHeadlessJudgment(ctx, input) {
     effort: headlessJudgment.effort,
     prompt: input.prompt
   });
-  await ctx.log(
-    "info",
-    `Started ${input.judgment} headless judgment op ${op.opId}.`
-  );
+  await ctx.log("info", `Started ${input.judgment} headless judgment op ${op.opId}.`);
   return a(input.nextState, o.headlessAgent(op));
 }
 async function readHeadlessJudgment(ctx, state, event, input) {
@@ -1095,17 +1355,11 @@ async function readHeadlessJudgment(ctx, state, event, input) {
   try {
     const result = completedSingleHeadlessJudgmentResult(event);
     const value = input.parse(result.output ?? "");
-    await ctx.log(
-      "info",
-      `Parsed ${input.name} result: ${JSON.stringify(value)}.`
-    );
+    await ctx.log("info", `Parsed ${input.name} result: ${JSON.stringify(value)}.`);
     return { ok: true, value };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.log(
-      "error",
-      `${input.name} failed in ${state.stage.kind}: ${message}`
-    );
+    await ctx.log("error", `${input.name} failed in ${state.stage.kind}: ${message}`);
     if (rawOutput.length > 0) {
       await ctx.log("error", `Raw ${input.name} output: ${rawOutput}`);
     }
@@ -1222,15 +1476,15 @@ function selectImplementerProfile(kind) {
 function activateCommonState(state) {
   return {
     stateVersion: state.stateVersion,
+    autoCommit: state.autoCommit,
+    autoReview: state.autoReview,
     humanInTheLoop: state.humanInTheLoop,
     plannerSessionId: state.plannerSessionId
   };
 }
 function requireActiveState(state) {
   if (!("plan" in state)) {
-    throw new Error(
-      `Workflow stage ${state.stage.kind} requires an active plan.`
-    );
+    throw new Error(`Workflow stage ${state.stage.kind} requires an active plan.`);
   }
   return state;
 }
@@ -1241,6 +1495,16 @@ function parseHumanInTheLoop(value) {
   if (value === void 0) return "yes";
   if (value === "yes" || value === "no") return value;
   throw new Error("Human in the loop must be yes or no.");
+}
+function parseAutoReview(value) {
+  if (value === void 0) return "yes";
+  if (value === "yes" || value === "no") return value;
+  throw new Error("Automatic review must be yes or no.");
+}
+function parseAutoCommit(value) {
+  if (value === void 0) return "yes";
+  if (value === "yes" || value === "no") return value;
+  throw new Error("Automatic draft commit must be yes or no.");
 }
 function headlessRawOutput(event) {
   if (!event || typeof event !== "object") return "";
