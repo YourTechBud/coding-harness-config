@@ -7,6 +7,19 @@ import workflow from '../src/index.js';
 
 type WorkflowState = Parameters<typeof workflow.step>[1];
 
+test('rejects persisted state from an unsupported workflow version', async () => {
+  const harness = workflowHarness();
+
+  await assert.rejects(
+    workflow.step(
+      harness.ctx,
+      { ...activeState({ kind: 'select-implementer' }), stateVersion: 4 } as unknown as WorkflowState,
+      undefined,
+    ),
+    /Unsupported implement-phase-wise-plan state version: expected 5, received 4/,
+  );
+});
+
 test('every non-complete implementer turn returns to the planner, including after approval', async () => {
   const harness = workflowHarness();
   const result = await workflow.step(
@@ -15,7 +28,6 @@ test('every non-complete implementer turn returns to the planner, including afte
       kind: 'await-implementer-outcome',
       implementer: { agentSessionId: 22, paneId: 32 },
       implementerTurn: 'Implementation started, but I found another architectural question.',
-      activity: 'implementation',
       exchangeNumber: 3,
     }),
     headlessResult('{"outcome":"planner-response-needed"}'),
@@ -117,8 +129,84 @@ test('automatic review and commit inputs default to yes', async () => {
     ['humanInTheLoop', 'autoReview', 'autoCommit'],
   );
   const initialized = await workflow.init(launchCtx, { humanInTheLoop: 'no' });
-  assert.equal(initialized.autoReview, true);
-  assert.equal(initialized.autoCommit, true);
+  assert.equal(initialized.options.autoReview, true);
+  assert.equal(initialized.options.autoCommit, true);
+});
+
+test('mock-ui phase selects the UI-heavy profile without a classifier', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState({ kind: 'select-implementer' }, { phaseType: 'mock-ui' }),
+    null,
+  );
+
+  assert.equal(result.type, 'cont');
+  const nextState = result.type === 'cont' ? (result.state as WorkflowState) : undefined;
+  assert.equal(nextState?.stage.kind, 'spawn-implementer');
+  assert.equal(
+    nextState?.stage.kind === 'spawn-implementer' ? nextState.stage.profile.kind : undefined,
+    'ui-heavy',
+  );
+  assert.equal(harness.headlessLaunchCount, 0);
+
+  const spawned = await workflow.step(harness.ctx, nextState!, null);
+  assert.equal(spawned.type, 'suspend');
+  assert.equal(spawned.type === 'suspend' ? spawned.condition.kind : undefined, 'agent_turn');
+  assert.equal(harness.spawnedSessions[0]?.harness, 'claude');
+  assert.match(harness.spawnedSessions[0]?.prompt ?? '', /^Implement the phase 2 in docs\/plan\.md\./);
+  assert.match(harness.spawnedSessions[0]?.prompt ?? '', /Never start implementing unless I explicitly say so/);
+});
+
+test('non-mock phase still uses the implementer-kind classifier', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState({ kind: 'select-implementer' }),
+    null,
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.equal(result.type === 'suspend' ? result.condition.kind : undefined, 'headless_agent');
+  assert.equal(
+    result.type === 'suspend' ? (result.state as WorkflowState).stage.kind : undefined,
+    'await-implementer-selection',
+  );
+  assert.match(harness.headlessLaunches[0]?.prompt ?? '', /classifyPhaseImplementationKind/);
+});
+
+test('mock-ui initial turn goes directly to the human checkpoint', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: 'await-implementer-turn',
+        implementer: { agentSessionId: 22, paneId: 32 },
+        activity: 'alignment',
+        exchangeNumber: 1,
+      },
+      { phaseType: 'mock-ui', autoReview: true, humanInTheLoop: false },
+    ),
+    { outcome: 'ended', recordedAt: '2026-07-10T00:00:00.000Z' },
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.equal(result.type === 'suspend' ? result.condition.kind : undefined, 'user_continue');
+  assert.equal(
+    result.type === 'suspend' ? (result.state as WorkflowState).stage.kind : undefined,
+    'await-human-completion',
+  );
+  assert.equal(harness.headlessLaunchCount, 0);
+  assert.equal(harness.startedWorkflows.length, 0);
+
+  const resumed = await workflow.step(harness.ctx, suspendedState(result), {
+    kind: 'user_continue',
+  });
+  assert.equal(
+    resumed.type === 'cont' ? (resumed.state as WorkflowState).stage.kind : undefined,
+    'start-commit',
+  );
 });
 
 test('completed phase starts the review child with phase-specific context', async () => {
@@ -130,7 +218,6 @@ test('completed phase starts the review child with phase-specific context', asyn
         kind: 'await-implementer-outcome',
         implementer: { agentSessionId: 22, paneId: 32 },
         implementerTurn: 'Phase complete.',
-        activity: 'implementation',
         exchangeNumber: 3,
       },
       { autoReview: true },
@@ -154,7 +241,7 @@ test('completed phase starts the review child with phase-specific context', asyn
   ]);
 });
 
-test('disabled auto review skips directly to draft commit when no human approval is required', async () => {
+test('disabled auto review skips directly to commit when no human approval is required', async () => {
   const harness = workflowHarness();
   const result = await workflow.step(
     harness.ctx,
@@ -162,7 +249,6 @@ test('disabled auto review skips directly to draft commit when no human approval
       kind: 'await-implementer-outcome',
       implementer: { agentSessionId: 22, paneId: 32 },
       implementerTurn: 'Phase complete.',
-      activity: 'implementation',
       exchangeNumber: 3,
     }),
     headlessResult('{"outcome":"phase-complete"}'),
@@ -171,12 +257,12 @@ test('disabled auto review skips directly to draft commit when no human approval
   assert.equal(result.type, 'cont');
   assert.equal(
     result.type === 'cont' ? (result.state as WorkflowState).stage.kind : undefined,
-    'start-draft-commit',
+    'start-commit',
   );
   assert.equal(harness.startedWorkflows.length, 0);
 });
 
-test('disabled auto commit advances without launching the draft commit agent', async () => {
+test('disabled auto commit advances without launching the commit agent', async () => {
   const harness = workflowHarness();
   const result = await workflow.step(
     harness.ctx,
@@ -185,7 +271,6 @@ test('disabled auto commit advances without launching the draft commit agent', a
         kind: 'await-implementer-outcome',
         implementer: { agentSessionId: 22, paneId: 32 },
         implementerTurn: 'Phase complete.',
-        activity: 'implementation',
         exchangeNumber: 3,
       },
       { autoCommit: false },
@@ -239,13 +324,13 @@ test('malformed review child success stops the parent workflow', async () => {
   assert.match(result.type === 'fail' ? result.reason : '', /success contract/);
 });
 
-test('human approval proceeds to the draft commit stage', async () => {
+test('human approval proceeds to the commit stage', async () => {
   const harness = workflowHarness();
   const result = await workflow.step(
     harness.ctx,
     activeState(
       {
-        kind: 'await-phase-review',
+        kind: 'await-human-completion',
         implementer: { agentSessionId: 22, paneId: 32 },
       },
       { humanInTheLoop: true },
@@ -256,7 +341,7 @@ test('human approval proceeds to the draft commit stage', async () => {
   assert.equal(result.type, 'cont');
   assert.equal(
     result.type === 'cont' ? (result.state as WorkflowState).stage.kind : undefined,
-    'start-draft-commit',
+    'start-commit',
   );
 });
 
@@ -266,7 +351,7 @@ test('human approval respects disabled auto commit', async () => {
     harness.ctx,
     activeState(
       {
-        kind: 'await-phase-review',
+        kind: 'await-human-completion',
         implementer: { agentSessionId: 22, paneId: 32 },
       },
       { autoCommit: false, humanInTheLoop: true },
@@ -281,12 +366,12 @@ test('human approval respects disabled auto commit', async () => {
   );
 });
 
-test('draft commit stage launches the operational agent with strong commit instructions', async () => {
+test('commit stage launches the operational agent with strong commit instructions', async () => {
   const harness = workflowHarness();
   const result = await workflow.step(
     harness.ctx,
     activeState({
-      kind: 'start-draft-commit',
+      kind: 'start-commit',
       implementer: { agentSessionId: 22, paneId: 32 },
     }),
     null,
@@ -297,20 +382,21 @@ test('draft commit stage launches the operational agent with strong commit instr
   assert.match(harness.headlessLaunches[0]?.prompt ?? '', /Create the Git commit yourself now/);
   assert.match(harness.headlessLaunches[0]?.prompt ?? '', /git add -A/);
   assert.match(harness.headlessLaunches[0]?.prompt ?? '', /untracked files/);
-  assert.match(harness.headlessLaunches[0]?.prompt ?? '', /draft:/);
+  assert.match(harness.headlessLaunches[0]?.prompt ?? '', /`feat: `/);
+  assert.match(harness.headlessLaunches[0]?.prompt ?? '', /phase-02-production-wiring/);
 });
 
-test('verified draft commit advances the phase', async () => {
+test('verified commit advances the phase', async () => {
   const harness = workflowHarness();
   const commit = 'a'.repeat(40);
   const result = await workflow.step(
     harness.ctx,
     activeState({
-      kind: 'await-draft-commit',
+      kind: 'await-commit',
       implementer: { agentSessionId: 22, paneId: 32 },
     }),
     headlessResult(
-      `{"outcome":"draft-commit-created","commit":"${commit}","subject":"draft: implement phase 2"}`,
+      `{"outcome":"commit-created","commit":"${commit}","subject":"feat: wire production behavior"}`,
     ),
   );
 
@@ -322,25 +408,36 @@ test('verified draft commit advances the phase', async () => {
 });
 
 function activeState(
-  stage: Record<string, unknown>,
+  stage: WorkflowState['stage'],
   input?: {
     readonly autoCommit?: boolean;
     readonly autoReview?: boolean;
     readonly humanInTheLoop?: boolean;
+    readonly phaseType?: 'prep' | 'mock-ui' | 'implementation' | 'release';
   },
 ): WorkflowState {
   return {
-    stateVersion: 4,
-    autoCommit: input?.autoCommit ?? true,
-    autoReview: input?.autoReview ?? false,
-    humanInTheLoop: input?.humanInTheLoop ?? false,
+    stateVersion: 5,
+    options: {
+      autoCommit: input?.autoCommit ?? true,
+      autoReview: input?.autoReview ?? false,
+      humanInTheLoop: input?.humanInTheLoop ?? false,
+    },
     plannerSessionId: 11,
     plan: {
       entryPlanPath: 'docs/plan.md',
       decisionLogPath: 'docs/plan-decisions.md',
-      phaseCount: 4,
-      completedPhaseCount: 1,
-      currentPhase: 2,
+      phases: [
+        { number: 1, slug: 'phase-01-foundations', type: 'prep' },
+        {
+          number: 2,
+          slug: 'phase-02-production-wiring',
+          type: input?.phaseType ?? 'implementation',
+        },
+        { number: 3, slug: 'phase-03-docs', type: 'implementation' },
+        { number: 4, slug: 'phase-04-release', type: 'release' },
+      ],
+      currentPhaseIndex: 1,
     },
     stage,
   } as WorkflowState;
@@ -351,6 +448,7 @@ function workflowHarness(input?: {
 }) {
   const sentPrompts: Array<{ readonly agentSessionId: number; readonly text: string }> = [];
   const headlessLaunches: Array<Parameters<WorkflowContext['runHeadlessAgent']>[0]> = [];
+  const spawnedSessions: Array<Parameters<WorkflowContext['spawnAgentSession']>[0]> = [];
   const startedWorkflows: Array<{
     readonly workflowKey: string;
     readonly variables: Record<string, unknown> | undefined;
@@ -358,7 +456,14 @@ function workflowHarness(input?: {
   let headlessLaunchCount = 0;
   const ctx: WorkflowContext = {
     worktreePath: '/workspace',
-    spawnAgentSession: async () => unexpected('spawnAgentSession'),
+    spawnAgentSession: async (spawnInput) => {
+      spawnedSessions.push(spawnInput);
+      return {
+        agentSessionId: 22,
+        paneId: 32,
+        sentAt: '2026-07-10T00:00:00.000Z',
+      };
+    },
     sendAgentPrompt: async ({ agentSessionId, prompt }) => {
       if (prompt === undefined) return unexpected('sendAgentPrompt without prompt');
       sentPrompts.push({ agentSessionId, text: prompt });
@@ -390,6 +495,7 @@ function workflowHarness(input?: {
   return {
     ctx,
     sentPrompts,
+    spawnedSessions,
     headlessLaunches,
     startedWorkflows,
     get headlessLaunchCount() {

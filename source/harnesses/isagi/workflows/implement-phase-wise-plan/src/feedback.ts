@@ -8,7 +8,7 @@ export type WorkflowStatus =
       readonly decisionLogPath: string;
       readonly phaseCount: number;
       readonly completedPhaseCount: number;
-      readonly nextPhase: number;
+      readonly nextPhase?: number | undefined;
     }
   | { readonly kind: 'preparing-phase'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'implementer-aligning'; readonly phase: number; readonly phaseCount: number }
@@ -17,7 +17,14 @@ export type WorkflowStatus =
   | { readonly kind: 'severe-flag'; readonly phase: number }
   | { readonly kind: 'auto-review'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'phase-review'; readonly phase: number; readonly phaseCount: number }
-  | { readonly kind: 'draft-commit'; readonly phase: number; readonly phaseCount: number }
+  | {
+      readonly kind: 'mock-human-completion';
+      readonly phase: number;
+      readonly phaseCount: number;
+      readonly phaseSlug: string;
+      readonly autoCommit: boolean;
+    }
+  | { readonly kind: 'commit'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'complete' }
   | { readonly kind: 'failed'; readonly message: string };
 
@@ -35,7 +42,7 @@ export function renderWorkflowStatus(status: WorkflowStatus): WorkflowUiFeedback
       };
     case 'plan-ready': {
       const next =
-        status.nextPhase > status.phaseCount
+        status.nextPhase === undefined
           ? 'No remaining phase'
           : `Phase ${status.nextPhase} of ${status.phaseCount}`;
       return {
@@ -90,13 +97,23 @@ export function renderWorkflowStatus(status: WorkflowStatus): WorkflowUiFeedback
       return {
         kind: 'info',
         phase: 'phase-review',
-        message: `Phase ${status.phase} of ${status.phaseCount} is ready for approval. Continue to create its draft commit.`,
+        message: `Phase ${status.phase} of ${status.phaseCount} is ready for approval. Continue to finish the phase.`,
       };
-    case 'draft-commit':
+    case 'mock-human-completion': {
+      const commitInstruction = status.autoCommit
+        ? ' Leave the changes uncommitted so the workflow can create the phase commit.'
+        : '';
       return {
         kind: 'info',
-        phase: 'phase-draft-commit',
-        message: `Creating a draft commit for phase ${status.phase} of ${status.phaseCount}`,
+        phase: 'mock-human-completion',
+        message: `Mock-UI phase ${status.phase} of ${status.phaseCount} (${status.phaseSlug}) is ready in the UI-heavy pane. Drive the implementation and visual iteration, run the review, and complete the decision-log handoff.${commitInstruction} Continue when the phase is complete.`,
+      };
+    }
+    case 'commit':
+      return {
+        kind: 'info',
+        phase: 'phase-commit',
+        message: `Creating a commit for phase ${status.phase} of ${status.phaseCount}`,
       };
     case 'complete':
       return {

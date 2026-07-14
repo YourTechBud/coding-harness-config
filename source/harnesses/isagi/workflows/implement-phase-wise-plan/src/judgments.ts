@@ -1,4 +1,4 @@
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 import type {
@@ -14,25 +14,30 @@ export type DiscoveryResult =
       readonly planReferenceFound: false;
       readonly entryPlanPath?: unknown;
       readonly decisionLogPath?: unknown;
-      readonly phaseCount?: unknown;
+      readonly phases?: unknown;
       readonly completedPhaseCount?: unknown;
-      readonly nextPhaseToImplement?: unknown;
     }
   | {
       readonly planReferenceFound: true;
       readonly entryPlanPath: string;
       readonly decisionLogPath: string;
-      readonly phaseCount: number;
+      readonly phases: readonly PlanPhase[];
       readonly completedPhaseCount: number;
-      readonly nextPhaseToImplement: number;
     };
+
+export type PhaseType = 'prep' | 'mock-ui' | 'implementation' | 'release';
+
+export type PlanPhase = {
+  readonly number: number;
+  readonly slug: string;
+  readonly type: PhaseType;
+};
 
 export type NormalizedDiscoveryResult = {
   readonly entryPlanPath: string;
   readonly decisionLogPath: string;
-  readonly phaseCount: number;
-  readonly completedPhaseCount: number;
-  readonly nextPhaseToImplement: number;
+  readonly phases: readonly PlanPhase[];
+  readonly currentPhaseIndex: number;
 };
 
 export type PhaseImplementationKindResult = {
@@ -141,15 +146,16 @@ export function normalizeDiscoveryResult(input: {
   });
   const decisionLogExists = existsSync(resolve(input.worktreePath, decisionLogPath));
   const completedPhaseCount = decisionLogExists ? input.result.completedPhaseCount : 0;
+  validatePlanPhases({
+    phases: input.result.phases,
+    entryPlanPath,
+    worktreePath: input.worktreePath,
+  });
   return {
     entryPlanPath,
     decisionLogPath,
-    phaseCount: input.result.phaseCount,
-    completedPhaseCount,
-    nextPhaseToImplement:
-      completedPhaseCount === input.result.phaseCount
-        ? input.result.phaseCount + 1
-        : completedPhaseCount + 1,
+    phases: input.result.phases,
+    currentPhaseIndex: completedPhaseCount,
   };
 }
 
@@ -175,25 +181,29 @@ You may inspect files under the worktree root. Resolve paths against the worktre
 Return exactly one JSON object with exactly these fields:
 {
   "planReferenceFound": true,
-  "entryPlanPath": "docs/plans/current-plan.md",
-  "decisionLogPath": "docs/plans/current-plan-decisions.md",
-  "phaseCount": 4,
-  "completedPhaseCount": 3,
-  "nextPhaseToImplement": 4
+  "entryPlanPath": "scratch/plans/current-plan/index.md",
+  "decisionLogPath": "scratch/plans/current-plan/decisions.md",
+  "phases": [
+    {"number": 1, "slug": "phase-01-foundations", "type": "prep"},
+    {"number": 2, "slug": "phase-02-interface-mock", "type": "mock-ui"},
+    {"number": 3, "slug": "phase-03-production-wiring", "type": "implementation"}
+  ],
+  "completedPhaseCount": 1
 }
 
 Rules:
 - If there is no phase-wise plan reference, return:
-  {"planReferenceFound": false, "entryPlanPath": null, "decisionLogPath": null, "phaseCount": null, "completedPhaseCount": null, "nextPhaseToImplement": null}
+  {"planReferenceFound": false, "entryPlanPath": null, "decisionLogPath": null, "phases": null, "completedPhaseCount": null}
 - When planReferenceFound is true, entryPlanPath must be the path to the entry plan file relative to the worktree root. Never return an absolute path or a path outside the worktree.
 - When planReferenceFound is true, decisionLogPath must be the path relative to the worktree root where the plan says phase decisions are or will be recorded. Never return an absolute path or a path outside the worktree.
-- When planReferenceFound is true, phaseCount must be the positive integer count of phases in that plan.
+- When planReferenceFound is true, phases must contain every phase in plan order. Read each linked phase file and return its one-based number, complete filename stem as slug, and frontmatter type.
+- Phase type must be exactly one of "prep", "mock-ui", "implementation", or "release". Do not classify or infer a different type from the prose when frontmatter supplies it.
 - Use the full conversation history to identify the current plan reference. Consider both user and assistant messages.
 - If multiple plan references appear, choose the latest current or agreed phase-wise plan, not stale examples or superseded paths.
-- The decision log file may not exist yet. If it does not exist, implementation has not started; return completedPhaseCount 0 and nextPhaseToImplement 1.
+- The decision log file may not exist yet. If it does not exist, implementation has not started; return completedPhaseCount 0.
 - If the decision log file exists, inspect it and count the consecutive implemented phase prefix from phase 1. A phase with a decision entry is implemented; a phase without a decision entry is not implemented yet. Stop at the first missing phase even if a later phase appears in the decision file.
-- completedPhaseCount must be the number of consecutive implemented phases starting at phase 1, clamped to the range 0..phaseCount.
-- nextPhaseToImplement must be completedPhaseCount + 1. If all phases are complete, return phaseCount + 1.`;
+- completedPhaseCount must be the number of consecutive implemented phases starting at phase 1, clamped to the range 0..phases.length.
+- Do not include derived fields such as phaseCount or nextPhaseToImplement.`;
 }
 
 export function classifyPhaseImplementationKindPrompt(input: {
@@ -329,8 +339,7 @@ function validateDiscoveryResult(value: unknown): DiscoveryResult {
     'completedPhaseCount',
     'decisionLogPath',
     'entryPlanPath',
-    'nextPhaseToImplement',
-    'phaseCount',
+    'phases',
     'planReferenceFound',
   ].sort();
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
@@ -344,9 +353,8 @@ function validateDiscoveryResult(value: unknown): DiscoveryResult {
       planReferenceFound: false,
       entryPlanPath: record.entryPlanPath,
       decisionLogPath: record.decisionLogPath,
-      phaseCount: record.phaseCount,
+      phases: record.phases,
       completedPhaseCount: record.completedPhaseCount,
-      nextPhaseToImplement: record.nextPhaseToImplement,
     };
   }
   if (typeof record.entryPlanPath !== 'string' || record.entryPlanPath.trim().length === 0) {
@@ -355,41 +363,59 @@ function validateDiscoveryResult(value: unknown): DiscoveryResult {
   if (typeof record.decisionLogPath !== 'string' || record.decisionLogPath.trim().length === 0) {
     throw new Error('Discovery result field decisionLogPath must be a non-empty string.');
   }
-  if (
-    typeof record.phaseCount !== 'number' ||
-    !Number.isInteger(record.phaseCount) ||
-    record.phaseCount <= 0
-  ) {
-    throw new Error('Discovery result field phaseCount must be a positive integer.');
-  }
+  const phases = validatePhasesValue(record.phases);
   if (
     typeof record.completedPhaseCount !== 'number' ||
     !Number.isInteger(record.completedPhaseCount) ||
     record.completedPhaseCount < 0 ||
-    record.completedPhaseCount > record.phaseCount
+    record.completedPhaseCount > phases.length
   ) {
     throw new Error(
-      'Discovery result field completedPhaseCount must be an integer between 0 and phaseCount.',
-    );
-  }
-  if (
-    typeof record.nextPhaseToImplement !== 'number' ||
-    !Number.isInteger(record.nextPhaseToImplement) ||
-    record.nextPhaseToImplement !== record.completedPhaseCount + 1 ||
-    record.nextPhaseToImplement > record.phaseCount + 1
-  ) {
-    throw new Error(
-      'Discovery result field nextPhaseToImplement must be completedPhaseCount + 1 and no greater than phaseCount + 1.',
+      'Discovery result field completedPhaseCount must be an integer between 0 and phases.length.',
     );
   }
   return {
     planReferenceFound: true,
     entryPlanPath: record.entryPlanPath,
     decisionLogPath: record.decisionLogPath,
-    phaseCount: record.phaseCount,
+    phases,
     completedPhaseCount: record.completedPhaseCount,
-    nextPhaseToImplement: record.nextPhaseToImplement,
   };
+}
+
+function validatePhasesValue(value: unknown): readonly PlanPhase[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error('Discovery result field phases must be a non-empty array.');
+  }
+  return value.map((phase, index) => {
+    if (!phase || typeof phase !== 'object' || Array.isArray(phase)) {
+      throw new Error(`Discovery phase ${index + 1} must be a JSON object.`);
+    }
+    const record = phase as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    const expected = ['number', 'slug', 'type'];
+    if (keys.length !== expected.length || keys.some((key, keyIndex) => key !== expected[keyIndex])) {
+      throw new Error(`Discovery phase ${index + 1} must contain exactly: ${expected.join(', ')}.`);
+    }
+    if (typeof record.number !== 'number' || !Number.isInteger(record.number)) {
+      throw new Error(`Discovery phase ${index + 1} number must be an integer.`);
+    }
+    if (typeof record.slug !== 'string' || record.slug.length === 0) {
+      throw new Error(`Discovery phase ${index + 1} slug must be a non-empty string.`);
+    }
+    if (!isPhaseType(record.type)) {
+      throw new Error(
+        `Discovery phase ${index + 1} type must be prep, mock-ui, implementation, or release.`,
+      );
+    }
+    return { number: record.number, slug: record.slug, type: record.type };
+  });
+}
+
+function isPhaseType(value: unknown): value is PhaseType {
+  return (
+    value === 'prep' || value === 'mock-ui' || value === 'implementation' || value === 'release'
+  );
 }
 
 function validateImplementationKindResult(value: unknown): PhaseImplementationKindResult {
@@ -398,6 +424,91 @@ function validateImplementationKindResult(value: unknown): PhaseImplementationKi
     'prose-heavy',
     'generic',
   ] as const);
+}
+
+function validatePlanPhases(input: {
+  readonly phases: readonly PlanPhase[];
+  readonly entryPlanPath: string;
+  readonly worktreePath: string;
+}): void {
+  const planDirectory = dirname(input.entryPlanPath);
+  const absolutePlanDirectory = resolve(input.worktreePath, planDirectory);
+  const expectedPhaseFiles = input.phases.map((phase) => `${phase.slug}.md`);
+  const actualPhaseFiles = readdirSync(absolutePlanDirectory)
+    .filter((name) => /^phase-[0-9]+-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u.test(name));
+  if (
+    actualPhaseFiles.length !== expectedPhaseFiles.length ||
+    actualPhaseFiles.some((name) => !expectedPhaseFiles.includes(name))
+  ) {
+    throw new Error(
+      `Discovered phases do not match canonical phase files. Canonical files: ${actualPhaseFiles.join(', ') || 'none'}; discovered: ${expectedPhaseFiles.join(', ')}.`,
+    );
+  }
+
+  const entryPlan = readFileSync(resolve(input.worktreePath, input.entryPlanPath), 'utf8');
+  let previousLinkIndex = -1;
+  const seenSlugs = new Set<string>();
+  input.phases.forEach((phase, index) => {
+    const expectedNumber = index + 1;
+    if (phase.number !== expectedNumber) {
+      throw new Error(
+        `Phase ${phase.slug} has number ${phase.number}; expected contiguous phase number ${expectedNumber}.`,
+      );
+    }
+    const expectedPrefix = `phase-${String(expectedNumber).padStart(2, '0')}-`;
+    if (
+      !phase.slug.startsWith(expectedPrefix) ||
+      !/^phase-[0-9]+-[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(phase.slug)
+    ) {
+      throw new Error(
+        `Phase ${expectedNumber} slug must be a kebab-case stable identifier beginning with ${expectedPrefix}.`,
+      );
+    }
+    if (seenSlugs.has(phase.slug)) {
+      throw new Error(`Phase slug is duplicated: ${phase.slug}.`);
+    }
+    seenSlugs.add(phase.slug);
+
+    const linkIndex = entryPlan.indexOf(`${phase.slug}.md`);
+    if (linkIndex < 0) {
+      throw new Error(`Entry plan does not link to phase file ${phase.slug}.md.`);
+    }
+    if (linkIndex <= previousLinkIndex) {
+      throw new Error(`Entry plan phase links are not ordered at ${phase.slug}.md.`);
+    }
+    previousLinkIndex = linkIndex;
+
+    const phasePath = normalizeWorkspaceRelativePath({
+      path: `${planDirectory}/${phase.slug}.md`,
+      worktreePath: input.worktreePath,
+      label: `phase ${phase.number}`,
+      mustExist: true,
+    });
+    const phaseType = readPhaseType(resolve(input.worktreePath, phasePath), phase.slug);
+    if (phaseType !== phase.type) {
+      throw new Error(
+        `Phase ${phase.slug} discovery type ${phase.type} does not match frontmatter type ${phaseType}.`,
+      );
+    }
+  });
+}
+
+function readPhaseType(path: string, slug: string): PhaseType {
+  const contents = readFileSync(path, 'utf8');
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(contents)?.[1];
+  if (frontmatter === undefined) {
+    throw new Error(`Phase ${slug} must begin with YAML frontmatter.`);
+  }
+  const typeLines = frontmatter
+    .split(/\r?\n/u)
+    .map((line) => /^type:\s*(\S+)\s*$/u.exec(line)?.[1])
+    .filter((value): value is string => value !== undefined);
+  if (typeLines.length !== 1 || !isPhaseType(typeLines[0])) {
+    throw new Error(
+      `Phase ${slug} frontmatter must contain exactly one valid type: prep, mock-ui, implementation, or release.`,
+    );
+  }
+  return typeLines[0];
 }
 
 function validateStringEnumOnly<Key extends string, Value extends string>(

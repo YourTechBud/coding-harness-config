@@ -9,6 +9,7 @@ import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workf
 import {
   latestAssistantTurnText,
   normalizeDiscoveryResult,
+  parseDiscoveryResult,
   parseImplementerOutcomeResult,
   parsePlannerOutcomeResult,
 } from '../src/judgments.js';
@@ -57,30 +58,62 @@ test('planner outcomes use one tagged result including severe flags', () => {
   );
 });
 
+test('discovery parser accepts the canonical phase array and rejects derived fields', () => {
+  assert.deepEqual(
+    parseDiscoveryResult(
+      JSON.stringify({
+        planReferenceFound: true,
+        entryPlanPath: 'scratch/plans/example/index.md',
+        decisionLogPath: 'scratch/plans/example/decisions.md',
+        phases,
+        completedPhaseCount: 1,
+      }),
+    ),
+    {
+      planReferenceFound: true,
+      entryPlanPath: 'scratch/plans/example/index.md',
+      decisionLogPath: 'scratch/plans/example/decisions.md',
+      phases,
+      completedPhaseCount: 1,
+    },
+  );
+  assert.throws(
+    () =>
+      parseDiscoveryResult(
+        JSON.stringify({
+          planReferenceFound: true,
+          entryPlanPath: 'scratch/plans/example/index.md',
+          decisionLogPath: 'scratch/plans/example/decisions.md',
+          phases,
+          completedPhaseCount: 1,
+          phaseCount: 2,
+        }),
+      ),
+    /exactly these fields/,
+  );
+});
+
 test('discovery keeps workspace-relative paths and resets progress when the decision log is absent', () => {
   const worktreePath = mkdtempSync(join(tmpdir(), 'isagi-phase-plan-'));
   try {
-    mkdirSync(join(worktreePath, 'docs'), { recursive: true });
-    writeFileSync(join(worktreePath, 'docs', 'plan.md'), '# Plan\n', 'utf8');
+    createPlan(worktreePath);
 
     assert.deepEqual(
       normalizeDiscoveryResult({
         worktreePath,
         result: {
           planReferenceFound: true,
-          entryPlanPath: 'docs/plan.md',
-          decisionLogPath: 'docs/plan-decisions.md',
-          phaseCount: 4,
+          entryPlanPath: 'scratch/plans/example/index.md',
+          decisionLogPath: 'scratch/plans/example/decisions.md',
+          phases,
           completedPhaseCount: 2,
-          nextPhaseToImplement: 3,
         },
       }),
       {
-        entryPlanPath: 'docs/plan.md',
-        decisionLogPath: 'docs/plan-decisions.md',
-        phaseCount: 4,
-        completedPhaseCount: 0,
-        nextPhaseToImplement: 1,
+        entryPlanPath: 'scratch/plans/example/index.md',
+        decisionLogPath: 'scratch/plans/example/decisions.md',
+        phases,
+        currentPhaseIndex: 0,
       },
     );
   } finally {
@@ -91,21 +124,28 @@ test('discovery keeps workspace-relative paths and resets progress when the deci
 test('discovery rejects absolute paths and paths outside the worktree', () => {
   const worktreePath = mkdtempSync(join(tmpdir(), 'isagi-phase-plan-paths-'));
   try {
-    writeFileSync(join(worktreePath, 'plan.md'), '# Plan\n', 'utf8');
+    createPlan(worktreePath);
     const baseResult = {
       planReferenceFound: true as const,
-      entryPlanPath: 'plan.md',
-      decisionLogPath: 'decisions.md',
-      phaseCount: 1,
+      entryPlanPath: 'scratch/plans/example/index.md',
+      decisionLogPath: 'scratch/plans/example/decisions.md',
+      phases,
       completedPhaseCount: 0,
-      nextPhaseToImplement: 1,
     };
 
     assert.throws(
       () =>
         normalizeDiscoveryResult({
           worktreePath,
-          result: { ...baseResult, entryPlanPath: join(worktreePath, 'plan.md') },
+          result: { ...baseResult, phases: [phases[0]] },
+        }),
+      /do not match canonical phase files/,
+    );
+    assert.throws(
+      () =>
+        normalizeDiscoveryResult({
+          worktreePath,
+          result: { ...baseResult, entryPlanPath: join(worktreePath, 'scratch/plans/example/index.md') },
         }),
       /must be relative/,
     );
@@ -126,7 +166,7 @@ test('discovery rejects a future decision log beneath a symlink outside the work
   const worktreePath = mkdtempSync(join(tmpdir(), 'isagi-phase-plan-symlink-'));
   const outsidePath = mkdtempSync(join(tmpdir(), 'isagi-phase-plan-outside-'));
   try {
-    writeFileSync(join(worktreePath, 'plan.md'), '# Plan\n', 'utf8');
+    createPlan(worktreePath);
     symlinkSync(outsidePath, join(worktreePath, 'linked'));
 
     assert.throws(
@@ -135,11 +175,10 @@ test('discovery rejects a future decision log beneath a symlink outside the work
           worktreePath,
           result: {
             planReferenceFound: true,
-            entryPlanPath: 'plan.md',
+            entryPlanPath: 'scratch/plans/example/index.md',
             decisionLogPath: 'linked/decisions.md',
-            phaseCount: 1,
+            phases,
             completedPhaseCount: 0,
-            nextPhaseToImplement: 1,
           },
         }),
       /resolves outside the worktree/,
@@ -149,6 +188,60 @@ test('discovery rejects a future decision log beneath a symlink outside the work
     rmSync(outsidePath, { recursive: true, force: true });
   }
 });
+
+test('discovery rejects non-contiguous phase metadata and frontmatter mismatches', () => {
+  const worktreePath = mkdtempSync(join(tmpdir(), 'isagi-phase-plan-contract-'));
+  try {
+    createPlan(worktreePath);
+    const baseResult = {
+      planReferenceFound: true as const,
+      entryPlanPath: 'scratch/plans/example/index.md',
+      decisionLogPath: 'scratch/plans/example/decisions.md',
+      completedPhaseCount: 0,
+    };
+
+    assert.throws(
+      () =>
+        normalizeDiscoveryResult({
+          worktreePath,
+          result: { ...baseResult, phases: [{ ...phases[0], number: 2 }, phases[1]] },
+        }),
+      /expected contiguous phase number 1/,
+    );
+    assert.throws(
+      () =>
+        normalizeDiscoveryResult({
+          worktreePath,
+          result: { ...baseResult, phases: [{ ...phases[0], type: 'release' }, phases[1]] },
+        }),
+      /does not match frontmatter type prep/,
+    );
+  } finally {
+    rmSync(worktreePath, { recursive: true, force: true });
+  }
+});
+
+const phases = [
+  { number: 1, slug: 'phase-01-foundations', type: 'prep' },
+  { number: 2, slug: 'phase-02-dashboard-mock', type: 'mock-ui' },
+] as const;
+
+function createPlan(worktreePath: string): void {
+  const planDirectory = join(worktreePath, 'scratch', 'plans', 'example');
+  mkdirSync(planDirectory, { recursive: true });
+  writeFileSync(
+    join(planDirectory, 'index.md'),
+    `# Plan\n\n${phases.map((phase) => `- [${phase.slug}](${phase.slug}.md)`).join('\n')}\n`,
+    'utf8',
+  );
+  for (const phase of phases) {
+    writeFileSync(
+      join(planDirectory, `${phase.slug}.md`),
+      `---\ntype: ${phase.type}\ndepends_on: []\npays_back_in: []\n---\n\n# Phase\n`,
+      'utf8',
+    );
+  }
+}
 
 function message(
   role: WorkflowConversationMessage['role'],

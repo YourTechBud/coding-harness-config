@@ -40,7 +40,7 @@ export const headlessJudgment = {
   readonly effort: string;
 };
 
-export const draftCommitter = {
+export const commitAgent = {
   harness: "codex",
   model: "gpt-5.6-luna",
   effort: "low",

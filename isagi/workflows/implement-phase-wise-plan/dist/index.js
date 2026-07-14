@@ -120,34 +120,41 @@ var headlessJudgment = {
   model: "gpt-5.6-luna",
   effort: "medium"
 };
-var draftCommitter = {
+var commitAgent = {
   harness: "codex",
   model: "gpt-5.6-luna",
   effort: "low"
 };
 
-// src/draft-commit.ts
-function draftCommitPrompt(input) {
-  return `You are the unattended draft-commit agent for an Isagi workflow.
+// src/commit.ts
+function commitPrompt(input) {
+  const allowedPrefixes = prefixesForPhase(input.phase);
+  const prefixInstruction = allowedPrefixes.length === 1 ? `The subject must begin with the exact prefix \`${allowedPrefixes[0]}\`.` : `Choose the prefix that best matches the phase contract and actual diff. The subject must begin with exactly one of: ${allowedPrefixes.map((prefix) => `\`${prefix}\``).join(", ")}.`;
+  return `You are the unattended commit agent for an Isagi workflow.
 
 Create the Git commit yourself now. Do not merely describe commands, suggest a commit message, or stop after inspecting the worktree.
 
 Worktree root:
 ${input.worktreePath}
 
-Current phase:
-${input.phaseNumber} of ${input.phaseCount}
-
-Plan file, relative to the worktree root:
+Entry plan, relative to the worktree root:
 ${input.entryPlanPath}
+
+Current phase:
+- Number: ${input.phase.number} of ${input.phaseCount}
+- Stable identifier: ${input.phase.slug}
+- Type: ${input.phase.type}
+
+Read the entry plan and current phase file, then inspect the actual Git diff before choosing the subject.
 
 Required procedure:
 1. Change to the worktree root and inspect the current Git status.
 2. Stage every change with \`git add -A\`. This must include already-staged changes, tracked unstaged changes, deletions, and untracked files.
 3. Confirm that the index contains changes to commit. A clean index is a failure; do not report success.
-4. Choose a concise commit subject describing the completed phase. The subject must begin with the exact prefix \`draft:\`.
-5. Execute \`git commit --signoff\` yourself using that subject.
-6. Verify the created commit with Git. Confirm its full commit hash and confirm that its subject begins with \`draft:\`.
+4. Choose a concise commit subject describing the completed phase. ${prefixInstruction}
+5. For non-draft commits, use \`feat:\` for a new capability, \`fix:\` for corrected behavior, and \`chore:\` for maintenance, refactoring, documentation, tests, or release work that is neither a feature nor a fix. Choose by the dominant outcome of the phase contract and diff.
+6. Execute \`git commit --signoff\` yourself using that subject.
+7. Verify the created commit with Git. Confirm its full commit hash and exact subject.
 
 Safety rules:
 - Never amend an existing commit.
@@ -157,48 +164,44 @@ Safety rules:
 - If any command fails, stop and report the failure instead of claiming success.
 
 After the commit is created and verified, return exactly one JSON object with exactly these fields and no markdown or commentary:
-{"outcome":"draft-commit-created","commit":"<full commit hash>","subject":"draft: <subject>"}`;
+{"outcome":"commit-created","commit":"<full commit hash>","subject":"${allowedPrefixes[0]}<subject>"}`;
 }
-function completedSingleDraftCommitResult(event) {
+function completedSingleCommitResult(event) {
   const results = s.getHeadlessAgentResults(event);
   if (!results) {
-    throw new Error("Workflow resumed with a non-headless draft commit event.");
+    throw new Error("Workflow resumed with a non-headless commit event.");
   }
   if (results.length !== 1) {
-    throw new Error(
-      `Expected exactly one draft commit result, received ${results.length}.`
-    );
+    throw new Error(`Expected exactly one commit result, received ${results.length}.`);
   }
   const result = results[0];
   if (!result || result.status !== "completed") {
     const error = result?.error ? `: ${result.error}` : "";
-    throw new Error(`Draft commit agent did not complete${error}.`);
+    throw new Error(`Commit agent did not complete${error}.`);
   }
   return result;
 }
-function parseDraftCommitResult(output) {
+function parseCommitResult(output, phase) {
   const value = JSON.parse(extractJsonObject(output));
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Draft commit result must be a JSON object.");
+    throw new Error("Commit result must be a JSON object.");
   }
   const record = value;
   const keys = Object.keys(record).sort();
   const expected = ["commit", "outcome", "subject"];
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
-    throw new Error(
-      `Draft commit result must contain exactly these fields: ${expected.join(", ")}.`
-    );
+    throw new Error(`Commit result must contain exactly these fields: ${expected.join(", ")}.`);
   }
-  if (record.outcome !== "draft-commit-created") {
-    throw new Error("Draft commit outcome must be draft-commit-created.");
+  if (record.outcome !== "commit-created") {
+    throw new Error("Commit outcome must be commit-created.");
   }
   if (typeof record.commit !== "string" || !/^[0-9a-f]{40,64}$/u.test(record.commit)) {
-    throw new Error(
-      "Draft commit hash must be a full hexadecimal Git object id."
-    );
+    throw new Error("Commit hash must be a full hexadecimal Git object id.");
   }
-  if (typeof record.subject !== "string" || !record.subject.startsWith("draft:")) {
-    throw new Error("Draft commit subject must begin with draft:.");
+  if (typeof record.subject !== "string" || !hasAllowedPrefix(record.subject, phase)) {
+    throw new Error(
+      `Commit subject for phase type ${phase.type} must begin with ${formatAllowedPrefixes(phase)}.`
+    );
   }
   return {
     outcome: record.outcome,
@@ -206,11 +209,29 @@ function parseDraftCommitResult(output) {
     subject: record.subject
   };
 }
+function prefixesForPhase(phase) {
+  switch (phase.type) {
+    case "prep":
+    case "mock-ui":
+      return ["draft: "];
+    case "implementation":
+    case "release":
+      return ["feat: ", "fix: ", "chore: "];
+  }
+}
+function hasAllowedPrefix(subject, phase) {
+  return prefixesForPhase(phase).some(
+    (prefix) => subject.startsWith(prefix) && subject.length > prefix.length
+  );
+}
+function formatAllowedPrefixes(phase) {
+  return prefixesForPhase(phase).map((prefix) => prefix.trim()).join(", ");
+}
 function extractJsonObject(output) {
   const first = output.indexOf("{");
   const last = output.lastIndexOf("}");
   if (first < 0 || last < first) {
-    throw new Error("Draft commit output did not contain a JSON object.");
+    throw new Error("Commit output did not contain a JSON object.");
   }
   return output.slice(first, last + 1);
 }
@@ -228,7 +249,7 @@ function renderWorkflowStatus(status) {
         message: "Finding the current plan"
       };
     case "plan-ready": {
-      const next = status.nextPhase > status.phaseCount ? "No remaining phase" : `Phase ${status.nextPhase} of ${status.phaseCount}`;
+      const next = status.nextPhase === void 0 ? "No remaining phase" : `Phase ${status.nextPhase} of ${status.phaseCount}`;
       return {
         kind: "info",
         phase: "plan-confirmation",
@@ -283,13 +304,21 @@ Resolve it in the planner pane, then Continue. The latest planner response will 
       return {
         kind: "info",
         phase: "phase-review",
-        message: `Phase ${status.phase} of ${status.phaseCount} is ready for approval. Continue to create its draft commit.`
+        message: `Phase ${status.phase} of ${status.phaseCount} is ready for approval. Continue to finish the phase.`
       };
-    case "draft-commit":
+    case "mock-human-completion": {
+      const commitInstruction = status.autoCommit ? " Leave the changes uncommitted so the workflow can create the phase commit." : "";
       return {
         kind: "info",
-        phase: "phase-draft-commit",
-        message: `Creating a draft commit for phase ${status.phase} of ${status.phaseCount}`
+        phase: "mock-human-completion",
+        message: `Mock-UI phase ${status.phase} of ${status.phaseCount} (${status.phaseSlug}) is ready in the UI-heavy pane. Drive the implementation and visual iteration, run the review, and complete the decision-log handoff.${commitInstruction} Continue when the phase is complete.`
+      };
+    }
+    case "commit":
+      return {
+        kind: "info",
+        phase: "phase-commit",
+        message: `Creating a commit for phase ${status.phase} of ${status.phaseCount}`
       };
     case "complete":
       return {
@@ -312,7 +341,7 @@ function assertNever(value) {
 }
 
 // src/judgments.ts
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 function latestAssistantTurnText(history) {
   let finalAssistantIndex = -1;
@@ -384,12 +413,16 @@ function normalizeDiscoveryResult(input) {
   });
   const decisionLogExists = existsSync(resolve(input.worktreePath, decisionLogPath));
   const completedPhaseCount = decisionLogExists ? input.result.completedPhaseCount : 0;
+  validatePlanPhases({
+    phases: input.result.phases,
+    entryPlanPath,
+    worktreePath: input.worktreePath
+  });
   return {
     entryPlanPath,
     decisionLogPath,
-    phaseCount: input.result.phaseCount,
-    completedPhaseCount,
-    nextPhaseToImplement: completedPhaseCount === input.result.phaseCount ? input.result.phaseCount + 1 : completedPhaseCount + 1
+    phases: input.result.phases,
+    currentPhaseIndex: completedPhaseCount
   };
 }
 function discoverPlanPrompt(input) {
@@ -410,25 +443,29 @@ You may inspect files under the worktree root. Resolve paths against the worktre
 Return exactly one JSON object with exactly these fields:
 {
   "planReferenceFound": true,
-  "entryPlanPath": "docs/plans/current-plan.md",
-  "decisionLogPath": "docs/plans/current-plan-decisions.md",
-  "phaseCount": 4,
-  "completedPhaseCount": 3,
-  "nextPhaseToImplement": 4
+  "entryPlanPath": "scratch/plans/current-plan/index.md",
+  "decisionLogPath": "scratch/plans/current-plan/decisions.md",
+  "phases": [
+    {"number": 1, "slug": "phase-01-foundations", "type": "prep"},
+    {"number": 2, "slug": "phase-02-interface-mock", "type": "mock-ui"},
+    {"number": 3, "slug": "phase-03-production-wiring", "type": "implementation"}
+  ],
+  "completedPhaseCount": 1
 }
 
 Rules:
 - If there is no phase-wise plan reference, return:
-  {"planReferenceFound": false, "entryPlanPath": null, "decisionLogPath": null, "phaseCount": null, "completedPhaseCount": null, "nextPhaseToImplement": null}
+  {"planReferenceFound": false, "entryPlanPath": null, "decisionLogPath": null, "phases": null, "completedPhaseCount": null}
 - When planReferenceFound is true, entryPlanPath must be the path to the entry plan file relative to the worktree root. Never return an absolute path or a path outside the worktree.
 - When planReferenceFound is true, decisionLogPath must be the path relative to the worktree root where the plan says phase decisions are or will be recorded. Never return an absolute path or a path outside the worktree.
-- When planReferenceFound is true, phaseCount must be the positive integer count of phases in that plan.
+- When planReferenceFound is true, phases must contain every phase in plan order. Read each linked phase file and return its one-based number, complete filename stem as slug, and frontmatter type.
+- Phase type must be exactly one of "prep", "mock-ui", "implementation", or "release". Do not classify or infer a different type from the prose when frontmatter supplies it.
 - Use the full conversation history to identify the current plan reference. Consider both user and assistant messages.
 - If multiple plan references appear, choose the latest current or agreed phase-wise plan, not stale examples or superseded paths.
-- The decision log file may not exist yet. If it does not exist, implementation has not started; return completedPhaseCount 0 and nextPhaseToImplement 1.
+- The decision log file may not exist yet. If it does not exist, implementation has not started; return completedPhaseCount 0.
 - If the decision log file exists, inspect it and count the consecutive implemented phase prefix from phase 1. A phase with a decision entry is implemented; a phase without a decision entry is not implemented yet. Stop at the first missing phase even if a later phase appears in the decision file.
-- completedPhaseCount must be the number of consecutive implemented phases starting at phase 1, clamped to the range 0..phaseCount.
-- nextPhaseToImplement must be completedPhaseCount + 1. If all phases are complete, return phaseCount + 1.`;
+- completedPhaseCount must be the number of consecutive implemented phases starting at phase 1, clamped to the range 0..phases.length.
+- Do not include derived fields such as phaseCount or nextPhaseToImplement.`;
 }
 function classifyPhaseImplementationKindPrompt(input) {
   return `${jsonClassifierPreamble("classifyPhaseImplementationKind")}
@@ -537,8 +574,7 @@ function validateDiscoveryResult(value) {
     "completedPhaseCount",
     "decisionLogPath",
     "entryPlanPath",
-    "nextPhaseToImplement",
-    "phaseCount",
+    "phases",
     "planReferenceFound"
   ].sort();
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) {
@@ -552,9 +588,8 @@ function validateDiscoveryResult(value) {
       planReferenceFound: false,
       entryPlanPath: record.entryPlanPath,
       decisionLogPath: record.decisionLogPath,
-      phaseCount: record.phaseCount,
-      completedPhaseCount: record.completedPhaseCount,
-      nextPhaseToImplement: record.nextPhaseToImplement
+      phases: record.phases,
+      completedPhaseCount: record.completedPhaseCount
     };
   }
   if (typeof record.entryPlanPath !== "string" || record.entryPlanPath.trim().length === 0) {
@@ -563,27 +598,50 @@ function validateDiscoveryResult(value) {
   if (typeof record.decisionLogPath !== "string" || record.decisionLogPath.trim().length === 0) {
     throw new Error("Discovery result field decisionLogPath must be a non-empty string.");
   }
-  if (typeof record.phaseCount !== "number" || !Number.isInteger(record.phaseCount) || record.phaseCount <= 0) {
-    throw new Error("Discovery result field phaseCount must be a positive integer.");
-  }
-  if (typeof record.completedPhaseCount !== "number" || !Number.isInteger(record.completedPhaseCount) || record.completedPhaseCount < 0 || record.completedPhaseCount > record.phaseCount) {
+  const phases = validatePhasesValue(record.phases);
+  if (typeof record.completedPhaseCount !== "number" || !Number.isInteger(record.completedPhaseCount) || record.completedPhaseCount < 0 || record.completedPhaseCount > phases.length) {
     throw new Error(
-      "Discovery result field completedPhaseCount must be an integer between 0 and phaseCount."
-    );
-  }
-  if (typeof record.nextPhaseToImplement !== "number" || !Number.isInteger(record.nextPhaseToImplement) || record.nextPhaseToImplement !== record.completedPhaseCount + 1 || record.nextPhaseToImplement > record.phaseCount + 1) {
-    throw new Error(
-      "Discovery result field nextPhaseToImplement must be completedPhaseCount + 1 and no greater than phaseCount + 1."
+      "Discovery result field completedPhaseCount must be an integer between 0 and phases.length."
     );
   }
   return {
     planReferenceFound: true,
     entryPlanPath: record.entryPlanPath,
     decisionLogPath: record.decisionLogPath,
-    phaseCount: record.phaseCount,
-    completedPhaseCount: record.completedPhaseCount,
-    nextPhaseToImplement: record.nextPhaseToImplement
+    phases,
+    completedPhaseCount: record.completedPhaseCount
   };
+}
+function validatePhasesValue(value) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("Discovery result field phases must be a non-empty array.");
+  }
+  return value.map((phase, index) => {
+    if (!phase || typeof phase !== "object" || Array.isArray(phase)) {
+      throw new Error(`Discovery phase ${index + 1} must be a JSON object.`);
+    }
+    const record = phase;
+    const keys = Object.keys(record).sort();
+    const expected = ["number", "slug", "type"];
+    if (keys.length !== expected.length || keys.some((key, keyIndex) => key !== expected[keyIndex])) {
+      throw new Error(`Discovery phase ${index + 1} must contain exactly: ${expected.join(", ")}.`);
+    }
+    if (typeof record.number !== "number" || !Number.isInteger(record.number)) {
+      throw new Error(`Discovery phase ${index + 1} number must be an integer.`);
+    }
+    if (typeof record.slug !== "string" || record.slug.length === 0) {
+      throw new Error(`Discovery phase ${index + 1} slug must be a non-empty string.`);
+    }
+    if (!isPhaseType(record.type)) {
+      throw new Error(
+        `Discovery phase ${index + 1} type must be prep, mock-ui, implementation, or release.`
+      );
+    }
+    return { number: record.number, slug: record.slug, type: record.type };
+  });
+}
+function isPhaseType(value) {
+  return value === "prep" || value === "mock-ui" || value === "implementation" || value === "release";
 }
 function validateImplementationKindResult(value) {
   return validateStringEnumOnly(value, "implementationKind", [
@@ -591,6 +649,72 @@ function validateImplementationKindResult(value) {
     "prose-heavy",
     "generic"
   ]);
+}
+function validatePlanPhases(input) {
+  const planDirectory = dirname(input.entryPlanPath);
+  const absolutePlanDirectory = resolve(input.worktreePath, planDirectory);
+  const expectedPhaseFiles = input.phases.map((phase) => `${phase.slug}.md`);
+  const actualPhaseFiles = readdirSync(absolutePlanDirectory).filter((name) => /^phase-[0-9]+-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u.test(name));
+  if (actualPhaseFiles.length !== expectedPhaseFiles.length || actualPhaseFiles.some((name) => !expectedPhaseFiles.includes(name))) {
+    throw new Error(
+      `Discovered phases do not match canonical phase files. Canonical files: ${actualPhaseFiles.join(", ") || "none"}; discovered: ${expectedPhaseFiles.join(", ")}.`
+    );
+  }
+  const entryPlan = readFileSync(resolve(input.worktreePath, input.entryPlanPath), "utf8");
+  let previousLinkIndex = -1;
+  const seenSlugs = /* @__PURE__ */ new Set();
+  input.phases.forEach((phase, index) => {
+    const expectedNumber = index + 1;
+    if (phase.number !== expectedNumber) {
+      throw new Error(
+        `Phase ${phase.slug} has number ${phase.number}; expected contiguous phase number ${expectedNumber}.`
+      );
+    }
+    const expectedPrefix = `phase-${String(expectedNumber).padStart(2, "0")}-`;
+    if (!phase.slug.startsWith(expectedPrefix) || !/^phase-[0-9]+-[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(phase.slug)) {
+      throw new Error(
+        `Phase ${expectedNumber} slug must be a kebab-case stable identifier beginning with ${expectedPrefix}.`
+      );
+    }
+    if (seenSlugs.has(phase.slug)) {
+      throw new Error(`Phase slug is duplicated: ${phase.slug}.`);
+    }
+    seenSlugs.add(phase.slug);
+    const linkIndex = entryPlan.indexOf(`${phase.slug}.md`);
+    if (linkIndex < 0) {
+      throw new Error(`Entry plan does not link to phase file ${phase.slug}.md.`);
+    }
+    if (linkIndex <= previousLinkIndex) {
+      throw new Error(`Entry plan phase links are not ordered at ${phase.slug}.md.`);
+    }
+    previousLinkIndex = linkIndex;
+    const phasePath = normalizeWorkspaceRelativePath({
+      path: `${planDirectory}/${phase.slug}.md`,
+      worktreePath: input.worktreePath,
+      label: `phase ${phase.number}`,
+      mustExist: true
+    });
+    const phaseType = readPhaseType(resolve(input.worktreePath, phasePath), phase.slug);
+    if (phaseType !== phase.type) {
+      throw new Error(
+        `Phase ${phase.slug} discovery type ${phase.type} does not match frontmatter type ${phaseType}.`
+      );
+    }
+  });
+}
+function readPhaseType(path, slug) {
+  const contents = readFileSync(path, "utf8");
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(contents)?.[1];
+  if (frontmatter === void 0) {
+    throw new Error(`Phase ${slug} must begin with YAML frontmatter.`);
+  }
+  const typeLines = frontmatter.split(/\r?\n/u).map((line) => /^type:\s*(\S+)\s*$/u.exec(line)?.[1]).filter((value) => value !== void 0);
+  if (typeLines.length !== 1 || !isPhaseType(typeLines[0])) {
+    throw new Error(
+      `Phase ${slug} frontmatter must contain exactly one valid type: prep, mock-ui, implementation, or release.`
+    );
+  }
+  return typeLines[0];
 }
 function validateStringEnumOnly(value, key, allowed) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -663,9 +787,9 @@ function assertRealPathInsideWorktree(input) {
 var autoCommitInput = {
   kind: "select",
   key: "autoCommit",
-  label: "Automatic draft commit",
+  label: "Automatic commit",
   options: [
-    { value: "yes", label: "Yes, create a draft commit after each phase" },
+    { value: "yes", label: "Yes, create a commit after each phase" },
     { value: "no", label: "No, leave phase changes uncommitted" }
   ],
   default: "yes"
@@ -705,10 +829,12 @@ var index_default = r({
     parseAutoCommit(variables.autoCommit);
   },
   init: (launchCtx, variables) => ({
-    stateVersion: 4,
-    autoCommit: parseAutoCommit(variables.autoCommit) === "yes",
-    autoReview: parseAutoReview(variables.autoReview) === "yes",
-    humanInTheLoop: parseHumanInTheLoop(variables.humanInTheLoop) === "yes",
+    stateVersion: 5,
+    options: {
+      autoCommit: parseAutoCommit(variables.autoCommit) === "yes",
+      autoReview: parseAutoReview(variables.autoReview) === "yes",
+      humanInTheLoop: parseHumanInTheLoop(variables.humanInTheLoop) === "yes"
+    },
     plannerSessionId: launchCtx.agentSessionId,
     stage: { kind: "discover-plan" }
   }),
@@ -753,17 +879,18 @@ var index_default = r({
           );
         }
         const activeState = activatePlan(state, normalized);
+        const nextPhase = currentPhase(activeState);
         await setWorkflowStatus(ctx, {
           kind: "plan-ready",
           entryPlanPath: activeState.plan.entryPlanPath,
           decisionLogPath: activeState.plan.decisionLogPath,
-          phaseCount: activeState.plan.phaseCount,
-          completedPhaseCount: activeState.plan.completedPhaseCount,
-          nextPhase: activeState.plan.currentPhase
+          phaseCount: activeState.plan.phases.length,
+          completedPhaseCount: activeState.plan.currentPhaseIndex,
+          nextPhase: nextPhase?.number
         });
         await ctx.log(
           "info",
-          `Plan found at ${activeState.plan.entryPlanPath} with ${activeState.plan.phaseCount} phases. Decision log: ${activeState.plan.decisionLogPath}. Completed phases: ${activeState.plan.completedPhaseCount}. Next phase: ${activeState.plan.currentPhase}.`
+          `Plan found at ${activeState.plan.entryPlanPath} with ${activeState.plan.phases.length} phases. Decision log: ${activeState.plan.decisionLogPath}. Completed phases: ${activeState.plan.currentPhaseIndex}. Next phase: ${nextPhase?.number ?? "none"}.`
         );
         return a(activeState, o.userContinue());
       }
@@ -776,11 +903,11 @@ var index_default = r({
             "Plan confirmation resumed with an unexpected event."
           );
         }
-        if (activeState.plan.currentPhase > activeState.plan.phaseCount) {
+        if (!currentPhase(activeState)) {
           await setWorkflowStatus(ctx, { kind: "complete" });
           await ctx.log(
             "info",
-            `The decision log already contains all ${activeState.plan.phaseCount} phase decisions.`
+            `The decision log already contains all ${activeState.plan.phases.length} phase decisions.`
           );
           return i(withStage(activeState, { kind: "done" }));
         }
@@ -792,17 +919,30 @@ var index_default = r({
       }
       case "select-implementer": {
         const activeState = requireActiveState(state);
+        const phase = activePhase(activeState);
         await setWorkflowStatus(ctx, {
           kind: "preparing-phase",
-          phase: activeState.plan.currentPhase,
-          phaseCount: activeState.plan.phaseCount
+          phase: phase.number,
+          phaseCount: activeState.plan.phases.length
         });
+        if (phase.type === "mock-ui") {
+          await ctx.log(
+            "info",
+            `Selected the ui-heavy implementer profile for mock phase ${phase.number}.`
+          );
+          return i(
+            withStage(activeState, {
+              kind: "spawn-implementer",
+              profile: implementerUiHeavy
+            })
+          );
+        }
         return startHeadlessJudgment(ctx, {
           judgment: "classifyPhaseImplementationKind",
           prompt: classifyPhaseImplementationKindPrompt({
             worktreePath: ctx.worktreePath,
-            phaseNumber: activeState.plan.currentPhase,
-            phaseCount: activeState.plan.phaseCount,
+            phaseNumber: activePhase(activeState).number,
+            phaseCount: activeState.plan.phases.length,
             entryPlanPath: activeState.plan.entryPlanPath
           }),
           nextState: withStage(activeState, {
@@ -814,14 +954,14 @@ var index_default = r({
         const activeState = requireActiveState(state);
         const judgment = await readHeadlessJudgment(ctx, state, event, {
           name: "classifyPhaseImplementationKind",
-          failureMessage: `The implementer for phase ${activeState.plan.currentPhase} could not be selected`,
+          failureMessage: `The implementer for phase ${activePhase(activeState).number} could not be selected`,
           parse: parsePhaseImplementationKindResult
         });
         if (!judgment.ok) return judgment.result;
         const profile = selectImplementerProfile(judgment.value.implementationKind);
         await ctx.log(
           "info",
-          `Selected the ${profile.kind} implementer profile for phase ${activeState.plan.currentPhase}.`
+          `Selected the ${profile.kind} implementer profile for phase ${activePhase(activeState).number}.`
         );
         return i(
           withStage(activeState, {
@@ -835,15 +975,15 @@ var index_default = r({
         const profile = state.stage.profile;
         await setWorkflowStatus(ctx, {
           kind: "implementer-aligning",
-          phase: activeState.plan.currentPhase,
-          phaseCount: activeState.plan.phaseCount
+          phase: activePhase(activeState).number,
+          phaseCount: activeState.plan.phases.length
         });
         const spawned = await ctx.spawnAgentSession({
           harness: profile.harness,
           model: profile.model,
           effort: profile.effort,
           prompt: initialImplementerPrompt({
-            phaseNumber: activeState.plan.currentPhase,
+            phaseNumber: activePhase(activeState).number,
             entryPlanPath: activeState.plan.entryPlanPath
           })
         });
@@ -853,7 +993,7 @@ var index_default = r({
         };
         await ctx.log(
           "info",
-          `Spawned ${profile.kind} implementer for phase ${activeState.plan.currentPhase}/${activeState.plan.phaseCount}: harness=${profile.harness}, model=${profile.model}, effort=${profile.effort}, agentSessionId=${implementer.agentSessionId}, paneId=${implementer.paneId}.`
+          `Spawned ${profile.kind} implementer for phase ${activePhase(activeState).number}/${activeState.plan.phases.length}: harness=${profile.harness}, model=${profile.model}, effort=${profile.effort}, agentSessionId=${implementer.agentSessionId}, paneId=${implementer.paneId}.`
         );
         return a(
           withStage(activeState, {
@@ -867,23 +1007,38 @@ var index_default = r({
       }
       case "await-implementer-turn": {
         const activeState = requireActiveState(state);
+        const phase = activePhase(activeState);
         const ended = await requireEndedTurn(ctx, event, {
           role: "implementer",
-          phaseNumber: activeState.plan.currentPhase
+          phaseNumber: phase.number
         });
         if (!ended.ok) return ended.result;
+        if (phase.type === "mock-ui") {
+          await setHumanCompletionStatus(ctx, activeState);
+          await ctx.log(
+            "info",
+            `Mock phase ${phase.number} initial implementer turn ended; handing control to the human.`
+          );
+          return a(
+            withStage(activeState, {
+              kind: "await-human-completion",
+              implementer: state.stage.implementer
+            }),
+            o.userContinue()
+          );
+        }
         const implementerTurn = await latestAssistantTurnOrFail(ctx, {
           agentSessionId: state.stage.implementer.agentSessionId,
           label: "implementer",
-          phaseNumber: activeState.plan.currentPhase
+          phaseNumber: activePhase(activeState).number
         });
         if (!implementerTurn.ok) return implementerTurn.result;
         return startHeadlessJudgment(ctx, {
           judgment: "classifyImplementerOutcome",
           prompt: classifyImplementerOutcomePrompt({
             worktreePath: ctx.worktreePath,
-            phaseNumber: activeState.plan.currentPhase,
-            phaseCount: activeState.plan.phaseCount,
+            phaseNumber: activePhase(activeState).number,
+            phaseCount: activeState.plan.phases.length,
             entryPlanPath: activeState.plan.entryPlanPath,
             implementerTurn: implementerTurn.text
           }),
@@ -899,7 +1054,7 @@ var index_default = r({
         const activeState = requireActiveState(state);
         const judgment = await readHeadlessJudgment(ctx, state, event, {
           name: "classifyImplementerOutcome",
-          failureMessage: `The implementer response for phase ${activeState.plan.currentPhase} could not be classified`,
+          failureMessage: `The implementer response for phase ${activePhase(activeState).number} could not be classified`,
           parse: parseImplementerOutcomeResult
         });
         if (!judgment.ok) return judgment.result;
@@ -916,20 +1071,20 @@ var index_default = r({
         const activeState = requireActiveState(state);
         const ended = await requireEndedTurn(ctx, event, {
           role: "planner",
-          phaseNumber: activeState.plan.currentPhase
+          phaseNumber: activePhase(activeState).number
         });
         if (!ended.ok) return ended.result;
         const plannerTurn = await latestAssistantTurnOrFail(ctx, {
           agentSessionId: activeState.plannerSessionId,
           label: "planner",
-          phaseNumber: activeState.plan.currentPhase
+          phaseNumber: activePhase(activeState).number
         });
         if (!plannerTurn.ok) return plannerTurn.result;
         return startHeadlessJudgment(ctx, {
           judgment: "classifyPlannerOutcome",
           prompt: classifyPlannerOutcomePrompt({
-            phaseNumber: activeState.plan.currentPhase,
-            phaseCount: activeState.plan.phaseCount,
+            phaseNumber: activePhase(activeState).number,
+            phaseCount: activeState.plan.phases.length,
             plannerTurn: plannerTurn.text
           }),
           nextState: withStage(activeState, {
@@ -944,18 +1099,18 @@ var index_default = r({
         const activeState = requireActiveState(state);
         const judgment = await readHeadlessJudgment(ctx, state, event, {
           name: "classifyPlannerOutcome",
-          failureMessage: `The planner response for phase ${activeState.plan.currentPhase} could not be classified`,
+          failureMessage: `The planner response for phase ${activePhase(activeState).number} could not be classified`,
           parse: parsePlannerOutcomeResult
         });
         if (!judgment.ok) return judgment.result;
         if (judgment.value.outcome === "severe-flag") {
           await setWorkflowStatus(ctx, {
             kind: "severe-flag",
-            phase: activeState.plan.currentPhase
+            phase: activePhase(activeState).number
           });
           await ctx.log(
             "warning",
-            `Planner raised a severe flag during phase ${activeState.plan.currentPhase}; waiting for human resolution.`
+            `Planner raised a severe flag during phase ${activePhase(activeState).number}; waiting for human resolution.`
           );
           return a(
             withStage(activeState, {
@@ -978,19 +1133,19 @@ var index_default = r({
         if (!s.isUserContinue(event)) {
           return failWorkflow(
             ctx,
-            `The severe flag pause for phase ${activeState.plan.currentPhase} could not be resumed`,
+            `The severe flag pause for phase ${activePhase(activeState).number} could not be resumed`,
             "Severe flag resolution resumed with an unexpected event."
           );
         }
         const plannerTurn = await latestAssistantTurnOrFail(ctx, {
           agentSessionId: activeState.plannerSessionId,
           label: "planner",
-          phaseNumber: activeState.plan.currentPhase
+          phaseNumber: activePhase(activeState).number
         });
         if (!plannerTurn.ok) return plannerTurn.result;
         await ctx.log(
           "info",
-          `Human continued after the severe flag in phase ${activeState.plan.currentPhase}; sending the latest planner turn verbatim without reclassification.`
+          `Human continued after the severe flag in phase ${activePhase(activeState).number}; sending the latest planner turn verbatim without reclassification.`
         );
         return sendRawPlannerTurnAfterHumanResolution(ctx, activeState, {
           implementer: state.stage.implementer,
@@ -1004,73 +1159,78 @@ var index_default = r({
         if (!reviewResult.ok) {
           return failWorkflow(
             ctx,
-            `Automatic review failed for phase ${activeState.plan.currentPhase}`,
+            `Automatic review failed for phase ${activePhase(activeState).number}`,
             `Automatic review child workflow ${state.stage.runId} failed: ${reviewResult.reason}`
           );
         }
         await ctx.log(
           "info",
-          `Automatic review child workflow ${state.stage.runId} completed phase ${activeState.plan.currentPhase} after ${reviewResult.reviewCount} review rounds.`
+          `Automatic review child workflow ${state.stage.runId} completed phase ${activePhase(activeState).number} after ${reviewResult.reviewCount} review rounds.`
         );
         return continueAfterAutoReview(ctx, activeState, state.stage.implementer);
       }
-      case "await-phase-review": {
+      case "await-human-completion": {
         const activeState = requireActiveState(state);
         if (!s.isUserContinue(event)) {
           return failWorkflow(
             ctx,
-            `Phase ${activeState.plan.currentPhase} review could not be resumed`,
-            "Phase review resumed with an unexpected event."
+            `Phase ${activePhase(activeState).number} human checkpoint could not be resumed`,
+            "Human completion checkpoint resumed with an unexpected event."
           );
         }
-        await ctx.log("info", `Human review completed for phase ${activeState.plan.currentPhase}.`);
+        await ctx.log(
+          "info",
+          `Human completion confirmed for phase ${activePhase(activeState).number}.`
+        );
         return continueAfterHumanApproval(activeState, state.stage.implementer);
       }
-      case "start-draft-commit": {
+      case "start-commit": {
         const activeState = requireActiveState(state);
+        const phase = activePhase(activeState);
         await setWorkflowStatus(ctx, {
-          kind: "draft-commit",
-          phase: activeState.plan.currentPhase,
-          phaseCount: activeState.plan.phaseCount
+          kind: "commit",
+          phase: phase.number,
+          phaseCount: activeState.plan.phases.length
         });
         const op = await ctx.runHeadlessAgent({
-          harness: draftCommitter.harness,
-          model: draftCommitter.model,
-          effort: draftCommitter.effort,
-          prompt: draftCommitPrompt({
+          harness: commitAgent.harness,
+          model: commitAgent.model,
+          effort: commitAgent.effort,
+          prompt: commitPrompt({
             worktreePath: ctx.worktreePath,
-            phaseNumber: activeState.plan.currentPhase,
-            phaseCount: activeState.plan.phaseCount,
+            phase,
+            phaseCount: activeState.plan.phases.length,
             entryPlanPath: activeState.plan.entryPlanPath
           })
         });
         await ctx.log(
           "info",
-          `Started draft commit op ${op.opId} for phase ${activeState.plan.currentPhase}.`
+          `Started commit op ${op.opId} for phase ${phase.number}.`
         );
         return a(
           withStage(activeState, {
-            kind: "await-draft-commit",
+            kind: "await-commit",
             implementer: state.stage.implementer
           }),
           o.headlessAgent(op)
         );
       }
-      case "await-draft-commit": {
+      case "await-commit": {
         const activeState = requireActiveState(state);
+        const phase = activePhase(activeState);
         try {
-          const result = completedSingleDraftCommitResult(event);
-          const commit = parseDraftCommitResult(result.output ?? "");
+          const result = completedSingleCommitResult(event);
+          const commit = parseCommitResult(result.output ?? "", phase);
           await ctx.log(
             "info",
-            `Created draft commit ${commit.commit} for phase ${activeState.plan.currentPhase}: ${commit.subject}.`
+            `Created commit ${commit.commit} for phase ${phase.number}: ${commit.subject}.`
           );
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           return failWorkflow(
             ctx,
-            `Draft commit failed for phase ${activeState.plan.currentPhase}`,
-            `Draft commit failed for phase ${activeState.plan.currentPhase}: ${message}`
+            `Commit failed for phase ${phase.number}`,
+            `Commit failed for phase ${phase.number}: ${message}`
           );
         }
         return i(
@@ -1082,29 +1242,32 @@ var index_default = r({
       }
       case "advance-phase": {
         const activeState = requireActiveState(state);
-        if (activeState.plan.currentPhase >= activeState.plan.phaseCount) {
+        const phase = activePhase(activeState);
+        const nextPhaseIndex = activeState.plan.currentPhaseIndex + 1;
+        if (nextPhaseIndex >= activeState.plan.phases.length) {
           await setWorkflowStatus(ctx, { kind: "complete" });
           await ctx.log(
             "info",
-            `Plan implementation completed after phase ${activeState.plan.currentPhase}/${activeState.plan.phaseCount}. Final implementer pane remains open.`
+            `Plan implementation completed after phase ${phase.number}/${activeState.plan.phases.length}. Final implementer pane remains open.`
           );
           return i(
-            withStage(activeState, {
-              kind: "done",
-              finalImplementer: state.stage.implementer
-            })
+            {
+              ...activeState,
+              plan: { ...activeState.plan, currentPhaseIndex: nextPhaseIndex },
+              stage: { kind: "done", finalImplementer: state.stage.implementer }
+            }
           );
         }
         await ctx.log(
           "info",
-          `Closing implementer pane ${state.stage.implementer.paneId} after phase ${activeState.plan.currentPhase}.`
+          `Closing implementer pane ${state.stage.implementer.paneId} after phase ${phase.number}.`
         );
         await ctx.closePane(state.stage.implementer.paneId);
         return i({
           ...activeState,
           plan: {
             ...activeState.plan,
-            currentPhase: activeState.plan.currentPhase + 1
+            currentPhaseIndex: nextPhaseIndex
           },
           stage: { kind: "select-implementer" }
         });
@@ -1114,9 +1277,8 @@ var index_default = r({
         return l({
           entryPlanPath: activeState.plan.entryPlanPath,
           decisionLogPath: activeState.plan.decisionLogPath,
-          phaseCount: activeState.plan.phaseCount,
-          completedPhaseCount: activeState.plan.completedPhaseCount,
-          nextPhaseToImplement: activeState.plan.phaseCount + 1,
+          phases: activeState.plan.phases,
+          completedPhaseCount: activeState.plan.phases.length,
           finalImplementerPaneId: state.stage.finalImplementer?.paneId
         });
       }
@@ -1128,16 +1290,13 @@ var index_default = r({
 function activatePlan(state, discovered) {
   return {
     stateVersion: state.stateVersion,
-    autoCommit: state.autoCommit,
-    autoReview: state.autoReview,
-    humanInTheLoop: state.humanInTheLoop,
+    options: state.options,
     plannerSessionId: state.plannerSessionId,
     plan: {
       entryPlanPath: discovered.entryPlanPath,
       decisionLogPath: discovered.decisionLogPath,
-      phaseCount: discovered.phaseCount,
-      completedPhaseCount: discovered.completedPhaseCount,
-      currentPhase: discovered.nextPhaseToImplement
+      phases: discovered.phases,
+      currentPhaseIndex: discovered.currentPhaseIndex
     },
     stage: { kind: "confirm-plan" }
   };
@@ -1163,17 +1322,17 @@ async function normalizeDiscoveryOrFail(ctx, result, worktreePath) {
 async function routeImplementerTurnToPlanner(ctx, state, input) {
   await setWorkflowStatus(ctx, {
     kind: "planner-reviewing",
-    phase: state.plan.currentPhase,
-    phaseCount: state.plan.phaseCount
+    phase: activePhase(state).number,
+    phaseCount: state.plan.phases.length
   });
   await ctx.log(
     "info",
-    `Sending implementer exchange ${input.exchangeNumber} for phase ${state.plan.currentPhase} to planner session ${state.plannerSessionId}.`
+    `Sending implementer exchange ${input.exchangeNumber} for phase ${activePhase(state).number} to planner session ${state.plannerSessionId}.`
   );
   const sent = await ctx.sendAgentPrompt({
     agentSessionId: state.plannerSessionId,
     prompt: plannerPrompt({
-      phaseNumber: state.plan.currentPhase,
+      phaseNumber: activePhase(state).number,
       implementerTurn: input.implementerTurn
     })
   });
@@ -1190,12 +1349,12 @@ async function sendPlannerTurnToImplementer(ctx, state, input) {
   const approved = input.outcome === "approved";
   await setWorkflowStatus(ctx, {
     kind: approved ? "implementing" : "implementer-aligning",
-    phase: state.plan.currentPhase,
-    phaseCount: state.plan.phaseCount
+    phase: activePhase(state).number,
+    phaseCount: state.plan.phases.length
   });
   await ctx.log(
     "info",
-    approved ? `Planner approved phase ${state.plan.currentPhase}; sending its response verbatim to implementer session ${input.implementer.agentSessionId}.` : `Planner returned feedback for phase ${state.plan.currentPhase}; sending its response with the alignment footer to implementer session ${input.implementer.agentSessionId}.`
+    approved ? `Planner approved phase ${activePhase(state).number}; sending its response verbatim to implementer session ${input.implementer.agentSessionId}.` : `Planner returned feedback for phase ${activePhase(state).number}; sending its response with the alignment footer to implementer session ${input.implementer.agentSessionId}.`
   );
   const sent = await ctx.sendAgentPrompt({
     agentSessionId: input.implementer.agentSessionId,
@@ -1214,8 +1373,8 @@ async function sendPlannerTurnToImplementer(ctx, state, input) {
 async function sendRawPlannerTurnAfterHumanResolution(ctx, state, input) {
   await setWorkflowStatus(ctx, {
     kind: "implementing",
-    phase: state.plan.currentPhase,
-    phaseCount: state.plan.phaseCount
+    phase: activePhase(state).number,
+    phaseCount: state.plan.phases.length
   });
   const sent = await ctx.sendAgentPrompt({
     agentSessionId: input.implementer.agentSessionId,
@@ -1232,28 +1391,21 @@ async function sendRawPlannerTurnAfterHumanResolution(ctx, state, input) {
   );
 }
 async function completePhase(ctx, state, implementer) {
-  const completedState = {
-    ...state,
-    plan: {
-      ...state.plan,
-      completedPhaseCount: Math.max(state.plan.completedPhaseCount, state.plan.currentPhase)
-    }
-  };
-  await ctx.log("info", `Phase ${state.plan.currentPhase}/${state.plan.phaseCount} completed.`);
-  if (state.autoReview) {
+  await ctx.log("info", `Phase ${activePhase(state).number}/${state.plan.phases.length} completed.`);
+  if (state.options.autoReview) {
     await setWorkflowStatus(ctx, {
       kind: "auto-review",
-      phase: state.plan.currentPhase,
-      phaseCount: state.plan.phaseCount
+      phase: activePhase(state).number,
+      phaseCount: state.plan.phases.length
     });
-    const context = `We are currently implementing phase ${state.plan.currentPhase} of the plan in ${state.plan.entryPlanPath}. Review all the changes since HEAD.`;
+    const context = `We are currently implementing phase ${activePhase(state).number} of the plan in ${state.plan.entryPlanPath}. Review all the changes since HEAD.`;
     const runId = await ctx.startWorkflow("engineering-guidance-review-loop", { context });
     await ctx.log(
       "info",
-      `Started automatic review child workflow ${runId} for phase ${state.plan.currentPhase}.`
+      `Started automatic review child workflow ${runId} for phase ${activePhase(state).number}.`
     );
     return a(
-      withStage(completedState, {
+      withStage(state, {
         kind: "await-auto-review",
         implementer,
         runId
@@ -1261,17 +1413,13 @@ async function completePhase(ctx, state, implementer) {
       o.workflow(runId)
     );
   }
-  return continueAfterAutoReview(ctx, completedState, implementer);
+  return continueAfterAutoReview(ctx, state, implementer);
 }
 async function continueAfterAutoReview(ctx, state, implementer) {
-  if (state.humanInTheLoop) {
-    await setWorkflowStatus(ctx, {
-      kind: "phase-review",
-      phase: state.plan.currentPhase,
-      phaseCount: state.plan.phaseCount
-    });
+  if (state.options.humanInTheLoop) {
+    await setHumanCompletionStatus(ctx, state);
     return a(
-      withStage(state, { kind: "await-phase-review", implementer }),
+      withStage(state, { kind: "await-human-completion", implementer }),
       o.userContinue()
     );
   }
@@ -1280,7 +1428,7 @@ async function continueAfterAutoReview(ctx, state, implementer) {
 function continueAfterHumanApproval(state, implementer) {
   return i(
     withStage(state, {
-      kind: state.autoCommit ? "start-draft-commit" : "advance-phase",
+      kind: state.options.autoCommit ? "start-commit" : "advance-phase",
       implementer
     })
   );
@@ -1476,9 +1624,7 @@ function selectImplementerProfile(kind) {
 function activateCommonState(state) {
   return {
     stateVersion: state.stateVersion,
-    autoCommit: state.autoCommit,
-    autoReview: state.autoReview,
-    humanInTheLoop: state.humanInTheLoop,
+    options: state.options,
     plannerSessionId: state.plannerSessionId
   };
 }
@@ -1490,6 +1636,35 @@ function requireActiveState(state) {
 }
 function withStage(state, stage) {
   return { ...activateCommonState(state), plan: state.plan, stage };
+}
+function currentPhase(state) {
+  return state.plan.phases[state.plan.currentPhaseIndex];
+}
+function activePhase(state) {
+  const phase = currentPhase(state);
+  if (!phase) {
+    throw new Error(
+      `Workflow stage ${state.stage.kind} requires phase index ${state.plan.currentPhaseIndex}, but the plan has ${state.plan.phases.length} phases.`
+    );
+  }
+  return phase;
+}
+async function setHumanCompletionStatus(ctx, state) {
+  const phase = activePhase(state);
+  await setWorkflowStatus(
+    ctx,
+    phase.type === "mock-ui" ? {
+      kind: "mock-human-completion",
+      phase: phase.number,
+      phaseCount: state.plan.phases.length,
+      phaseSlug: phase.slug,
+      autoCommit: state.options.autoCommit
+    } : {
+      kind: "phase-review",
+      phase: phase.number,
+      phaseCount: state.plan.phases.length
+    }
+  );
 }
 function parseHumanInTheLoop(value) {
   if (value === void 0) return "yes";
@@ -1504,7 +1679,7 @@ function parseAutoReview(value) {
 function parseAutoCommit(value) {
   if (value === void 0) return "yes";
   if (value === "yes" || value === "no") return value;
-  throw new Error("Automatic draft commit must be yes or no.");
+  throw new Error("Automatic commit must be yes or no.");
 }
 function headlessRawOutput(event) {
   if (!event || typeof event !== "object") return "";
@@ -1519,8 +1694,8 @@ async function failWorkflow(ctx, userMessage, diagnostic) {
   return u(diagnostic);
 }
 async function logTransition(ctx, state) {
-  const phase = "plan" in state ? `${state.plan.currentPhase}/${state.plan.phaseCount}` : "unknown";
-  const completed = "plan" in state ? state.plan.completedPhaseCount : "unknown";
+  const phase = "plan" in state ? `${currentPhase(state)?.number ?? "complete"}/${state.plan.phases.length}` : "unknown";
+  const completed = "plan" in state ? state.plan.currentPhaseIndex : "unknown";
   await ctx.log(
     "debug",
     `Workflow step stage=${state.stage.kind}, phase=${phase}, completedPhaseCount=${completed}.`
