@@ -241,6 +241,80 @@ test('completed phase starts the review child with phase-specific context', asyn
   ]);
 });
 
+test('required human verification runs enabled auto review before forcing a human checkpoint', async () => {
+  const harness = workflowHarness();
+  const reviewStarted = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: 'await-implementer-outcome',
+        implementer: { agentSessionId: 22, paneId: 32 },
+        implementerTurn: 'Implementation is done, but a human must verify it manually.',
+        exchangeNumber: 3,
+      },
+      { autoReview: true, humanInTheLoop: false },
+    ),
+    headlessResult('{"outcome":"phase-complete-awaiting-human-verification"}'),
+  );
+
+  assert.equal(reviewStarted.type, 'suspend');
+  assert.equal(
+    reviewStarted.type === 'suspend'
+      ? (reviewStarted.state as WorkflowState).stage.kind
+      : undefined,
+    'await-auto-review',
+  );
+  assert.equal(harness.startedWorkflows.length, 1);
+
+  const verificationRequired = await workflow.step(
+    harness.ctx,
+    suspendedState(reviewStarted),
+    workflowResult(44, {
+      outcome: 'workflow-executed-successfully',
+      reviewCount: 1,
+    }),
+  );
+
+  assert.equal(verificationRequired.type, 'suspend');
+  assert.equal(
+    verificationRequired.type === 'suspend'
+      ? verificationRequired.condition.kind
+      : undefined,
+    'user_continue',
+  );
+  assert.equal(
+    verificationRequired.type === 'suspend'
+      ? (verificationRequired.state as WorkflowState).stage.kind
+      : undefined,
+    'await-human-completion',
+  );
+});
+
+test('required human verification forces a checkpoint when auto review and phase review are disabled', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: 'await-implementer-outcome',
+        implementer: { agentSessionId: 22, paneId: 32 },
+        implementerTurn: 'Implementation is done, but a human must verify it manually.',
+        exchangeNumber: 3,
+      },
+      { autoReview: false, humanInTheLoop: false },
+    ),
+    headlessResult('{"outcome":"phase-complete-awaiting-human-verification"}'),
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.equal(result.type === 'suspend' ? result.condition.kind : undefined, 'user_continue');
+  assert.equal(
+    result.type === 'suspend' ? (result.state as WorkflowState).stage.kind : undefined,
+    'await-human-completion',
+  );
+  assert.equal(harness.startedWorkflows.length, 0);
+});
+
 test('disabled auto review skips directly to commit when no human approval is required', async () => {
   const harness = workflowHarness();
   const result = await workflow.step(

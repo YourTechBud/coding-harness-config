@@ -113,6 +113,8 @@ type ActiveStage =
       readonly kind: "await-auto-review";
       readonly implementer: Implementer;
       readonly runId: number;
+      // Optional so version-5 runs already awaiting review remain resumable.
+      readonly requiresHumanVerification?: boolean | undefined;
     }
   | {
       readonly kind: "await-human-completion";
@@ -449,8 +451,14 @@ export default defineWorkflow<State, Variables>({
           parse: parseImplementerOutcomeResult,
         });
         if (!judgment.ok) return judgment.result;
-        if (judgment.value.outcome === "phase-complete") {
-          return completePhase(ctx, activeState, state.stage.implementer);
+        if (judgment.value.outcome !== "planner-response-needed") {
+          return completePhase(
+            ctx,
+            activeState,
+            state.stage.implementer,
+            judgment.value.outcome ===
+              "phase-complete-awaiting-human-verification",
+          );
         }
         return routeImplementerTurnToPlanner(ctx, activeState, {
           implementer: state.stage.implementer,
@@ -569,6 +577,7 @@ export default defineWorkflow<State, Variables>({
           ctx,
           activeState,
           state.stage.implementer,
+          state.stage.requiresHumanVerification ?? false,
         );
       }
 
@@ -846,13 +855,16 @@ async function completePhase(
   ctx: WorkflowContext,
   state: ActiveState,
   implementer: Implementer,
+  requiresHumanVerification: boolean,
 ): Promise<WorkflowResult> {
   // The decision log remains the cross-run source of truth. We intentionally trust the
   // implementer's completion report here; add live decision-log verification at this
   // transition if agent behavior becomes unreliable.
   await ctx.log(
     "info",
-    `Phase ${activePhase(state).number}/${state.plan.phases.length} completed.`,
+    requiresHumanVerification
+      ? `Phase ${activePhase(state).number}/${state.plan.phases.length} implementation completed; awaiting required human verification.`
+      : `Phase ${activePhase(state).number}/${state.plan.phases.length} completed.`,
   );
   if (state.options.autoReview) {
     await setWorkflowStatus(ctx, {
@@ -873,20 +885,27 @@ async function completePhase(
         kind: "await-auto-review",
         implementer,
         runId,
+        requiresHumanVerification,
       }),
       wait.workflow(runId),
     );
   }
-  return continueAfterAutoReview(ctx, state, implementer);
+  return continueAfterAutoReview(
+    ctx,
+    state,
+    implementer,
+    requiresHumanVerification,
+  );
 }
 
 async function continueAfterAutoReview(
   ctx: WorkflowContext,
   state: ActiveState,
   implementer: Implementer,
+  requiresHumanVerification: boolean,
 ): Promise<WorkflowResult> {
-  if (state.options.humanInTheLoop) {
-    await setHumanCompletionStatus(ctx, state);
+  if (state.options.humanInTheLoop || requiresHumanVerification) {
+    await setHumanCompletionStatus(ctx, state, requiresHumanVerification);
     return suspend(
       withStage(state, { kind: "await-human-completion", implementer }),
       wait.userContinue(),
@@ -1228,11 +1247,18 @@ function activePhase(state: ActiveState): PlanPhase {
 async function setHumanCompletionStatus(
   ctx: WorkflowContext,
   state: ActiveState,
+  requiresHumanVerification = false,
 ): Promise<void> {
   const phase = activePhase(state);
   await setWorkflowStatus(
     ctx,
-    phase.type === "mock-ui"
+    requiresHumanVerification
+      ? {
+          kind: "human-verification",
+          phase: phase.number,
+          phaseCount: state.plan.phases.length,
+        }
+      : phase.type === "mock-ui"
       ? {
           kind: "mock-human-completion",
           phase: phase.number,

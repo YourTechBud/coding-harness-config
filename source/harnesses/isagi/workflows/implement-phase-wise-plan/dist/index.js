@@ -164,7 +164,7 @@ Safety rules:
 - If any command fails, stop and report the failure instead of claiming success.
 
 After the commit is created and verified, return exactly one JSON object with exactly these fields and no markdown or commentary:
-{"outcome":"commit-created","commit":"<full commit hash>","subject":"${allowedPrefixes[0]}<subject>"}`;
+{"outcome":"commit-created","commit":"<full commit hash>","subject":"${allowedPrefixes.length === 1 ? `${allowedPrefixes[0]}<subject>` : "<prefix><subject>"}"}`;
 }
 function completedSingleCommitResult(event) {
   const results = s.getHeadlessAgentResults(event);
@@ -306,6 +306,12 @@ Resolve it in the planner pane, then Continue. The latest planner response will 
         phase: "phase-review",
         message: `Phase ${status.phase} of ${status.phaseCount} is ready for approval. Continue to finish the phase.`
       };
+    case "human-verification":
+      return {
+        kind: "info",
+        phase: "phase-human-verification",
+        message: `Phase ${status.phase} of ${status.phaseCount} is awaiting required human verification. Complete the manual checks described by the implementer, then Continue to finish the phase.`
+      };
     case "mock-human-completion": {
       const commitInstruction = status.autoCommit ? " Leave the changes uncommitted so the workflow can create the phase commit." : "";
       return {
@@ -387,6 +393,7 @@ function parsePhaseImplementationKindResult(output) {
 function parseImplementerOutcomeResult(output) {
   return validateStringEnumOnly(parseJsonObject(output), "outcome", [
     "phase-complete",
+    "phase-complete-awaiting-human-verification",
     "planner-response-needed"
   ]);
 }
@@ -512,8 +519,12 @@ Return exactly one JSON object with exactly this field:
 {"outcome": "planner-response-needed"}
 
 Rules:
-- Return "phase-complete" only when the implementer clearly reports that the current phase's implementation is finished.
+- Return "phase-complete-awaiting-human-verification" when the implementer clearly reports that the current phase's implementation is finished, but at least one required verification remains that the implementer could not perform and a human must complete manually before the phase can be considered complete.
+- Human verification includes plan-defined human gates and required manual checks involving UI behavior, devices, credentials, external services, environments, or other conditions unavailable to the implementer.
+- Do not return "phase-complete-awaiting-human-verification" for optional follow-up suggestions, non-blocking recommendations, or verification the implementer reports as completed.
+- Return "phase-complete" only when the implementer clearly reports that the current phase's implementation is finished and no required human verification remains.
 - Return "planner-response-needed" for every other response: questions, pushback, alignment summaries, readiness to begin, proposed scope changes, claims that the phase should be skipped, partial progress, blocked work, requests for action, or ambiguous completion language.
+- Pending required human verification is not blocked implementation and does not require a planner response when the implementation itself is finished.
 - A response saying the implementer is aligned or has no more questions is not phase completion.
 - Prefer "planner-response-needed" when uncertain. One additional adversarial exchange is safer than advancing an incomplete phase.
 - Do not verify the decision log. This judgment classifies the implementer's reported outcome only.
@@ -839,6 +850,11 @@ var index_default = r({
     stage: { kind: "discover-plan" }
   }),
   step: async (ctx, state, event) => {
+    if (state.stateVersion !== 5) {
+      throw new Error(
+        `Unsupported implement-phase-wise-plan state version: expected 5, received ${String(state.stateVersion)}. Start a new workflow run.`
+      );
+    }
     await logTransition(ctx, state);
     switch (state.stage.kind) {
       case "discover-plan": {
@@ -868,7 +884,11 @@ var index_default = r({
           parse: parseDiscoveryResult
         });
         if (!judgment.ok) return judgment.result;
-        const discovery = await normalizeDiscoveryOrFail(ctx, judgment.value, ctx.worktreePath);
+        const discovery = await normalizeDiscoveryOrFail(
+          ctx,
+          judgment.value,
+          ctx.worktreePath
+        );
         if (!discovery.ok) return discovery.result;
         const normalized = discovery.value;
         if (!normalized) {
@@ -958,7 +978,9 @@ var index_default = r({
           parse: parsePhaseImplementationKindResult
         });
         if (!judgment.ok) return judgment.result;
-        const profile = selectImplementerProfile(judgment.value.implementationKind);
+        const profile = selectImplementerProfile(
+          judgment.value.implementationKind
+        );
         await ctx.log(
           "info",
           `Selected the ${profile.kind} implementer profile for phase ${activePhase(activeState).number}.`
@@ -1058,8 +1080,13 @@ var index_default = r({
           parse: parseImplementerOutcomeResult
         });
         if (!judgment.ok) return judgment.result;
-        if (judgment.value.outcome === "phase-complete") {
-          return completePhase(ctx, activeState, state.stage.implementer);
+        if (judgment.value.outcome !== "planner-response-needed") {
+          return completePhase(
+            ctx,
+            activeState,
+            state.stage.implementer,
+            judgment.value.outcome === "phase-complete-awaiting-human-verification"
+          );
         }
         return routeImplementerTurnToPlanner(ctx, activeState, {
           implementer: state.stage.implementer,
@@ -1155,7 +1182,10 @@ var index_default = r({
       }
       case "await-auto-review": {
         const activeState = requireActiveState(state);
-        const reviewResult = readSuccessfulReviewChildResult(event, state.stage.runId);
+        const reviewResult = readSuccessfulReviewChildResult(
+          event,
+          state.stage.runId
+        );
         if (!reviewResult.ok) {
           return failWorkflow(
             ctx,
@@ -1167,7 +1197,12 @@ var index_default = r({
           "info",
           `Automatic review child workflow ${state.stage.runId} completed phase ${activePhase(activeState).number} after ${reviewResult.reviewCount} review rounds.`
         );
-        return continueAfterAutoReview(ctx, activeState, state.stage.implementer);
+        return continueAfterAutoReview(
+          ctx,
+          activeState,
+          state.stage.implementer,
+          state.stage.requiresHumanVerification ?? false
+        );
       }
       case "await-human-completion": {
         const activeState = requireActiveState(state);
@@ -1250,13 +1285,11 @@ var index_default = r({
             "info",
             `Plan implementation completed after phase ${phase.number}/${activeState.plan.phases.length}. Final implementer pane remains open.`
           );
-          return i(
-            {
-              ...activeState,
-              plan: { ...activeState.plan, currentPhaseIndex: nextPhaseIndex },
-              stage: { kind: "done", finalImplementer: state.stage.implementer }
-            }
-          );
+          return i({
+            ...activeState,
+            plan: { ...activeState.plan, currentPhaseIndex: nextPhaseIndex },
+            stage: { kind: "done", finalImplementer: state.stage.implementer }
+          });
         }
         await ctx.log(
           "info",
@@ -1390,8 +1423,11 @@ async function sendRawPlannerTurnAfterHumanResolution(ctx, state, input) {
     o.agentTurn(sent)
   );
 }
-async function completePhase(ctx, state, implementer) {
-  await ctx.log("info", `Phase ${activePhase(state).number}/${state.plan.phases.length} completed.`);
+async function completePhase(ctx, state, implementer, requiresHumanVerification) {
+  await ctx.log(
+    "info",
+    requiresHumanVerification ? `Phase ${activePhase(state).number}/${state.plan.phases.length} implementation completed; awaiting required human verification.` : `Phase ${activePhase(state).number}/${state.plan.phases.length} completed.`
+  );
   if (state.options.autoReview) {
     await setWorkflowStatus(ctx, {
       kind: "auto-review",
@@ -1399,7 +1435,9 @@ async function completePhase(ctx, state, implementer) {
       phaseCount: state.plan.phases.length
     });
     const context = `We are currently implementing phase ${activePhase(state).number} of the plan in ${state.plan.entryPlanPath}. Review all the changes since HEAD.`;
-    const runId = await ctx.startWorkflow("engineering-guidance-review-loop", { context });
+    const runId = await ctx.startWorkflow("engineering-guidance-review-loop", {
+      context
+    });
     await ctx.log(
       "info",
       `Started automatic review child workflow ${runId} for phase ${activePhase(state).number}.`
@@ -1408,16 +1446,22 @@ async function completePhase(ctx, state, implementer) {
       withStage(state, {
         kind: "await-auto-review",
         implementer,
-        runId
+        runId,
+        requiresHumanVerification
       }),
       o.workflow(runId)
     );
   }
-  return continueAfterAutoReview(ctx, state, implementer);
+  return continueAfterAutoReview(
+    ctx,
+    state,
+    implementer,
+    requiresHumanVerification
+  );
 }
-async function continueAfterAutoReview(ctx, state, implementer) {
-  if (state.options.humanInTheLoop) {
-    await setHumanCompletionStatus(ctx, state);
+async function continueAfterAutoReview(ctx, state, implementer, requiresHumanVerification) {
+  if (state.options.humanInTheLoop || requiresHumanVerification) {
+    await setHumanCompletionStatus(ctx, state, requiresHumanVerification);
     return a(
       withStage(state, { kind: "await-human-completion", implementer }),
       o.userContinue()
@@ -1495,7 +1539,10 @@ async function startHeadlessJudgment(ctx, input) {
     effort: headlessJudgment.effort,
     prompt: input.prompt
   });
-  await ctx.log("info", `Started ${input.judgment} headless judgment op ${op.opId}.`);
+  await ctx.log(
+    "info",
+    `Started ${input.judgment} headless judgment op ${op.opId}.`
+  );
   return a(input.nextState, o.headlessAgent(op));
 }
 async function readHeadlessJudgment(ctx, state, event, input) {
@@ -1503,11 +1550,17 @@ async function readHeadlessJudgment(ctx, state, event, input) {
   try {
     const result = completedSingleHeadlessJudgmentResult(event);
     const value = input.parse(result.output ?? "");
-    await ctx.log("info", `Parsed ${input.name} result: ${JSON.stringify(value)}.`);
+    await ctx.log(
+      "info",
+      `Parsed ${input.name} result: ${JSON.stringify(value)}.`
+    );
     return { ok: true, value };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await ctx.log("error", `${input.name} failed in ${state.stage.kind}: ${message}`);
+    await ctx.log(
+      "error",
+      `${input.name} failed in ${state.stage.kind}: ${message}`
+    );
     if (rawOutput.length > 0) {
       await ctx.log("error", `Raw ${input.name} output: ${rawOutput}`);
     }
@@ -1591,6 +1644,7 @@ function alignmentFooter() {
 - Pushback on my ideas.
 - Try to flag or highlight major shortcomings or opportunities to simplify logic.
 - Clearly state your understanding
+- Don't run background tasks or shell commands.
 - Let me know once we have alignment to begin implementation
 - Never start implementing unless I explicitly say so.`;
 }
@@ -1630,7 +1684,9 @@ function activateCommonState(state) {
 }
 function requireActiveState(state) {
   if (!("plan" in state)) {
-    throw new Error(`Workflow stage ${state.stage.kind} requires an active plan.`);
+    throw new Error(
+      `Workflow stage ${state.stage.kind} requires an active plan.`
+    );
   }
   return state;
 }
@@ -1649,11 +1705,15 @@ function activePhase(state) {
   }
   return phase;
 }
-async function setHumanCompletionStatus(ctx, state) {
+async function setHumanCompletionStatus(ctx, state, requiresHumanVerification = false) {
   const phase = activePhase(state);
   await setWorkflowStatus(
     ctx,
-    phase.type === "mock-ui" ? {
+    requiresHumanVerification ? {
+      kind: "human-verification",
+      phase: phase.number,
+      phaseCount: state.plan.phases.length
+    } : phase.type === "mock-ui" ? {
       kind: "mock-human-completion",
       phase: phase.number,
       phaseCount: state.plan.phases.length,

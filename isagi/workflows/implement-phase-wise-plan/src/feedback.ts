@@ -17,6 +17,7 @@ export type WorkflowStatus =
   | { readonly kind: 'severe-flag'; readonly phase: number }
   | { readonly kind: 'auto-review'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'phase-review'; readonly phase: number; readonly phaseCount: number }
+  | { readonly kind: 'human-verification'; readonly phase: number; readonly phaseCount: number }
   | {
       readonly kind: 'mock-human-completion';
       readonly phase: number;
@@ -98,6 +99,12 @@ export function renderWorkflowStatus(status: WorkflowStatus): WorkflowUiFeedback
         kind: 'info',
         phase: 'phase-review',
         message: `Phase ${status.phase} of ${status.phaseCount} is ready for approval. Continue to finish the phase.`,
+      };
+    case 'human-verification':
+      return {
+        kind: 'info',
+        phase: 'phase-human-verification',
+        message: `Phase ${status.phase} of ${status.phaseCount} is awaiting required human verification. Complete the manual checks described by the implementer, then Continue to finish the phase.`,
       };
     case 'mock-human-completion': {
       const commitInstruction = status.autoCommit

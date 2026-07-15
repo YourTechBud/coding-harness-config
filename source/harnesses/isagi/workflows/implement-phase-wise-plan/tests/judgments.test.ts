@@ -7,6 +7,7 @@ import test from 'node:test';
 import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import {
+  classifyImplementerOutcomePrompt,
   latestAssistantTurnText,
   normalizeDiscoveryResult,
   parseDiscoveryResult,
@@ -35,10 +36,16 @@ test('latestAssistantTurnText returns null when no assistant text exists', () =>
   assert.equal(latestAssistantTurnText([message('user', 'hello')]), null);
 });
 
-test('implementer outcomes use the two routing states and reject extra fields', () => {
+test('implementer outcomes include required human verification and reject extra fields', () => {
   assert.deepEqual(parseImplementerOutcomeResult('{"outcome":"phase-complete"}'), {
     outcome: 'phase-complete',
   });
+  assert.deepEqual(
+    parseImplementerOutcomeResult(
+      '{"outcome":"phase-complete-awaiting-human-verification"}',
+    ),
+    { outcome: 'phase-complete-awaiting-human-verification' },
+  );
   assert.deepEqual(parseImplementerOutcomeResult('{"outcome":"planner-response-needed"}'), {
     outcome: 'planner-response-needed',
   });
@@ -46,6 +53,22 @@ test('implementer outcomes use the two routing states and reject extra fields', 
     () => parseImplementerOutcomeResult('{"outcome":"phase-complete","confidence":1}'),
     /exactly one field/,
   );
+});
+
+test('implementer outcome prompt separates required manual verification from incomplete work', () => {
+  const prompt = classifyImplementerOutcomePrompt({
+    worktreePath: '/workspace',
+    phaseNumber: 2,
+    phaseCount: 4,
+    entryPlanPath: 'docs/plan.md',
+    implementerTurn: 'Implementation is done, but a human must verify it on a real device.',
+  });
+
+  assert.match(prompt, /phase-complete-awaiting-human-verification/);
+  assert.match(prompt, /required verification remains/);
+  assert.match(prompt, /could not perform/);
+  assert.match(prompt, /optional follow-up suggestions/);
+  assert.match(prompt, /does not require a planner response/);
 });
 
 test('planner outcomes use one tagged result including severe flags', () => {

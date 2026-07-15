@@ -25,6 +25,18 @@ test('review and commit statuses describe the post-phase work', () => {
   });
 });
 
+test('required human verification explains the forced checkpoint', () => {
+  assert.deepEqual(
+    renderWorkflowStatus({ kind: 'human-verification', phase: 2, phaseCount: 4 }),
+    {
+      kind: 'info',
+      phase: 'phase-human-verification',
+      message:
+        'Phase 2 of 4 is awaiting required human verification. Complete the manual checks described by the implementer, then Continue to finish the phase.',
+    },
+  );
+});
+
 test('mock checkpoint explains the human-owned work and conditional commit handoff', () => {
   const committed = renderWorkflowStatus({
     kind: 'mock-human-completion',
