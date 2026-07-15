@@ -47,9 +47,9 @@ test('spawns the reviewer with the command modifier and the full context', async
     sentAt: '2026-07-14T00:00:00.000Z',
   });
   assert.deepEqual(harness.spawned[0], {
-    harness: 'pi',
-    model: 'gpt-5.6-sol',
-    effort: 'high',
+    harness: 'claude',
+    model: 'fable',
+    effort: 'low',
     modifiers: [{ kind: 'command', name: 'perform-engineering-guidance-review' }],
     prompt: 'Review scope and goal.',
   });

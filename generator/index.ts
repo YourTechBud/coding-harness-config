@@ -172,6 +172,19 @@ async function runCommand(command: string, args: string[], cwd: string): Promise
   });
 }
 
+async function prepareSourceWorkflows(): Promise<void> {
+  for (const packageDir of await findPackageDirs(path.join(SOURCE_DIR, "harnesses", "isagi", "workflows"))) {
+    const relativePackageDir = path.relative(REPO_ROOT, packageDir);
+    console.log(`Installing pnpm dependencies in ${relativePackageDir}`);
+    await runCommand("pnpm", ["install", "--frozen-lockfile"], packageDir);
+
+    for (const script of ["typecheck", "test", "build", "verify"]) {
+      console.log(`Running pnpm ${script} in ${relativePackageDir}`);
+      await runCommand("pnpm", ["run", script], packageDir);
+    }
+  }
+}
+
 async function runPostGenerateHooks(outputRoot: string): Promise<void> {
   for (const packageDir of await findPackageDirs(path.join(outputRoot, "pi", "extensions"))) {
     console.log(`Installing npm dependencies in ${path.relative(REPO_ROOT, packageDir)}`);
@@ -185,6 +198,8 @@ async function runPostGenerateHooks(outputRoot: string): Promise<void> {
 }
 
 async function generateTo(outputRoot: string, resetOutputs: boolean, runHooks: boolean): Promise<void> {
+  if (runHooks) await prepareSourceWorkflows();
+
   if (resetOutputs) {
     for (const dir of OUTPUT_DIRS) {
       assertKnownOutputDir(dir);

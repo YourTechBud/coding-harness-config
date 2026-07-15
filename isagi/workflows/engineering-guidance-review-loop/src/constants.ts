@@ -15,7 +15,7 @@ export const reviewer = {
 export const fixer = {
   harness: "codex",
   model: "gpt-5.6-sol",
-  effort: "low",
+  effort: "medium",
 } satisfies AgentProfile;
 
 export const routingJudgment = {

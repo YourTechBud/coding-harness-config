@@ -61,7 +61,7 @@ OpenCode settings operations target `${OPENCODE_CONFIG_DIR:-~/.config/opencode}/
 
 The installer copies Pi skills, prompts, agents, and extensions directly from `pi/` into `${PI_CODING_AGENT_DIR:-~/.pi/agent}`, so Pi settings do not need repo-local `skills`, `prompts`, `agents`, or `extensions` paths.
 
-`pnpm run generate` runs `npm install` for generated Pi extensions and `pnpm install --frozen-lockfile` for generated Isagi workflows that contain a `package.json`. `pnpm run harness:install` copies those generated packages, including installed `node_modules`, into their harness homes. Managed packages are removed in full before replacements are copied.
+`pnpm run generate` prepares every canonical Isagi workflow before copying it: it runs `pnpm install --frozen-lockfile`, followed by the workflow's `typecheck`, `test`, `build`, and `verify` scripts. This ensures generated workflow `dist` artifacts are current. It then runs `npm install` for generated Pi extensions and `pnpm install --frozen-lockfile` for generated Isagi workflows that contain a `package.json`. `pnpm run harness:install` copies those generated packages, including installed `node_modules`, into their harness homes. Managed packages are removed in full before replacements are copied.
 
 The Pi `codex-fast-model` extension reads `codexFastModels` and registers `openai-codex/gpt-5.5-fast` as a local alias that sends upstream requests to `gpt-5.5` with `service_tier: "priority"`.
 

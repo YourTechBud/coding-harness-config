@@ -19,7 +19,7 @@ Generated harness directories
 
 Generation and install commands
 
-- `pnpm run generate`: recreate `opencode`, `pi`, `claude`, `codex`, and `isagi` from `source/`, run `npm install` in generated Pi extension folders that contain a `package.json`, and run `pnpm install --frozen-lockfile` in generated Isagi workflow folders that contain a `package.json`.
+- `pnpm run generate`: install each canonical Isagi workflow with `pnpm install --frozen-lockfile`, then run its `typecheck`, `test`, `build`, and `verify` scripts before recreating `opencode`, `pi`, `claude`, `codex`, and `isagi` from `source/`. It then runs `npm install` in generated Pi extension folders and `pnpm install --frozen-lockfile` in generated Isagi workflow folders that contain a `package.json`.
 - `pnpm run check`: verify committed generated outputs match `source/`.
 - `pnpm run harness:install`: copy generated assets for Codex, OpenCode, Pi, Claude Code, and Isagi into each harness home, overwriting repo-managed destination files.
 - `pnpm run harness:clear`: remove the currently generated repo-managed files from each harness home.
