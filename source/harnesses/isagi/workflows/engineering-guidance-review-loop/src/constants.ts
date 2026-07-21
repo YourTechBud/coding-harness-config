@@ -9,7 +9,7 @@ export type AgentProfile = {
 export const reviewer = {
   harness: "claude",
   model: "fable",
-  effort: "low",
+  effort: "medium",
 } satisfies AgentProfile;
 
 export const fixer = {

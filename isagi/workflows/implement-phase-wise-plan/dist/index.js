@@ -101,7 +101,7 @@ var implementerGeneric = {
   kind: "generic",
   harness: "codex",
   model: "gpt-5.6-sol",
-  effort: "medium"
+  effort: "low"
 };
 var implementerUiHeavy = {
   kind: "ui-heavy",

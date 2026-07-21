@@ -94,7 +94,7 @@ function u(e) {
 var reviewer = {
   harness: "claude",
   model: "fable",
-  effort: "low"
+  effort: "medium"
 };
 var fixer = {
   harness: "codex",
