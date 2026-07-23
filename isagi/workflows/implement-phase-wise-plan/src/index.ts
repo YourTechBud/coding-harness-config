@@ -1171,8 +1171,8 @@ function alignmentFooter(): string {
 - Ask clarifying questions till we have shared understanding and complete alignment on what needs to be done. Do not use the askUserQuestion tool.
 - Pushback on my ideas.
 - Try to flag or highlight major shortcomings or opportunities to simplify logic.
-- Clearly state your understanding
-- Don't run background tasks or shell commands.
+- Clearly state your understanding.
+- Don't run tasks or shell commands in the background. You may run them in the foreground.
 - Let me know once we have alignment to begin implementation
 - Never start implementing unless I explicitly say so.`;
 }

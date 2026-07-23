@@ -200,7 +200,7 @@ How to interpret and act on this review:
 - Never silently dismiss a Blocker or Concern \u2014 dismissing either one requires my explicit acknowledgement.
 - **Architectural Reflection**, if present, is a proposal, not a finding to fix. Treat it as a decision: if it is in scope and clearly aligned with our plan, you may adopt it as a deliberate "yes, this fits" call \u2014 never a reflex patch. If it is beyond the original scope, structural, or in tension with the plan, stop and bring me in with two paths: re-architect now, or ship the current fixes and capture it as a follow-up. You estimate nothing here \u2014 the reviewer estimated the blast radius; I own the plan and intent judgment.
 - Evaluate every finding on its merits before acting. Anything that reads as overbearing, over-engineered, or beyond our actual scope and use case: do not implement it \u2014 flag it to me with your reasoning instead.
-- Don't run background tasks or shell commands.`;
+- Don't run tasks or shell commands in the background. You can run them in the foreground`;
 }
 function fixerToReviewerPrompt(fixerResponse) {
   return `Heres the implementers response to your review:
