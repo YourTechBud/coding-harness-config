@@ -1193,7 +1193,8 @@ I want you to:
 - Flag major questions or decisions which were not covered by our conversation which can impact our architecture in a severe way to me. Make sure to include all necessary context so I can understand why it's a flag and how to address it. Explicitly mention "no flags" if we are good.
 - Always mention the nuances and considerations that I may be missing to make sure I have deep understanding.
 - Try to keep fallback logic to a minimum. Introduce new fallback logic only if absolutely necessary
-- Only approve implementation once I have no clarifying questions in my most recent message.`;
+- Only approve implementation once I have no clarifying questions in my most recent message.
+- Don't run tasks or shell commands in the background. You may run them in the foreground.`;
 }
 
 function selectImplementerProfile(kind: ImplementerKind): ImplementerProfile {
