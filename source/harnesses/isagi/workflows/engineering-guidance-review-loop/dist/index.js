@@ -91,12 +91,12 @@ function u(e) {
 }
 
 // src/constants.ts
-var reviewer = {
+var fixer = {
   harness: "claude",
-  model: "fable",
+  model: "opus",
   effort: "medium"
 };
-var fixer = {
+var reviewer = {
   harness: "codex",
   model: "gpt-5.6-sol",
   effort: "medium"

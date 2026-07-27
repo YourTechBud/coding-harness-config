@@ -6,13 +6,13 @@ export type AgentProfile = {
   readonly effort: string;
 };
 
-export const reviewer = {
+export const fixer = {
   harness: "claude",
-  model: "fable",
+  model: "opus",
   effort: "medium",
 } satisfies AgentProfile;
 
-export const fixer = {
+export const reviewer = {
   harness: "codex",
   model: "gpt-5.6-sol",
   effort: "medium",

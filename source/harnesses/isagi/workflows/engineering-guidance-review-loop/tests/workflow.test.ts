@@ -9,6 +9,7 @@ import type {
 } from "@yourtechbudstudio/isagi-workflow-sdk";
 
 import workflow from "../src/index.js";
+import { reviewer } from "../src/constants.js";
 
 type State = Parameters<typeof workflow.step>[1];
 
@@ -51,9 +52,7 @@ test("spawns the reviewer with the command modifier and the full context", async
     sentAt: "2026-07-14T00:00:00.000Z",
   });
   assert.deepEqual(harness.spawned[0], {
-    harness: "claude",
-    model: "fable",
-    effort: "medium",
+    ...reviewer,
     modifiers: [
       { kind: "command", name: "perform-engineering-guidance-review" },
     ],
