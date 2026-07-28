@@ -107,7 +107,7 @@ var implementerUiHeavy = {
   kind: "ui-heavy",
   harness: "claude",
   model: "opus",
-  effort: "max"
+  effort: "medium"
 };
 var implementerProseHeavy = {
   kind: "prose-heavy",

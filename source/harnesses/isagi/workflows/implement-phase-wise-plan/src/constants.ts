@@ -20,7 +20,7 @@ export const implementerUiHeavy = {
   kind: "ui-heavy",
   harness: "claude",
   model: "opus",
-  effort: "max",
+  effort: "medium",
 } satisfies ImplementerProfile;
 
 export const implementerProseHeavy = {

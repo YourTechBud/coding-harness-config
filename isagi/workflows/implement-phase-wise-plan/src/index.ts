@@ -1260,18 +1260,18 @@ async function setHumanCompletionStatus(
           phaseCount: state.plan.phases.length,
         }
       : phase.type === "mock-ui"
-      ? {
-          kind: "mock-human-completion",
-          phase: phase.number,
-          phaseCount: state.plan.phases.length,
-          phaseSlug: phase.slug,
-          autoCommit: state.options.autoCommit,
-        }
-      : {
-          kind: "phase-review",
-          phase: phase.number,
-          phaseCount: state.plan.phases.length,
-        },
+        ? {
+            kind: "mock-human-completion",
+            phase: phase.number,
+            phaseCount: state.plan.phases.length,
+            phaseSlug: phase.slug,
+            autoCommit: state.options.autoCommit,
+          }
+        : {
+            kind: "phase-review",
+            phase: phase.number,
+            phaseCount: state.plan.phases.length,
+          },
   );
 }
 
