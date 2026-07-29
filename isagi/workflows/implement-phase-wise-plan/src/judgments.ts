@@ -267,10 +267,9 @@ Return exactly one JSON object with exactly this field:
 {"outcome": "planner-response-needed"}
 
 Rules:
-- Return "phase-complete-awaiting-human-verification" when the implementer clearly reports that the current phase's implementation is finished, but at least one required verification remains that the implementer could not perform and a human must complete manually before the phase can be considered complete.
-- Human verification includes plan-defined human gates and required manual checks involving UI behavior, devices, credentials, external services, environments, or other conditions unavailable to the implementer.
-- Do not return "phase-complete-awaiting-human-verification" for optional follow-up suggestions, non-blocking recommendations, or verification the implementer reports as completed.
-- Return "phase-complete" only when the implementer clearly reports that the current phase's implementation is finished and no required human verification remains.
+- Return "phase-complete-awaiting-human-verification" only when the implementer clearly reports that the current phase's implementation is finished and explicitly says that human verification is required or asks someone else to perform required verification that it did not perform.
+- Do not infer pending verification from the kind of work, the verification described, or verification the implementer reports as completed.
+- Return "phase-complete" when the implementer clearly reports that the current phase's implementation is finished without explicitly requesting further required verification by someone else.
 - Return "planner-response-needed" for every other response: questions, pushback, alignment summaries, readiness to begin, proposed scope changes, claims that the phase should be skipped, partial progress, blocked work, requests for action, or ambiguous completion language.
 - Pending required human verification is not blocked implementation and does not require a planner response when the implementation itself is finished.
 - A response saying the implementer is aligned or has no more questions is not phase completion.

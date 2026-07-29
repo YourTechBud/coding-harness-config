@@ -55,7 +55,7 @@ test('implementer outcomes include required human verification and reject extra 
   );
 });
 
-test('implementer outcome prompt separates required manual verification from incomplete work', () => {
+test('implementer outcome prompt requires an explicit request for further verification', () => {
   const prompt = classifyImplementerOutcomePrompt({
     worktreePath: '/workspace',
     phaseNumber: 2,
@@ -65,9 +65,10 @@ test('implementer outcome prompt separates required manual verification from inc
   });
 
   assert.match(prompt, /phase-complete-awaiting-human-verification/);
-  assert.match(prompt, /required verification remains/);
-  assert.match(prompt, /could not perform/);
-  assert.match(prompt, /optional follow-up suggestions/);
+  assert.match(prompt, /explicitly says that human verification is required/);
+  assert.match(prompt, /asks someone else to perform required verification/);
+  assert.match(prompt, /Do not infer pending verification/);
+  assert.match(prompt, /reports as completed/);
   assert.match(prompt, /does not require a planner response/);
 });
 
