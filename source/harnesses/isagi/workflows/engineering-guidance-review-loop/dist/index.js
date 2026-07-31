@@ -140,9 +140,9 @@ Return exactly one JSON object with exactly this field:
 {"outcome":"continue"}
 
 Apply this precedence:
-1. Return "final-fixer" when the reviewer explicitly says no re-review is needed (or clearly closes the review loop) but reports one or more actual Nit findings. The fixer gets one final discretionary turn and the workflow then ends without another review.
-2. Return "complete" when the reviewer explicitly says the review loop is complete and no re-review or follow-up round is needed, with no Nit findings to hand off. Accept a clear equivalent of the canonical closure line, but do not infer completion from a lack of findings alone.
-3. Return "human-decision" when the reviewer explicitly flags an active disagreement that requires the user to decide before the loop continues. This can happen before or after a fixer response; do not reject it because it appeared earlier than expected.
+1. Return "human-decision" when the reviewer's Human Escalation section explicitly raises an escalation. The section may validly say "No escalation."; in that case, route the response using the remaining rules. Do not infer escalation from a held finding, rejected fix, disagreement language, or request for another review round outside that section. An explicit escalation takes precedence over a contradictory closure signal and can appear before or after a fixer response.
+2. Return "final-fixer" when the reviewer explicitly says no re-review is needed (or clearly closes the review loop) but reports one or more actual Nit findings. The fixer gets one final discretionary turn and the workflow then ends without another review.
+3. Return "complete" when the reviewer explicitly says the review loop is complete and no re-review or follow-up round is needed, with no Nit findings to hand off. Accept a clear equivalent of the canonical closure line, but do not infer completion from a lack of findings alone.
 4. Return "continue" for every other response, including Blockers, Concerns, incomplete fixes, new findings, ordinary feedback, questions, Nits without an explicit closure signal, and ambiguous closure language.
 
 A Nit is never a disagreement. Do not treat an empty Nit section or a passing mention of the severity definition as an actual Nit finding. An Architectural Reflection is not a disagreement by itself. Do not include confidence, commentary, markdown, or extra JSON fields.`;
@@ -210,10 +210,12 @@ ${fixerResponse}
 
 Now run a re-review round:
 1. **Verify the fixes.** For every finding the implementer claims to have addressed, read the current code and confirm the fix is real and complete. Do not trust the summary.
-2. **Adjudicate the pushbacks.** Where the implementer declined or deferred a finding, weigh the reasoning. Withdraw the finding if the reasoning holds, or hold it if it doesnt. Never silently drop a Blocker or Concern \u2014 anything you still hold after pushback is a decision for me, not for either of you. So flag such disagreements immediately, with your justification and what it costs if unfixed.
+2. **Adjudicate the pushbacks.** Where the implementer declined or deferred a finding, weigh the reasoning. Withdraw the finding if the reasoning holds, or hold it if it doesnt. Never silently drop a Blocker or Concern.
 3. **Review again.** Do a full pass over the current change set at the same standard as your original review. The fixes are new code; anything you missed earlier is fair game. Zero new findings is a valid outcome \u2014 do not pad.
 
-Report in your usual output format, adding a fix-verification result per prior finding (verified / incomplete / not done) and your adjudication per pushback (withdrawn / held \u2014 held items listed for my decision).
+Report in your usual output format, adding a fix-verification result per prior finding (verified / incomplete / not done) and your adjudication per pushback (withdrawn / held).
+
+Always complete the Human Escalation section. No escalation is valid and expected unless you and the implementer have reached a fundamental impasse. A held finding is not itself an escalation: continue the review loop when another exchange could clarify or resolve it. When escalation is necessary, briefly state the disagreement, both positions, and the decision needed from the human.
 
 You have final authority on when this loop ends. If all Blockers and Concerns are verified fixed or withdrawn \u2014 none open, none held \u2014 and nothing new beyond Nits emerged, end your response with the exact line **No re-review needed.** and state plainly that the review loop is complete. Never use that phrase in any other situation, so it stays a reliable signal that the loop is closed. Otherwise, end with exactly what must happen before the next round.
 
@@ -296,11 +298,11 @@ var index_default = r({
             await ctx.setUiFeedback({
               kind: "warning",
               phase: "Waiting for your decision",
-              message: "The reviewer flagged a disagreement. Resolve it, then continue the workflow."
+              message: "The reviewer raised a human escalation. Resolve it, then continue the workflow."
             });
             await ctx.log(
               "warning",
-              "Reviewer flagged a disagreement before the first fixer turn; waiting for user resolution."
+              "Reviewer raised a human escalation before the first fixer turn; waiting for user resolution."
             );
             return a(
               withStage(state, {
@@ -407,11 +409,11 @@ var index_default = r({
             await ctx.setUiFeedback({
               kind: "warning",
               phase: "Waiting for your decision",
-              message: "The reviewer still holds a disagreement. Resolve it, then continue the workflow."
+              message: "The reviewer raised a human escalation. Resolve it, then continue the workflow."
             });
             await ctx.log(
               "warning",
-              `Reviewer held a disagreement in review round ${state.stage.reviewRound}; waiting for user resolution.`
+              `Reviewer raised a human escalation in review round ${state.stage.reviewRound}; waiting for user resolution.`
             );
             return a(
               withStage(state, {

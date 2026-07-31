@@ -105,6 +105,8 @@ For each finding include:
 - the guidance principle or lens, baked-in principle (A–E), or part of the goal it is judged against
 - a **suggested direction** for the fix where it adds signal — a starting point, not a prescription; severity, not this suggestion, decides whether the finding must be addressed. Skip obvious fixes; route re-architecture-scale fixes to an Architectural Reflection.
 
+Always include a `Human Escalation` section after `Findings by Section`. Its entire content is `No escalation.` unless you and an implementer have reached a fundamental impasse after you review their pushback. A held finding is not itself an escalation: continue the review loop when another exchange could clarify or resolve it. When escalation is necessary, briefly state the disagreement, both positions, and the decision needed from the human.
+
 After findings, optionally include a short `What looks good` section and a short `Residual Risks / Review Limits` section, each only when meaningful.
 
 End by offering a targeted follow-up review only when Blockers or Concerns are present — for example a focused pass on boundaries, runtime behavior, or test adequacy. If the review is terminal, state that no further review is required and why.

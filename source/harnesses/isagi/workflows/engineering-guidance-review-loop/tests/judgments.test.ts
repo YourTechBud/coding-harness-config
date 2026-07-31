@@ -46,6 +46,10 @@ test('routing prompt maps every edge without assuming a workflow phase', () => {
   assert.match(prompt, /A Nit is never a disagreement/);
   assert.match(prompt, /every outcome below is valid on every invocation/);
   assert.match(prompt, /before or after a fixer response/);
+  assert.match(prompt, /Human Escalation section explicitly raises an escalation/);
+  assert.match(prompt, /may validly say "No escalation\."/);
+  assert.match(prompt, /Do not infer escalation from a held finding/);
+  assert.ok(prompt.indexOf('Return "human-decision"') < prompt.indexOf('Return "complete"'));
   assert.doesNotMatch(prompt, /Has the implementer already responded/);
 });
 

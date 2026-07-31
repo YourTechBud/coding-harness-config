@@ -153,11 +153,11 @@ export default defineWorkflow<State, Variables>({
               kind: 'warning',
               phase: 'Waiting for your decision',
               message:
-                'The reviewer flagged a disagreement. Resolve it, then continue the workflow.',
+                'The reviewer raised a human escalation. Resolve it, then continue the workflow.',
             });
             await ctx.log(
               'warning',
-              'Reviewer flagged a disagreement before the first fixer turn; waiting for user resolution.',
+              'Reviewer raised a human escalation before the first fixer turn; waiting for user resolution.',
             );
             return suspend(
               withStage(state, {
@@ -269,11 +269,11 @@ export default defineWorkflow<State, Variables>({
               kind: 'warning',
               phase: 'Waiting for your decision',
               message:
-                'The reviewer still holds a disagreement. Resolve it, then continue the workflow.',
+                'The reviewer raised a human escalation. Resolve it, then continue the workflow.',
             });
             await ctx.log(
               'warning',
-              `Reviewer held a disagreement in review round ${state.stage.reviewRound}; waiting for user resolution.`,
+              `Reviewer raised a human escalation in review round ${state.stage.reviewRound}; waiting for user resolution.`,
             );
             return suspend(
               withStage(state, {

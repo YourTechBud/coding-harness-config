@@ -132,11 +132,21 @@ test("sends the fixer response verbatim inside the re-review template", async ()
     /Fixed the lifecycle issue\. I declined the unrelated refactor\./,
   );
   assert.match(harness.sent[0]?.prompt ?? "", /Now run a re-review round:/);
+  assert.match(
+    harness.sent[0]?.prompt ?? "",
+    /No escalation is valid and expected unless you and the implementer have reached a fundamental impasse/,
+  );
+  assert.match(
+    harness.sent[0]?.prompt ?? "",
+    /A held finding is not itself an escalation/,
+  );
 });
 
-test("an early disagreement pauses instead of being rejected as out of phase", async () => {
+test("an explicit early human escalation pauses instead of being rejected as out of phase", async () => {
+  const review =
+    "## Human Escalation\n\nEscalation required: choose the persistence owner.";
   const histories: Record<number, readonly WorkflowConversationMessage[]> = {
-    11: [message("assistant", "Held Concern: choose the persistence owner.")],
+    11: [message("assistant", review)],
   };
   const harness = workflowHarness({ histories });
   const paused = await workflow.step(
@@ -144,7 +154,7 @@ test("an early disagreement pauses instead of being rejected as out of phase", a
     state({
       kind: "await_initial_review_routing",
       reviewer: agent(11, 21),
-      review: "Held Concern: choose the persistence owner.",
+      review,
     }),
     headlessResult('{"outcome":"human-decision"}'),
   );
@@ -154,9 +164,10 @@ test("an early disagreement pauses instead of being rejected as out of phase", a
     paused.type === "suspend" ? paused.condition.kind : undefined,
     "user_continue",
   );
+  assert.match(harness.feedback.at(-1)?.message ?? "", /human escalation/);
 
   histories[11] = [
-    message("assistant", "Held Concern: choose the persistence owner."),
+    message("assistant", review),
     message("user", "The runtime owns it."),
     message("assistant", "Decision recorded. Apply the runtime-owned design."),
   ];
@@ -172,9 +183,32 @@ test("an early disagreement pauses instead of being rejected as out of phase", a
   );
 });
 
-test("pauses on a held disagreement and resumes with the reviewer latest turn", async () => {
+test("a held disagreement with no escalation continues to the fixer", async () => {
+  const review =
+    "Held Concern: the current evidence does not resolve ownership.\n\n## Human Escalation\n\nNo escalation.";
+  const harness = workflowHarness();
+  const continued = await workflow.step(
+    harness.ctx,
+    state({
+      kind: "await_rereview_routing",
+      reviewer: agent(11, 21),
+      fixer: agent(12, 22),
+      review,
+      reviewRound: 2,
+    }),
+    headlessResult('{"outcome":"continue"}'),
+  );
+
+  assert.equal(continued.type, "suspend");
+  assert.equal(harness.sent[0]?.agentSessionId, 12);
+  assert.match(harness.sent[0]?.prompt ?? "", /No escalation\./);
+});
+
+test("pauses on an explicit human escalation and resumes with the reviewer latest turn", async () => {
+  const review =
+    "## Human Escalation\n\nEscalation required: the reviewer and implementer fundamentally disagree about ownership.";
   const histories: Record<number, readonly WorkflowConversationMessage[]> = {
-    11: [message("assistant", "Held Concern: this needs the users decision.")],
+    11: [message("assistant", review)],
   };
   const harness = workflowHarness({ histories });
   const paused = await workflow.step(
@@ -183,7 +217,7 @@ test("pauses on a held disagreement and resumes with the reviewer latest turn", 
       kind: "await_rereview_routing",
       reviewer: agent(11, 21),
       fixer: agent(12, 22),
-      review: "Held Concern: this needs the users decision.",
+      review,
       reviewRound: 2,
     }),
     headlessResult('{"outcome":"human-decision"}'),
@@ -193,10 +227,11 @@ test("pauses on a held disagreement and resumes with the reviewer latest turn", 
   assert.deepEqual(paused.type === "suspend" ? paused.condition : undefined, {
     kind: "user_continue",
   });
+  assert.match(harness.feedback.at(-1)?.message ?? "", /human escalation/);
   assert.equal(harness.sent.length, 0);
 
   histories[11] = [
-    message("assistant", "Held Concern: this needs the users decision."),
+    message("assistant", review),
     message("user", "Use the existing boundary."),
     message("assistant", "Decision recorded. Apply the narrow fix."),
   ];
@@ -212,7 +247,7 @@ test("pauses on a held disagreement and resumes with the reviewer latest turn", 
   );
   assert.doesNotMatch(
     harness.sent[0]?.prompt ?? "",
-    /Held Concern: this needs the users decision\./,
+    /fundamentally disagree about ownership/,
   );
 });
 

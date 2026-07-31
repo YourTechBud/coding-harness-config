@@ -49,9 +49,9 @@ Return exactly one JSON object with exactly this field:
 {"outcome":"continue"}
 
 Apply this precedence:
-1. Return "final-fixer" when the reviewer explicitly says no re-review is needed (or clearly closes the review loop) but reports one or more actual Nit findings. The fixer gets one final discretionary turn and the workflow then ends without another review.
-2. Return "complete" when the reviewer explicitly says the review loop is complete and no re-review or follow-up round is needed, with no Nit findings to hand off. Accept a clear equivalent of the canonical closure line, but do not infer completion from a lack of findings alone.
-3. Return "human-decision" when the reviewer explicitly flags an active disagreement that requires the user to decide before the loop continues. This can happen before or after a fixer response; do not reject it because it appeared earlier than expected.
+1. Return "human-decision" when the reviewer's Human Escalation section explicitly raises an escalation. The section may validly say "No escalation."; in that case, route the response using the remaining rules. Do not infer escalation from a held finding, rejected fix, disagreement language, or request for another review round outside that section. An explicit escalation takes precedence over a contradictory closure signal and can appear before or after a fixer response.
+2. Return "final-fixer" when the reviewer explicitly says no re-review is needed (or clearly closes the review loop) but reports one or more actual Nit findings. The fixer gets one final discretionary turn and the workflow then ends without another review.
+3. Return "complete" when the reviewer explicitly says the review loop is complete and no re-review or follow-up round is needed, with no Nit findings to hand off. Accept a clear equivalent of the canonical closure line, but do not infer completion from a lack of findings alone.
 4. Return "continue" for every other response, including Blockers, Concerns, incomplete fixes, new findings, ordinary feedback, questions, Nits without an explicit closure signal, and ambiguous closure language.
 
 A Nit is never a disagreement. Do not treat an empty Nit section or a passing mention of the severity definition as an actual Nit finding. An Architectural Reflection is not a disagreement by itself. Do not include confidence, commentary, markdown, or extra JSON fields.`;

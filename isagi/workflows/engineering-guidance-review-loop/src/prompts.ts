@@ -21,10 +21,12 @@ ${fixerResponse}
 
 Now run a re-review round:
 1. **Verify the fixes.** For every finding the implementer claims to have addressed, read the current code and confirm the fix is real and complete. Do not trust the summary.
-2. **Adjudicate the pushbacks.** Where the implementer declined or deferred a finding, weigh the reasoning. Withdraw the finding if the reasoning holds, or hold it if it doesnt. Never silently drop a Blocker or Concern — anything you still hold after pushback is a decision for me, not for either of you. So flag such disagreements immediately, with your justification and what it costs if unfixed.
+2. **Adjudicate the pushbacks.** Where the implementer declined or deferred a finding, weigh the reasoning. Withdraw the finding if the reasoning holds, or hold it if it doesnt. Never silently drop a Blocker or Concern.
 3. **Review again.** Do a full pass over the current change set at the same standard as your original review. The fixes are new code; anything you missed earlier is fair game. Zero new findings is a valid outcome — do not pad.
 
-Report in your usual output format, adding a fix-verification result per prior finding (verified / incomplete / not done) and your adjudication per pushback (withdrawn / held — held items listed for my decision).
+Report in your usual output format, adding a fix-verification result per prior finding (verified / incomplete / not done) and your adjudication per pushback (withdrawn / held).
+
+Always complete the Human Escalation section. No escalation is valid and expected unless you and the implementer have reached a fundamental impasse. A held finding is not itself an escalation: continue the review loop when another exchange could clarify or resolve it. When escalation is necessary, briefly state the disagreement, both positions, and the decision needed from the human.
 
 You have final authority on when this loop ends. If all Blockers and Concerns are verified fixed or withdrawn — none open, none held — and nothing new beyond Nits emerged, end your response with the exact line **No re-review needed.** and state plainly that the review loop is complete. Never use that phrase in any other situation, so it stays a reliable signal that the loop is closed. Otherwise, end with exactly what must happen before the next round.
 
