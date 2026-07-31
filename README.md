@@ -56,3 +56,7 @@ pnpm run harness:install
 ## Credits
 
 Some skills were inspired by [Matt Pocock's skill library](https://github.com/mattpocock/skills).
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).
