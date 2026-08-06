@@ -54,6 +54,10 @@ Common phases:
 - **Solutioning / convergence:** compare candidate directions, expose tradeoffs, stress-test assumptions, and help the user choose.
 - **Planning / closing:** turn the chosen direction into a plan, name unresolved branches, released depth, assumptions, and return conditions.
 
+For software work, use **problem shaping → architecture → program design** as an optional progression when those distinctions are useful. In problem shaping, clarify the problem, intended outcomes, constraints, and important behavior. In architecture, explore the overall solution shape, boundaries, responsibilities, dependencies, and major flows. In program design, explore consequential details of how the program should work, such as component collaboration, data and state, contracts, failure behavior, algorithms, and other code-level choices that could affect the direction.
+
+Stay at expectation-setting depth. Surface decisions the user cares about or that could materially change the implementation plan; leave exact signatures, exhaustive mechanics, and other crystallization to implementation planning unless they are necessary to resolve the direction.
+
 Phases have gravity: staying in the current phase is the default. When work from another phase starts pulling, propose a phase move instead of silently switching.
 
 ## Operating Loop
