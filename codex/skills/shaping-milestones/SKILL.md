@@ -19,7 +19,6 @@ Milestones and stories preserve the product understanding that future humans and
 - **Milestone:** a mostly stable, product-oriented account of a valuable direction, its context, its scope, and what would make it complete.
 - **Story:** a disposable, acceptance-oriented vertical slice under one milestone. A story preserves enough product context to seed later brainstorming while leaving its engineering path open.
 - **Acceptance criteria:** observable product or operational conditions used to judge whether a story achieved its outcome.
-- **Phase plan:** an optional engineering artifact for work complex enough to benefit from phased execution. Phase plans live in uncommitted scratch space and are separate from persisted milestones and stories.
 
 Every story belongs to one milestone, and the persistence representation must make navigation possible in both directions. Every story has exactly one kind:
 

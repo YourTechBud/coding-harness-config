@@ -1,6 +1,6 @@
 kind: command
 frontmatter:
-  description: Walk through and revise an implementation plan with the user until its architecture is understood and internally consistent
+  description: Use Socratic teaching to walk through and revise an implementation plan until its load-bearing design is understood, challenged, and internally consistent
 targets:
   opencode: {}
   pi: {}
