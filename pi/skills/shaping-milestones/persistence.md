@@ -1,140 +1,44 @@
-# Persistence Conventions
+# Persistence
 
-Persistence is a lightweight checkpoint system, not a database. Persist only when the user explicitly asks to save, checkpoint, or write milestone/task files.
+Use `docs/milestone-guidance.md` as the repository-specific source of truth for milestone and story representation. It defines the storage system, exact formats, headings, fields, metadata, relationships, and publication behavior for that repository.
 
-## Directory Layout
+## Using Repository Guidance
 
-Use the project-local `.milestones/` directory unless local conventions say otherwise. Tasks nest under it because tasks only exist under milestones.
+Read the complete repository guidance before drafting persisted artifacts. Apply its representation choices while preserving the milestone and story semantics defined by this skill.
 
-```txt
-.milestones/
-  <milestone-id>.md
-  tasks/
-    <task-id>.md
-```
+When persistence is requested and `docs/milestone-guidance.md` is absent, help the user establish it before publishing milestone or story objects. Treat setup as a brainstorming branch: understand the target system and desired review experience, converge on the mapping, and write the guidance only after the user approves persistence.
 
-The filename stem is the ID.
+## Persistence Operations
 
-Example:
+Repository guidance maps the milestone-to-story relationship and story kinds defined in `SKILL.md` onto its chosen storage system. It also maps these persistence operations and conditional relationships:
 
-```txt
-.milestones/improve-correction-confidence.md
-```
+- Create, retrieve, revise, remove, complete, preview, and publish milestones and stories.
+- Preserve navigation through the milestone-to-story relationship.
+- Represent story acceptance criteria.
+- Represent dependencies when one story genuinely gates another.
+- Identify the milestone or downstream stories that consume an exploration story's conclusions.
+- Support splitting and merging by revising the affected story set and relationships.
 
-ID:
+The storage system may express these semantics through documents, tracker relationships, fields, labels, links, or native primitives. Repository guidance chooses the representation.
 
-```txt
-improve-correction-confidence
-```
+## Creating Repository Guidance
 
-## Milestone Files
+Help the user decide the mappings their repository needs:
 
-Candidate and hardened milestones live in the same directory and are distinguished by status.
+- Where milestones and stories live and how they are identified.
+- The exact milestone and story formats, including required and optional content.
+- How parent-child navigation, dependencies, and exploration consumers are represented.
+- How story kinds, lifecycle state, priority, or other useful metadata are represented.
+- Whether persistence is previewed before publication or published directly after approval.
+- How revisions, removals, completion, and historical scope changes appear.
+- Which tools or commands perform repository-specific reads and writes.
 
-Path:
+Write the resulting decisions to `docs/milestone-guidance.md`. Keep the document specific enough that a fresh agent can retrieve and persist the repository's milestones and stories without reconstructing the mapping.
 
-```txt
-.milestones/<milestone-id>.md
-```
+## Persisting Shared Understanding
 
-Frontmatter:
+Mine the conversation for product intent, decisions, rationale, serious alternatives, tradeoffs, unresolved areas, boundaries, and story context that would be expensive to rediscover. Use the repository guidance's structure and include only sections supported by meaningful content.
 
-```yaml
----
-title: Improve correction confidence
-status: active
-created: 2026-05-27
-updated: 2026-05-27
-tags: []
----
-```
+Preserve existing user-written context and material historical reasoning when revising artifacts. Prefer focused updates when the milestone's scope or story set changes, and keep ordinary engineering execution detail with the story's working conversation or temporary plan.
 
-Statuses:
-
-```txt
-candidate
-ready
-active
-paused
-completed
-killed
-```
-
-Body:
-
-```md
-# Summary
-
-# Why this matters
-
-# Direction
-
-# Done condition
-
-# Boundaries
-
-# Continue with
-
-# Notes
-```
-
-For candidate milestones, sections may be rough or explicitly uncertain. Do not invent certainty to fill a template.
-
-## Task Files
-
-Create task files only for hardened milestones, and only when persistence is explicitly requested.
-
-Path:
-
-```txt
-.milestones/tasks/<task-id>.md
-```
-
-Frontmatter:
-
-```yaml
----
-title: Inspect current correction flow
-status: todo
-milestone: improve-correction-confidence
-created: 2026-05-27
-updated: 2026-05-27
-depends_on: []
----
-```
-
-Task statuses:
-
-```txt
-todo
-in-progress
-blocked
-done
-dropped
-```
-
-The `milestone` field references the milestone filename stem. Do not maintain two-way links from milestone files to task files unless local project conventions require it.
-
-Body:
-
-```md
-# Outcome
-
-# Context
-
-# Done condition
-
-# Notes
-```
-
-A task body should be self-contained enough to reorient future-you or a future agent from the task file alone.
-
-## Update Behavior
-
-When updating persisted files:
-
-- Preserve user-written context unless clearly obsolete.
-- Update `updated` dates.
-- Prefer small edits over rewrites.
-- Do not create task files for candidate milestones.
-- Do not persist every interesting Spark; persist only useful checkpoint objects.
+For exploration stories, acceptance requires reconciliation through this skill: apply the conclusions to the parent milestone and every affected downstream story, then persist those changes through the repository guidance.

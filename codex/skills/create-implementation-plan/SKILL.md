@@ -50,7 +50,7 @@ Never overwrite an existing plan directory. If the intended directory exists, ap
 
 - The goal, target architecture, and simplest mental model of the end state.
 - Settled global decisions, assumptions, constraints, and meaningful rejected alternatives.
-- A concise definition of the four phase types below so the plan is self-descriptive.
+- A concise definition of the three phase types below so the plan is self-descriptive.
 - An ordered phase map with a short purpose, type, expected resulting state, and direct link to every phase file.
 - Cross-phase dependencies and every temporary degradation with the phase that pays it back.
 - The execution-time decision log path: `scratch/plans/<slug>/decisions.md`.
@@ -71,10 +71,6 @@ Establishes meaningful visual and interaction behavior using fixtures, hardcoded
 
 Delivers a bounded portion of real behavior, integration, refactoring, documentation, or assigned debt repayment. It may inherit explicitly tracked prep debt that belongs to later phases, but it must pay the debt assigned to it and must not introduce unplanned temporary breakage.
 
-### `release`
-
-Contains externally sensitive publication, deployment, migration, or release work. Classify it accurately and describe the work and evidence, but do not prescribe how downstream workflows supervise or route it.
-
 ## Phasing
 
 Size phases by reasoning burden, not file count or another numerical heuristic. Each phase should have one dominant implementation objective, a bounded architectural and decision surface, a meaningful expected state, and enough cohesion for one fresh agent. Prefer additional focused phases over a phase that asks a low-reasoning implementer to make several architectural or implementation decisions at once.
@@ -92,7 +88,7 @@ pays_back_in: []
 ---
 ```
 
-- `type` is one of `prep`, `mock-ui`, `implementation`, or `release`.
+- `type` is one of `prep`, `mock-ui`, or `implementation`.
 - `depends_on` lists prerequisite phase identifiers selected by the planner; use `[]` when empty.
 - `pays_back_in` lists the phase identifiers that repay temporary debt introduced here; use `[]` when empty.
 - Do not add status, review mode, automation policy, model choice, or workflow behavior to the frontmatter.

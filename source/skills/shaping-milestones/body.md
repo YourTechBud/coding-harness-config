@@ -2,55 +2,43 @@
 
 ## Role
 
-Domain companion for project-scoped milestone work: turn raw Sparks and project context into valuable milestone directions, harden the chosen one, and persist only on request. This skill owns the milestone domain — what Sparks, milestones, and tasks are and what good ones look like. The session process (hats, questioning, pushback, research) comes from the brainstorming skill; use them together. The output is clarity — a small set of valuable directions — not a full plan.
+Shape and reshape product milestones and their stories from raw Sparks and project context. Pair this domain model with the brainstorming skill, which supplies the questioning, research, pushback, and shared-understanding process.
 
-## Definitions
+Milestones and stories preserve the product understanding that future humans and agents need. Detailed engineering decisions belong to later story-level brainstorming and, when useful, a temporary implementation plan.
 
-- **Spark:** a raw user idea, pain, bug, feature notion, content thought, observation, or unfinished thread. Sparks are raw material, not tasks or milestones. One Spark may split into many directions; many Sparks may merge into one; some should remain unshaped.
-- **Milestone:** a lightweight continuation marker for a valuable direction of work — enough shape to know why it matters, roughly what we're doing, where to continue, and when to stop.
-- **Task:** a focused phase of work under a hardened milestone, sized for one human-agent collaboration cycle, that meaningfully advances it.
+## Shared Terms
 
-## Phases
+- **Spark:** raw input such as an idea, pain, bug, feature notion, observation, or unfinished thread. Sparks are processed into milestone understanding or remain raw for later.
+- **Milestone:** a mostly stable, product-oriented account of a valuable direction, its context, its scope, and what would make it complete.
+- **Story:** a disposable, acceptance-oriented vertical slice under one milestone. A story preserves enough product context to seed later brainstorming while leaving its engineering path open.
+- **Acceptance criteria:** observable product or operational conditions used to judge whether a story achieved its outcome.
 
-Milestone work moves through domain phases; each is a hat wearing project clothes. Move fluidly — do not force every conversation through every phase.
+Every story belongs to one milestone, and the persistence representation must make navigation possible in both directions. Every story has exactly one kind:
 
-1. **Collect** (Interviewer): gather Sparks and project context without judging too early.
-2. **Discover value** (Interviewer + Scout): find what is underneath the ideas — the pain, learning, capability, decision, or deliverable. This is the heart of the skill: value before structure.
-3. **Converge** (Shaper): compare candidate milestone directions; merge, split, park, or discard. Push back on the value premise: real value, or just an exciting implementation?
-4. **Harden** (Shaper + Closer): make one direction safe to execute — boundaries, done condition, continuation point, rough tasks if useful.
-5. **Persist** (Closer, only on explicit request): checkpoint using the conventions in `persistence.md`. Persistence can happen from any phase when the user asks to save or checkpoint something.
+- **Exploration:** reduces consequential uncertainty and applies its conclusions to the milestone or downstream stories.
+- **Implementation:** delivers a coherent product outcome that satisfies its acceptance criteria.
+- **Release:** handles an exceptional external transition whose coordination, judgment, or risk requires direct human-agent work.
 
-## Milestone Principles
+## Shaping Phases
 
-- Value is the center: a milestone exists because something becomes better, clearer, easier, validated, shipped, fixed, taught, or unlocked. If the value is unclear, stay in discovery.
-- Direction-shaped, not task-shaped: a milestone names a valuable direction and the rough path toward it. Tasks serve the milestone.
-- Directional by default: preserve intent, value, boundaries, and continuation without freezing the implementation path early. Add detail only when the user has chosen it, it is already known, or precision reduces risk.
-- One coherent center of gravity: if it is a bucket of unrelated work, it is a release, backlog, or cleanup list — not a milestone.
-- Done condition: every milestone needs a stop signal — shipped, fixed, learned, validated, rejected, decided, usable enough, or clarified enough to reshape.
-- Boundaries prevent sprawl: say what belongs now vs later; park valuable-but-premature ideas as future candidates.
-- Continuation over completeness: enough context for future-you to resume beats a perfect plan.
-- Reduce mental load: if maintaining a milestone feels heavier than the clarity it creates, simplify it.
-- Priority stays with the user: compare tradeoffs, but never choose their active project or milestone unless asked.
+Give each shaping phase its own focused user turn. Surface the phase's working understanding, apply the relevant pushback, and invite the user to correct or deepen it. Advance after the user can meaningfully confirm or edit the phase's completion criterion, then make the phase change visible.
 
-## Task Principles
+1. **Collect:** gather relevant Sparks and product context into a grounded inventory of inputs and important ambiguities. Complete when the user can correct that inventory and identify missing inputs.
+2. **Discover value:** uncover the user, product, learning, capability, or decision value beneath the inputs, separate that value from attractive engineering ideas, and return a product-value frame. Complete when the user can explain or revise what should become better and why it matters.
+3. **Converge:** draft and compare candidate milestone directions, then deliberately merge, split, park, or discard them. Complete when the user has chosen or reshaped one direction with a coherent center of gravity and the meaningful alternatives have a known disposition.
+4. **Harden:** turn the chosen direction into a milestone with a product goal, boundaries, completion condition, known unresolved areas, and an initial set of stories. Complete when the user can revise the shaped milestone and future work can resume without reconstructing its originating product reasoning.
+5. **Persist:** translate the shared understanding into the repository's milestone representation.
 
-- Advance the milestone: a task that does not connect to the milestone's value or done condition belongs elsewhere.
-- Phase, not micro-todo: "Prototype correction review flow", not "Add button".
-- Clear outcome: state what should be true when done — an artifact, decision, working implementation, experiment result, or clarified issue.
-- Discovery is allowed: exploratory tasks are valid when they have a clear learning or decision outcome.
-- Directional by default: describe the outcome, direction, and known constraints — leave room for the human-agent session to discover the best path.
-- Incremental value slices: prefer tasks that deliver, validate, or de-risk a small usable slice end-to-end; go horizontal only to unlock or de-risk later value.
-- Collaboration-sized: one focused human-agent session; spillover is fine, but if it obviously spans many, split it.
-- Lightweight dependencies: capture them only when they affect sequencing.
-- Self-contained when persisted: future-you or a future agent should reorient from the task file alone.
-- If useful tasks are hard to define, the milestone is not hardened yet — revisit its boundaries and done condition instead of inventing tasks.
+Draft candidate milestone directions in Converge and draft stories in Harden. Earlier phases produce the understanding those artifacts depend on.
 
-## Quality Checks
+Persistence may follow any shaping phase when the user wants a checkpoint. Resume from the phase that matches the user's next question rather than restarting the sequence.
 
-A useful milestone can answer briefly: Why this? What direction? What belongs now vs later? Where do I continue? How do I know it is done enough? Does it reduce mental load?
+## References
 
-A useful task can answer: What milestone does this advance? What phase of progress is this? What should be true after it? Does it fit one collaboration cycle? What must happen before it?
+- Read `shaping.md` when shaping or reshaping a milestone or any of its stories.
+- Read `persistence.md` when persisting milestones or stories, or when creating or revising repository milestone guidance.
+- When both activities are in scope, read both references before drafting persisted artifacts.
 
-## Persistence
+## Persistence Boundary
 
-Persist only on explicit request — "save this", "checkpoint this", "write the files". Approval of an idea is not persistence consent. When persisting, follow `persistence.md`; local project conventions win if they exist.
+A request to save, checkpoint, publish, or configure repository guidance authorizes persistence. Other milestone discussion remains shaping.
