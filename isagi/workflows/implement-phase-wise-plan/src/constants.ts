@@ -11,9 +11,9 @@ export type ImplementerProfile = {
 
 export const implementerGeneric = {
   kind: "generic",
-  harness: "codex",
-  model: "gpt-5.6-sol",
-  effort: "low",
+  harness: "claude",
+  model: "opus",
+  effort: "medium",
 } satisfies ImplementerProfile;
 
 export const implementerUiHeavy = {
