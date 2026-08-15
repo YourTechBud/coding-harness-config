@@ -1,0 +1,10 @@
+kind: command
+frontmatter:
+  description: Author a structurally valid skill from requirements already settled in the conversation
+targets:
+  opencode: {}
+  pi: {}
+  claude:
+    as: skill
+  codex:
+    as: skill
