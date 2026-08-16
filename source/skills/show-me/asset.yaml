@@ -1,0 +1,15 @@
+kind: skill
+frontmatter:
+  description: |
+    Explain a bounded subject from supplied source material and a comprehension objective with concise diagrams, code-shape sketches, and focused representations. Invoke only when explicitly asked to show or explain something visually.
+targets:
+  opencode: {}
+  pi:
+    frontmatter:
+      disable-model-invocation: true
+  claude:
+    frontmatter:
+      disable-model-invocation: true
+  codex:
+    policy:
+      allow_implicit_invocation: false

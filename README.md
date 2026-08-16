@@ -6,13 +6,13 @@ It also includes my recommended [Isagi workflows](isagi/workflows/).
 
 ## Supported harnesses
 
-| Type | Harness | Resources |
-| --- | --- | --- |
-| Coding harness | Codex | [`codex/`](codex/) |
-| Coding harness | OpenCode | [`opencode/`](opencode/) |
-| Coding harness | Pi | [`pi/`](pi/) |
-| Coding harness | Claude Code | [`claude/`](claude/) |
-| Meta-harness | Isagi | [`isagi/workflows/`](isagi/workflows/) |
+| Type           | Harness     | Resources                              |
+| -------------- | ----------- | -------------------------------------- |
+| Coding harness | Codex       | [`codex/`](codex/)                     |
+| Coding harness | OpenCode    | [`opencode/`](opencode/)               |
+| Coding harness | Pi          | [`pi/`](pi/)                           |
+| Coding harness | Claude Code | [`claude/`](claude/)                   |
+| Meta-harness   | Isagi       | [`isagi/workflows/`](isagi/workflows/) |
 
 ## Installation
 
@@ -55,7 +55,10 @@ pnpm run harness:install
 
 ## Credits
 
-Some skills were inspired by [Matt Pocock's skill library](https://github.com/mattpocock/skills).
+Some skills were inspired by:
+
+- [Matt Pocock's skill library](https://github.com/mattpocock/skills)
+- [HumanLayer's skill library](https://github.com/humanlayer/skills)
 
 ## License
 
