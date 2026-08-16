@@ -363,20 +363,31 @@ export default defineWorkflow<State, Variables>({
 
       case "spawn-implementer": {
         const activeState = requireActiveState(state);
+        const phase = activePhase(activeState);
         const profile = state.stage.profile;
         await setWorkflowStatus(ctx, {
           kind: "implementer-aligning",
-          phase: activePhase(activeState).number,
+          phase: phase.number,
           phaseCount: activeState.plan.phases.length,
         });
         const spawned = await ctx.spawnAgentSession({
           harness: profile.harness,
           model: profile.model,
           effort: profile.effort,
-          prompt: initialImplementerPrompt({
-            phaseNumber: activePhase(activeState).number,
-            entryPlanPath: activeState.plan.entryPlanPath,
-          }),
+          prompt:
+            phase.type === "mock-ui"
+              ? initialMockUiPrompt({
+                  phaseNumber: phase.number,
+                  entryPlanPath: activeState.plan.entryPlanPath,
+                })
+              : initialImplementerPrompt({
+                  phaseNumber: phase.number,
+                  entryPlanPath: activeState.plan.entryPlanPath,
+                }),
+          modifiers:
+            phase.type === "mock-ui"
+              ? [{ kind: "skill", name: "designing-ui" }]
+              : undefined,
         });
         const implementer = {
           agentSessionId: spawned.agentSessionId,
@@ -1157,6 +1168,13 @@ function initialImplementerPrompt(input: {
   return `Implement the phase ${input.phaseNumber} in ${input.entryPlanPath}.
 
 ${alignmentFooter()}`;
+}
+
+function initialMockUiPrompt(input: {
+  readonly phaseNumber: number;
+  readonly entryPlanPath: string;
+}): string {
+  return `I want to start designing mock UIs for phase ${input.phaseNumber} in ${input.entryPlanPath}. Before creating any mockups, ask me questions so we can establish a shared understanding.`;
 }
 
 function implementerFollowUpPrompt(plannerTurn: string): string {

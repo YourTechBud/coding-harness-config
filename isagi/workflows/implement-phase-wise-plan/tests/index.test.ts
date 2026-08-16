@@ -184,6 +184,33 @@ test("mock-ui phase selects the UI-heavy profile without a classifier", async ()
     "agent_turn",
   );
   assert.equal(harness.spawnedSessions[0]?.harness, "claude");
+  assert.deepEqual(harness.spawnedSessions[0]?.modifiers, [
+    { kind: "skill", name: "designing-ui" },
+  ]);
+  assert.equal(
+    harness.spawnedSessions[0]?.prompt,
+    "I want to start designing mock UIs for phase 2 in docs/plan.md. Before creating any mockups, ask me questions so we can establish a shared understanding.",
+  );
+});
+
+test("non-mock phase keeps the default alignment prompt without modifiers", async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState({
+      kind: "spawn-implementer",
+      profile: {
+        kind: "generic",
+        harness: "claude",
+        model: "opus",
+        effort: "medium",
+      },
+    }),
+    null,
+  );
+
+  assert.equal(result.type, "suspend");
+  assert.equal(harness.spawnedSessions[0]?.modifiers, undefined);
   assert.match(
     harness.spawnedSessions[0]?.prompt ?? "",
     /^Implement the phase 2 in docs\/plan\.md\./,
