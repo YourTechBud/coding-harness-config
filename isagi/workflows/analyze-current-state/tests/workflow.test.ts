@@ -1,0 +1,399 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import type {
+  WorkflowContext,
+  WorkflowConversationMessage,
+  WorkflowLaunchContext,
+  WorkflowResult,
+} from '@yourtechbudstudio/isagi-workflow-sdk';
+
+import { reviewer, reviewerJudgment, writer, writerJudgment } from '../src/constants.js';
+import workflow from '../src/index.js';
+import {
+  initialReviewerPrompt,
+  initialWriterPrompt,
+  PROMPT_FOOTER,
+} from '../src/prompts.js';
+
+type State = Parameters<typeof workflow.step>[1];
+
+const launchCtx: WorkflowLaunchContext = {
+  worktreeId: 1,
+  worktreePath: '/workspace',
+  surfaceId: 7,
+};
+
+test('command captures the story, artifact path, and repository path', async () => {
+  const manifest = await workflow.command(launchCtx);
+  assert.deepEqual(
+    (manifest.inputs ?? []).map((input) => input.key),
+    ['story', 'artifactPath'],
+  );
+
+  const variables = {
+    story: 'https://github.com/owner/repo/issues/2',
+    artifactPath: 'scratch/current-state/issue-2.md',
+  };
+  await workflow.validate(launchCtx, variables);
+  assert.deepEqual(await workflow.init(launchCtx, variables), {
+    stateVersion: 1,
+    repositoryPath: '/workspace',
+    ...variables,
+    stage: { kind: 'spawn_writer' },
+  });
+  await assert.rejects(async () => {
+    await workflow.validate(launchCtx, { ...variables, story: '   ' });
+  });
+});
+
+test('spawns the configured Fable writer with the skill and required footer', async () => {
+  const harness = workflowHarness();
+  const current = baseState({ kind: 'spawn_writer' });
+  const result = await workflow.step(harness.ctx, current, null);
+
+  assert.equal(result.type, 'suspend');
+  assert.deepEqual(harness.spawned[0], {
+    ...writer,
+    modifiers: [{ kind: 'skill', name: 'analyze-current-state' }],
+    prompt: initialWriterPrompt(current),
+  });
+  assert.equal(harness.spawned[0]?.prompt?.endsWith(PROMPT_FOOTER), true);
+});
+
+test('judges every writer turn and fails when the initial artifact is incomplete', async () => {
+  const harness = workflowHarness({
+    histories: { 11: [message('assistant', 'I still need to inspect the event flow.')] },
+  });
+  const judgmentWait = await workflow.step(
+    harness.ctx,
+    baseState({ kind: 'await_initial_writer', writer: agent(11, 21) }),
+    endedTurn(),
+  );
+
+  assert.equal(judgmentWait.type, 'suspend');
+  assert.deepEqual(harness.headless[0]?.profile, writerJudgment);
+  const failed = await workflow.step(
+    harness.ctx,
+    suspendedState(judgmentWait),
+    headlessResult('{"outcome":"failed"}'),
+  );
+
+  assert.equal(failed.type, 'fail');
+  assert.equal(harness.sent.length, 0);
+  assert.equal(harness.feedback.at(-1)?.kind, 'error');
+  assert.match(harness.feedback.at(-1)?.message ?? '', /did not produce a reviewable artifact/);
+  assert.match(harness.logs.at(-1)?.message ?? '', /still need to inspect the event flow/);
+});
+
+test('a failed revision judgment stops instead of prompting the writer again', async () => {
+  const harness = workflowHarness();
+  const failed = await workflow.step(
+    harness.ctx,
+    baseState({
+      kind: 'await_revision_judgment',
+      writer: agent(11, 21),
+      reviewer: agent(12, 22),
+      writerResponse: 'I need another turn to finish the requested changes.',
+      reviewRound: 2,
+    }),
+    headlessResult('{"outcome":"failed"}'),
+  );
+
+  assert.equal(failed.type, 'fail');
+  assert.equal(harness.sent.length, 0);
+  assert.match(harness.logs.at(-1)?.message ?? '', /need another turn/);
+});
+
+test('a ready writer starts the independently configured reviewer with the same skill', async () => {
+  const harness = workflowHarness();
+  const current = baseState({
+    kind: 'await_initial_writer_judgment',
+    writer: agent(11, 21),
+    writerResponse: 'Artifact complete.',
+  });
+  const result = await workflow.step(
+    harness.ctx,
+    current,
+    headlessResult('{"outcome":"ready"}'),
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.deepEqual(harness.spawned[0], {
+    ...reviewer,
+    modifiers: [{ kind: 'skill', name: 'analyze-current-state' }],
+    prompt: initialReviewerPrompt(current),
+  });
+  assert.match(harness.spawned[0]?.prompt ?? '', /\*\*Contradictions:\*\*/);
+  assert.match(harness.spawned[0]?.prompt ?? '', /\*\*Important Simplifications:\*\*/);
+  assert.match(harness.spawned[0]?.prompt ?? '', /\*\*Missing Information:\*\*/);
+  assert.match(harness.spawned[0]?.prompt ?? '', /\*\*Other Significant Issues:\*\*/);
+  assert.match(harness.spawned[0]?.prompt ?? '', /\*\*Blocker:\*\*/);
+  assert.match(harness.spawned[0]?.prompt ?? '', /\*\*Concern:\*\*/);
+  assert.match(harness.spawned[0]?.prompt ?? '', /\*\*Optional:\*\*/);
+  assert.match(harness.spawned[0]?.prompt ?? '', /do not propose target architecture/);
+  assert.match(harness.spawned[0]?.prompt ?? '', /repeatedly disagreed/);
+  assert.equal(harness.spawned[0]?.prompt?.endsWith(PROMPT_FOOTER), true);
+});
+
+test('review findings are judged and sent to the persistent writer', async () => {
+  const review = 'Missing the command failure flow.\n\n## Human Escalation\n\nNo escalation.';
+  const harness = workflowHarness({ histories: { 12: [message('assistant', review)] } });
+  const judgmentWait = await workflow.step(
+    harness.ctx,
+    baseState({
+      kind: 'await_review',
+      writer: agent(11, 21),
+      reviewer: agent(12, 22),
+      reviewRound: 1,
+    }),
+    endedTurn(),
+  );
+
+  assert.equal(judgmentWait.type, 'suspend');
+  assert.deepEqual(harness.headless[0]?.profile, reviewerJudgment);
+  const revisionWait = await workflow.step(
+    harness.ctx,
+    suspendedState(judgmentWait),
+    headlessResult('{"outcome":"revise"}'),
+  );
+
+  assert.equal(revisionWait.type, 'suspend');
+  assert.equal(harness.sent[0]?.agentSessionId, 11);
+  assert.match(harness.sent[0]?.prompt ?? '', /Missing the command failure flow/);
+  assert.equal(harness.sent[0]?.prompt?.endsWith(PROMPT_FOOTER), true);
+});
+
+test('a completed revision is judged before its response goes to the reviewer', async () => {
+  const writerResponse = 'Added the failure flow and retained one evidence-backed pushback.';
+  const harness = workflowHarness({
+    histories: { 11: [message('assistant', writerResponse)] },
+  });
+  const judgmentWait = await workflow.step(
+    harness.ctx,
+    baseState({
+      kind: 'await_revision',
+      writer: agent(11, 21),
+      reviewer: agent(12, 22),
+      reviewRound: 1,
+    }),
+    endedTurn(),
+  );
+  const reviewWait = await workflow.step(
+    harness.ctx,
+    suspendedState(judgmentWait),
+    headlessResult('{"outcome":"ready"}'),
+  );
+
+  assert.equal(reviewWait.type, 'suspend');
+  assert.equal(harness.sent[0]?.agentSessionId, 12);
+  assert.match(harness.sent[0]?.prompt ?? '', /retained one evidence-backed pushback/);
+  assert.match(harness.sent[0]?.prompt ?? '', /\*\*Contradictions:\*\*/);
+  assert.match(harness.sent[0]?.prompt ?? '', /\*\*Important Simplifications:\*\*/);
+  assert.match(harness.sent[0]?.prompt ?? '', /\*\*Missing Information:\*\*/);
+  assert.match(harness.sent[0]?.prompt ?? '', /\*\*Other Significant Issues:\*\*/);
+  assert.match(harness.sent[0]?.prompt ?? '', /order findings by severity/);
+  assert.match(harness.sent[0]?.prompt ?? '', /repeatedly disagreed/);
+  assert.equal(harness.sent[0]?.prompt?.endsWith(PROMPT_FOOTER), true);
+  const reviewState = suspendedState(reviewWait);
+  assert.equal(reviewState.stage.kind, 'await_review');
+  assert.equal(
+    reviewState.stage.kind === 'await_review' ? reviewState.stage.reviewRound : undefined,
+    2,
+  );
+});
+
+test('explicit reviewer escalation pauses for a human and rejudges the latest reviewer turn', async () => {
+  const escalation =
+    '## Human Escalation\n\nEscalation required: choose whether generated evidence is in scope.';
+  const histories: Record<number, readonly WorkflowConversationMessage[]> = {
+    12: [message('assistant', escalation)],
+  };
+  const harness = workflowHarness({ histories });
+  const paused = await workflow.step(
+    harness.ctx,
+    baseState({
+      kind: 'await_reviewer_judgment',
+      writer: agent(11, 21),
+      reviewer: agent(12, 22),
+      review: escalation,
+      reviewRound: 2,
+    }),
+    headlessResult('{"outcome":"human-decision"}'),
+  );
+
+  assert.equal(paused.type, 'suspend');
+  assert.deepEqual(paused.type === 'suspend' ? paused.condition : undefined, {
+    kind: 'user_continue',
+  });
+  assert.match(harness.feedback.at(-1)?.message ?? '', /Resolve it with the reviewer/);
+
+  histories[12] = [
+    message('assistant', escalation),
+    message('user', 'Generated evidence is in scope.'),
+    message(
+      'assistant',
+      'Decision incorporated. No material correction remains.\n\n## Human Escalation\n\nNo escalation.\n\nNo re-review needed.',
+    ),
+  ];
+  const rejudged = await workflow.step(harness.ctx, suspendedState(paused), {
+    kind: 'user_continue',
+  });
+
+  assert.equal(rejudged.type, 'suspend');
+  assert.deepEqual(harness.headless.at(-1)?.profile, reviewerJudgment);
+  assert.match(harness.headless.at(-1)?.prompt ?? '', /Decision incorporated/);
+});
+
+test('review completion closes both workflow-created panes and returns the artifact', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    baseState({
+      kind: 'await_reviewer_judgment',
+      writer: agent(11, 21),
+      reviewer: agent(12, 22),
+      review: 'No re-review needed.',
+      reviewRound: 3,
+    }),
+    headlessResult('{"outcome":"complete"}'),
+  );
+
+  assert.equal(result.type, 'done');
+  assert.deepEqual(result.type === 'done' ? result.value : undefined, {
+    outcome: 'artifact-reviewed',
+    artifactPath: 'scratch/current-state/issue-2.md',
+    reviewCount: 3,
+  });
+  assert.deepEqual(harness.closedPanes, [21, 22]);
+});
+
+test('a failed agent turn fails with visible feedback and diagnostics', async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    baseState({ kind: 'await_initial_writer', writer: agent(11, 21) }),
+    {
+      outcome: 'failed',
+      recordedAt: '2026-08-15T00:00:00.000Z',
+      reason: 'provider exited',
+    },
+  );
+
+  assert.equal(result.type, 'fail');
+  assert.match(result.type === 'fail' ? result.reason : '', /provider exited/);
+  assert.equal(harness.feedback.at(-1)?.kind, 'error');
+  assert.match(harness.logs.at(-1)?.message ?? '', /provider exited/);
+});
+
+function workflowHarness(input?: {
+  readonly histories?: Record<number, readonly WorkflowConversationMessage[]>;
+}) {
+  const spawned: Array<Parameters<WorkflowContext['spawnAgentSession']>[0]> = [];
+  const sent: Array<Parameters<WorkflowContext['sendAgentPrompt']>[0]> = [];
+  const headless: Array<{
+    readonly profile: {
+      readonly harness: string;
+      readonly model?: string | undefined;
+      readonly effort?: string | undefined;
+    };
+    readonly prompt: string;
+  }> = [];
+  const closedPanes: number[] = [];
+  const feedback: Array<Parameters<WorkflowContext['setUiFeedback']>[0]> = [];
+  const logs: Array<{ readonly level: string; readonly message: string }> = [];
+  let nextAgentId = 11;
+
+  const ctx: WorkflowContext = {
+    worktreePath: '/workspace',
+    spawnAgentSession: async (spawnInput) => {
+      spawned.push(spawnInput);
+      const agentSessionId = nextAgentId;
+      nextAgentId += 1;
+      return {
+        agentSessionId,
+        paneId: agentSessionId + 10,
+        sentAt: '2026-08-15T00:00:00.000Z',
+      };
+    },
+    sendAgentPrompt: async (sendInput) => {
+      sent.push(sendInput);
+      return {
+        agentSessionId: sendInput.agentSessionId,
+        sentAt: '2026-08-15T00:00:00.000Z',
+      };
+    },
+    closePane: async (paneId) => {
+      closedPanes.push(paneId);
+    },
+    getConversationHistory: async (agentSessionId) =>
+      input?.histories?.[agentSessionId] ?? [],
+    runHeadlessAgent: async (headlessInput) => {
+      headless.push({
+        profile: {
+          harness: headlessInput.harness,
+          model: headlessInput.model,
+          effort: headlessInput.effort,
+        },
+        prompt: headlessInput.prompt ?? '',
+      });
+      return {
+        opId: `judge-${headless.length}`,
+        launch: {
+          prompt: headlessInput.prompt ?? '',
+          harness: headlessInput.harness,
+          model: headlessInput.model,
+          effort: headlessInput.effort,
+          timeoutMs: headlessInput.timeoutMs ?? 900_000,
+        },
+      };
+    },
+    startWorkflow: async () => unexpected('startWorkflow'),
+    log: async (level, messageText) => {
+      logs.push({ level, message: messageText });
+    },
+    setUiFeedback: async (value) => {
+      feedback.push(value);
+    },
+  };
+
+  return { ctx, spawned, sent, headless, closedPanes, feedback, logs };
+}
+
+function baseState(stage: State['stage']): State {
+  return {
+    stateVersion: 1,
+    repositoryPath: '/workspace',
+    story: 'https://github.com/owner/repo/issues/2',
+    artifactPath: 'scratch/current-state/issue-2.md',
+    stage,
+  };
+}
+
+function agent(agentSessionId: number, paneId: number) {
+  return { agentSessionId, paneId };
+}
+
+function message(role: 'user' | 'assistant', text: string): WorkflowConversationMessage {
+  return { role, parts: [{ type: 'text', text, state: 'done' }] };
+}
+
+function endedTurn() {
+  return { outcome: 'ended', recordedAt: '2026-08-15T00:00:00.000Z' };
+}
+
+function headlessResult(output: string) {
+  return {
+    kind: 'headless_agent',
+    results: [{ opId: 'judge-1', status: 'completed', output }],
+  };
+}
+
+function suspendedState(result: WorkflowResult): State {
+  assert.equal(result.type, 'suspend');
+  return (result as Extract<WorkflowResult, { readonly type: 'suspend' }>).state as State;
+}
+
+function unexpected(name: string): never {
+  throw new Error(`Unexpected ${name} call.`);
+}
