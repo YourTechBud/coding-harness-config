@@ -200,6 +200,145 @@ test('starts program design with both predecessor artifacts', async () => {
   });
 });
 
+test('a reviewed program design advances to story review artifact creation', async () => {
+  const currentPlan = plan('example');
+  const harness = workflowHarness('/workspace');
+  const advanced = await workflow.step(
+    harness.ctx,
+    baseState('/workspace', {
+      kind: 'await_program_design',
+      plan: currentPlan,
+      runId: 101,
+    }),
+    childResult(101, currentPlan.programDesignPath),
+  );
+  assert.equal(advanced.type, 'cont');
+  assert.equal(resultState(advanced).stage.kind, 'start_story_review');
+});
+
+test('starts story review artifact creation with all sources and the review directory', async () => {
+  const currentPlan = plan('example');
+  const harness = workflowHarness('/workspace');
+  const result = await workflow.step(
+    harness.ctx,
+    baseState('/workspace', { kind: 'start_story_review', plan: currentPlan }),
+    null,
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.deepEqual(harness.started[0], {
+    workflowKey: 'create-story-review-artifacts',
+    variables: {
+      story: 'https://github.com/owner/repo/issues/2',
+      currentStatePath: currentPlan.currentStatePath,
+      architecturePath: currentPlan.architecturePath,
+      programDesignPath: currentPlan.programDesignPath,
+      reviewDirectory: `${currentPlan.directory}/review`,
+    },
+    context: undefined,
+  });
+});
+
+test('completed story review artifacts advance to the approval checkpoint', async () => {
+  const currentPlan = plan('example');
+  const harness = workflowHarness('/workspace');
+  const result = await workflow.step(
+    harness.ctx,
+    baseState('/workspace', {
+      kind: 'await_story_review',
+      plan: currentPlan,
+      runId: 101,
+    }),
+    storyReviewResult(101, currentPlan),
+  );
+
+  assert.equal(result.type, 'cont');
+  assert.equal(resultState(result).stage.kind, 'request_review_approval');
+});
+
+test('a failed story review child fails Plan Story', async () => {
+  const currentPlan = plan('example');
+  const harness = workflowHarness('/workspace');
+  const result = await workflow.step(
+    harness.ctx,
+    baseState('/workspace', {
+      kind: 'await_story_review',
+      plan: currentPlan,
+      runId: 101,
+    }),
+    {
+      kind: 'workflow',
+      results: [{ runId: 101, status: 'failed', error: 'review renderer crashed' }],
+    },
+  );
+
+  assert.equal(result.type, 'fail');
+  assert.match(harness.logs.at(-1)?.message ?? '', /review renderer crashed/);
+});
+
+test('unexpected story review paths fail Plan Story', async () => {
+  const currentPlan = plan('example');
+  const harness = workflowHarness('/workspace');
+  const event = storyReviewResult(101, currentPlan);
+  event.results[0].result.artifacts.architecturePath = 'scratch/wrong/architecture.html';
+  const result = await workflow.step(
+    harness.ctx,
+    baseState('/workspace', {
+      kind: 'await_story_review',
+      plan: currentPlan,
+      runId: 101,
+    }),
+    event,
+  );
+
+  assert.equal(result.type, 'fail');
+  assert.match(harness.logs.at(-1)?.message ?? '', /scratch\/wrong\/architecture\.html/);
+});
+
+test('pauses for human review before spawning the implementation planner', async () => {
+  const currentPlan = plan('example');
+  const harness = workflowHarness('/workspace');
+  const result = await workflow.step(
+    harness.ctx,
+    baseState('/workspace', { kind: 'request_review_approval', plan: currentPlan }),
+    null,
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.deepEqual(result.type === 'suspend' ? result.condition : undefined, {
+    kind: 'user_continue',
+  });
+  assert.equal(harness.spawned.length, 0);
+  assert.match(harness.feedback.at(-1)?.message ?? '', /review\/current-state\.html/);
+  assert.match(harness.feedback.at(-1)?.message ?? '', /press Continue/);
+});
+
+test('human approval advances to implementation planning', async () => {
+  const currentPlan = plan('example');
+  const harness = workflowHarness('/workspace');
+  const result = await workflow.step(
+    harness.ctx,
+    baseState('/workspace', { kind: 'await_review_approval', plan: currentPlan }),
+    { kind: 'user_continue' },
+  );
+
+  assert.equal(result.type, 'cont');
+  assert.equal(resultState(result).stage.kind, 'spawn_planner');
+});
+
+test('an unexpected approval event fails instead of bypassing review', async () => {
+  const currentPlan = plan('example');
+  const harness = workflowHarness('/workspace');
+  const result = await workflow.step(
+    harness.ctx,
+    baseState('/workspace', { kind: 'await_review_approval', plan: currentPlan }),
+    endedTurn(),
+  );
+
+  assert.equal(result.type, 'fail');
+  assert.equal(harness.spawned.length, 0);
+});
+
 test('spawns the GPT-5.6 Sol planner with the plan skill and all reviewed artifacts', async () => {
   const currentPlan = plan('example');
   const harness = workflowHarness('/workspace');
@@ -303,6 +442,14 @@ test('a ready plan completes immediately and preserves the planner pane', async 
         currentStatePath: currentPlan.currentStatePath,
         architecturePath: currentPlan.architecturePath,
         programDesignPath: currentPlan.programDesignPath,
+      },
+      review: {
+        reviewDirectory: `${currentPlan.directory}/review`,
+        artifacts: {
+          currentStatePath: `${currentPlan.directory}/review/current-state.html`,
+          architecturePath: `${currentPlan.directory}/review/architecture.html`,
+          programDesignPath: `${currentPlan.directory}/review/program-design.html`,
+        },
       },
       plannerAgentSessionId: 11,
       plannerPaneId: 21,
@@ -471,6 +618,28 @@ function childResult(runId: number, artifactPath: string) {
         runId,
         status: 'done',
         result: { outcome: 'artifact-reviewed', artifactPath, reviewCount: 1 },
+      },
+    ],
+  };
+}
+
+function storyReviewResult(runId: number, currentPlan: PlanContext) {
+  const reviewDirectory = `${currentPlan.directory}/review`;
+  return {
+    kind: 'workflow',
+    results: [
+      {
+        runId,
+        status: 'done',
+        result: {
+          outcome: 'story-review-artifacts-created',
+          reviewDirectory,
+          artifacts: {
+            currentStatePath: `${reviewDirectory}/current-state.html`,
+            architecturePath: `${reviewDirectory}/architecture.html`,
+            programDesignPath: `${reviewDirectory}/program-design.html`,
+          },
+        },
       },
     ],
   };

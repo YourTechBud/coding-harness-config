@@ -35,6 +35,15 @@ type PlanContext = {
   readonly programDesignPath: string;
 };
 
+type ReviewContext = {
+  readonly reviewDirectory: string;
+  readonly artifacts: {
+    readonly currentStatePath: string;
+    readonly architecturePath: string;
+    readonly programDesignPath: string;
+  };
+};
+
 type Stage =
   | { readonly kind: 'choose_plan_directory' }
   | { readonly kind: 'await_plan_directory' }
@@ -56,6 +65,14 @@ type Stage =
       readonly plan: PlanContext;
       readonly runId: number;
     }
+  | { readonly kind: 'start_story_review'; readonly plan: PlanContext }
+  | {
+      readonly kind: 'await_story_review';
+      readonly plan: PlanContext;
+      readonly runId: number;
+    }
+  | { readonly kind: 'request_review_approval'; readonly plan: PlanContext }
+  | { readonly kind: 'await_review_approval'; readonly plan: PlanContext }
   | { readonly kind: 'spawn_planner'; readonly plan: PlanContext }
   | {
       readonly kind: 'await_planner';
@@ -228,6 +245,72 @@ export default defineWorkflow<State, Variables>({
         if (error) {
           return failWorkflow(ctx, 'Program design failed', error);
         }
+        return cont(
+          withStage(state, { kind: 'start_story_review', plan: state.stage.plan }),
+        );
+      }
+
+      case 'start_story_review': {
+        await ctx.setUiFeedback({ phase: 'Creating story review artifacts' });
+        const review = reviewContext(state.stage.plan);
+        const runId = await ctx.startWorkflow('create-story-review-artifacts', {
+          story: state.story,
+          currentStatePath: state.stage.plan.currentStatePath,
+          architecturePath: state.stage.plan.architecturePath,
+          programDesignPath: state.stage.plan.programDesignPath,
+          reviewDirectory: review.reviewDirectory,
+        });
+        await ctx.log('info', `Started create-story-review-artifacts child workflow ${runId}.`);
+        return suspend(
+          withStage(state, {
+            kind: 'await_story_review',
+            plan: state.stage.plan,
+            runId,
+          }),
+          wait.workflow(runId),
+        );
+      }
+
+      case 'await_story_review': {
+        const error = childStoryReviewError(
+          incoming,
+          state.stage.runId,
+          reviewContext(state.stage.plan),
+        );
+        if (error) {
+          return failWorkflow(ctx, 'Story review artifact creation failed', error);
+        }
+        return cont(
+          withStage(state, {
+            kind: 'request_review_approval',
+            plan: state.stage.plan,
+          }),
+        );
+      }
+
+      case 'request_review_approval': {
+        const review = reviewContext(state.stage.plan);
+        await ctx.setUiFeedback({
+          phase: 'Awaiting story review',
+          message: `Start with ${review.artifacts.currentStatePath}. Review the linked HTML artifacts, update the planning sources if desired, then press Continue to approve implementation planning.`,
+        });
+        return suspend(
+          withStage(state, {
+            kind: 'await_review_approval',
+            plan: state.stage.plan,
+          }),
+          wait.userContinue(),
+        );
+      }
+
+      case 'await_review_approval': {
+        if (!workflowEvent.isUserContinue(incoming)) {
+          return failWorkflow(
+            ctx,
+            'Story review approval could not be resumed',
+            'Story review approval wait resumed with an unexpected event.',
+          );
+        }
         return cont(withStage(state, { kind: 'spawn_planner', plan: state.stage.plan }));
       }
 
@@ -341,6 +424,7 @@ export default defineWorkflow<State, Variables>({
               architecturePath: state.stage.plan.architecturePath,
               programDesignPath: state.stage.plan.programDesignPath,
             },
+            review: reviewContext(state.stage.plan),
             plannerAgentSessionId: state.stage.planner.agentSessionId,
             plannerPaneId: state.stage.planner.paneId,
           });
@@ -373,6 +457,18 @@ function choosePlanContext(repositoryPath: string, slug: string): PlanContext {
     currentStatePath: `${directory}/artifacts/current-state.md`,
     architecturePath: `${directory}/artifacts/architecture.md`,
     programDesignPath: `${directory}/artifacts/program-design.md`,
+  };
+}
+
+function reviewContext(plan: PlanContext): ReviewContext {
+  const reviewDirectory = `${plan.directory}/review`;
+  return {
+    reviewDirectory,
+    artifacts: {
+      currentStatePath: `${reviewDirectory}/current-state.html`,
+      architecturePath: `${reviewDirectory}/architecture.html`,
+      programDesignPath: `${reviewDirectory}/program-design.html`,
+    },
   };
 }
 
@@ -410,6 +506,48 @@ function childArtifactError(
   }
   if (!Number.isInteger(record.reviewCount) || (record.reviewCount as number) < 1) {
     return `${input.workflowKey} child workflow ${input.runId} returned an invalid review count.`;
+  }
+  return null;
+}
+
+function childStoryReviewError(
+  incoming: unknown,
+  runId: number,
+  expected: ReviewContext,
+): string | null {
+  const workflowKey = 'create-story-review-artifacts';
+  const results = workflowEvent.getWorkflowResults(incoming);
+  if (!results) {
+    return `${workflowKey} wait resumed with a non-workflow event.`;
+  }
+  if (results.length !== 1) {
+    return `${workflowKey} expected one child result, received ${results.length}.`;
+  }
+  const child = results[0];
+  if (!child || child.runId !== runId) {
+    return `${workflowKey} resumed with an unexpected child run.`;
+  }
+  if (child.status !== 'done') {
+    return `${workflowKey} child workflow ${runId} failed: ${errorText(child.error)}`;
+  }
+  if (!child.result || typeof child.result !== 'object' || Array.isArray(child.result)) {
+    return `${workflowKey} child workflow ${runId} returned no artifact result.`;
+  }
+  const record = child.result as Record<string, unknown>;
+  if (record.outcome !== 'story-review-artifacts-created') {
+    return `${workflowKey} child workflow ${runId} returned outcome ${String(record.outcome)}.`;
+  }
+  if (record.reviewDirectory !== expected.reviewDirectory) {
+    return `${workflowKey} child workflow ${runId} returned review directory ${String(record.reviewDirectory)} instead of ${expected.reviewDirectory}.`;
+  }
+  if (!record.artifacts || typeof record.artifacts !== 'object' || Array.isArray(record.artifacts)) {
+    return `${workflowKey} child workflow ${runId} returned no review artifact paths.`;
+  }
+  const artifacts = record.artifacts as Record<string, unknown>;
+  for (const [key, expectedPath] of Object.entries(expected.artifacts)) {
+    if (artifacts[key] !== expectedPath) {
+      return `${workflowKey} child workflow ${runId} returned ${key} ${String(artifacts[key])} instead of ${expectedPath}.`;
+    }
   }
   return null;
 }
