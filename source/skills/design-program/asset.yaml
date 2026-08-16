@@ -1,0 +1,15 @@
+kind: skill
+frontmatter:
+  description: |
+    Create a story-scoped program design from current-state and architecture artifacts for downstream implementation planning. Invoke only when explicitly asked to design the program.
+targets:
+  opencode: {}
+  pi:
+    frontmatter:
+      disable-model-invocation: true
+  claude:
+    frontmatter:
+      disable-model-invocation: true
+  codex:
+    policy:
+      allow_implicit_invocation: false

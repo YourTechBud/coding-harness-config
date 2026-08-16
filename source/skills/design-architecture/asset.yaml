@@ -1,0 +1,15 @@
+kind: skill
+frontmatter:
+  description: |
+    Create a story-scoped target architecture from current-state analysis for downstream program design. Invoke only when explicitly asked to design architecture.
+targets:
+  opencode: {}
+  pi:
+    frontmatter:
+      disable-model-invocation: true
+  claude:
+    frontmatter:
+      disable-model-invocation: true
+  codex:
+    policy:
+      allow_implicit_invocation: false
