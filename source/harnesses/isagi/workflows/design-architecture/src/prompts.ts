@@ -46,6 +46,10 @@ ${review}
 Evaluate every finding against the story, current-state analysis, repository evidence, and architectural drivers. Update the architecture artifact directly wherever the review improves its correctness, simplicity, coherence, or decision quality. Correct the current-state artifact only when resolving a substantive predecessor flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect or would make the architecture worse. Finish with the artifacts ready for another independent review.`);
 }
 
+export function retryWriterPrompt(): string {
+  return withPromptFooter(`Resume the architecture work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`);
+}
+
 export function initialReviewerPrompt(input: {
   readonly repositoryPath: string;
   readonly story: string;

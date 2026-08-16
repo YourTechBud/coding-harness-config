@@ -150,6 +150,9 @@ ${review}
 
 Evaluate every finding against the story, current-state analysis, repository evidence, and architectural drivers. Update the architecture artifact directly wherever the review improves its correctness, simplicity, coherence, or decision quality. Correct the current-state artifact only when resolving a substantive predecessor flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect or would make the architecture worse. Finish with the artifacts ready for another independent review.`);
 }
+function retryWriterPrompt() {
+  return withPromptFooter(`Resume the architecture work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`);
+}
 function initialReviewerPrompt(input) {
   return withPromptFooter(`Independently review the target architecture from first principles.
 
@@ -350,15 +353,20 @@ var index_default = r({
           state: withStage(state, {
             kind: "await_initial_writer_judgment",
             writer: state.stage.writer,
-            writerResponse: response.text
+            writerResponse: response.text,
+            mode: "normal"
           }),
           writerResponse: response.text
         });
       }
       case "await_initial_writer_judgment": {
+        if (isRetryInvocation(ctx)) return recoverWriterJudgment(ctx, state, state.stage);
         const route = await readWriterJudgment(ctx, incoming);
         if (!route.ok) return route.result;
         if (route.value === "failed") {
+          if (state.stage.mode === "retry_recheck") {
+            return continueWriterAfterRetry(ctx, state, state.stage);
+          }
           return failIncompleteWriter(ctx, state.stage.writer, state.stage.writerResponse);
         }
         return spawnReviewer(ctx, state, state.stage.writer);
@@ -433,15 +441,20 @@ var index_default = r({
             writer: state.stage.writer,
             reviewer: state.stage.reviewer,
             writerResponse: response.text,
-            reviewRound: state.stage.reviewRound
+            reviewRound: state.stage.reviewRound,
+            mode: "normal"
           }),
           writerResponse: response.text
         });
       }
       case "await_revision_judgment": {
+        if (isRetryInvocation(ctx)) return recoverWriterJudgment(ctx, state, state.stage);
         const route = await readWriterJudgment(ctx, incoming);
         if (!route.ok) return route.result;
         if (route.value === "failed") {
+          if (state.stage.mode === "retry_recheck") {
+            return continueWriterAfterRetry(ctx, state, state.stage);
+          }
           return failIncompleteWriter(ctx, state.stage.writer, state.stage.writerResponse);
         }
         await ctx.setUiFeedback({ phase: "Re-reviewing architecture" });
@@ -493,6 +506,47 @@ var index_default = r({
     }
   }
 });
+async function recoverWriterJudgment(ctx, state, stage) {
+  const history = await ctx.getConversationHistory(stage.writer.agentSessionId);
+  const latestResponse = latestAssistantTurnText(history);
+  if (latestResponse && latestResponse !== stage.writerResponse) {
+    await ctx.log(
+      "info",
+      `Retry found a newer complete turn in architecture writer session ${stage.writer.agentSessionId}; routing the latest response.`
+    );
+    return startWriterJudgment(ctx, {
+      state: withStage(state, { ...stage, writerResponse: latestResponse, mode: "retry_recheck" }),
+      writerResponse: latestResponse
+    });
+  }
+  return continueWriterAfterRetry(ctx, state, stage);
+}
+async function continueWriterAfterRetry(ctx, state, stage) {
+  await ctx.setUiFeedback({ phase: "Recovering architecture writer" });
+  const sent = await ctx.sendAgentPrompt({
+    agentSessionId: stage.writer.agentSessionId,
+    prompt: retryWriterPrompt()
+  });
+  await ctx.log(
+    "info",
+    `Sent one retry continuation to architecture writer session ${stage.writer.agentSessionId}.`
+  );
+  if (stage.kind === "await_initial_writer_judgment") {
+    return a(
+      withStage(state, { kind: "await_initial_writer", writer: stage.writer }),
+      o.agentTurn(sent)
+    );
+  }
+  return a(
+    withStage(state, {
+      kind: "await_revision",
+      writer: stage.writer,
+      reviewer: stage.reviewer,
+      reviewRound: stage.reviewRound
+    }),
+    o.agentTurn(sent)
+  );
+}
 async function startWriterJudgment(ctx, input) {
   await ctx.setUiFeedback({ phase: "Checking architecture writer progress" });
   const op = await ctx.runHeadlessAgent({
@@ -663,6 +717,9 @@ function parseText(value, key) {
 }
 function assertNever(value) {
   throw new Error(`Unsupported workflow value: ${String(value)}`);
+}
+function isRetryInvocation(ctx) {
+  return ctx.invocation?.kind === "retry";
 }
 export {
   index_default as default
