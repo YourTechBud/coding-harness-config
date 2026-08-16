@@ -1,5 +1,5 @@
 export const PROMPT_FOOTER =
-  'Do not run any tasks in the background, but you are allowed to run toast tasks and shell commands in the foreground.';
+  "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
 
 const PROGRAM_REVIEW_CONTRACT = `Review the artifact through each of these sections:
 

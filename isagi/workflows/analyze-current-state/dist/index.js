@@ -113,7 +113,7 @@ var reviewerJudgment = {
 };
 
 // src/prompts.ts
-var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run toast tasks and shell commands in the foreground.";
+var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
 var CURRENT_STATE_REVIEW_CONTRACT = `Review the artifact through each of these sections:
 
 - **Contradictions:** Claims that conflict with the story, repository behavior, tests, documentation, another part of the artifact, or stronger evidence. Distinguish a false claim from evidence that is merely incomplete.

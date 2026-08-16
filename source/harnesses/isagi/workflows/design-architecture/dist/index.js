@@ -113,7 +113,7 @@ var reviewerJudgment = {
 };
 
 // src/prompts.ts
-var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run toast tasks and shell commands in the foreground.";
+var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
 var ARCHITECTURE_REVIEW_CONTRACT = `Review the artifact through each of these sections:
 
 - **Contradictions:** Decisions or claims that conflict with the story, verified current-state facts, repository constraints, applicable engineering guidance, another architectural decision, or the architecture's own boundaries and flows. Distinguish repository facts from proposed design choices.

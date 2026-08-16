@@ -27,7 +27,9 @@ Intermediate phases do not need to preserve a working application or a green tes
 
 ## Output layout
 
-Write the plan under `scratch/plans/<slug>/`, where `<slug>` is short, descriptive, and kebab-case:
+When the remarks specify an explicit plan directory, use it exactly. It may already contain an `artifacts/` directory; preserve those inputs and write the plan files beside it. Refuse to overwrite an existing `index.md` or phase file.
+
+Otherwise, write the plan under `scratch/plans/<slug>/`, where `<slug>` is short, descriptive, and kebab-case:
 
 ```text
 scratch/plans/<slug>/
@@ -37,7 +39,7 @@ scratch/plans/<slug>/
 └── ...
 ```
 
-Never overwrite an existing plan directory. If the intended directory exists, append `-2`, `-3`, and so on until the name is free. Create the complete plan directory in one drafting pass. Do not make any edits outside it, and do not create the execution-time decision log.
+When selecting the directory yourself, never overwrite an existing plan directory. If the intended directory exists, append `-2`, `-3`, and so on until the name is free. Create the complete plan in one drafting pass. Do not make any edits outside its directory, and do not create the execution-time decision log.
 
 ## Index
 
