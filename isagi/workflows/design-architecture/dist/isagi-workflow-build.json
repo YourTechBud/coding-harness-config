@@ -1,0 +1,19 @@
+{
+  "manifestVersion": 1,
+  "workflowContractVersion": 1,
+  "sdk": {
+    "name": "@yourtechbudstudio/isagi-workflow-sdk",
+    "version": "0.0.1"
+  },
+  "verifier": {
+    "name": "@yourtechbudstudio/isagi-workflow-verifier",
+    "version": "0.0.1"
+  },
+  "source": {
+    "sha256": "cf61c88520b4ca0ca66307f17230cbb1576c954c02cb5925380980261e7eb9aa"
+  },
+  "artifact": {
+    "entry": "dist/index.js",
+    "sha256": "fac7ca2814507f91f2dee9353c423afb2a49f497110ecedb0651f8912814f4bb"
+  }
+}
