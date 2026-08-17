@@ -43,9 +43,6 @@ Isagi specific config
 - Always load the prompting guides:
   - Fable 5: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5
   - GPT 5.6: https://developers.openai.com/api/docs/guides/prompt-guidance?model=gpt-5.6
-  - Skill authoring guide:
-    - https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices
-    - https://github.com/mattpocock/skills/raw/refs/heads/main/skills/productivity/writing-great-skills/SKILL.md
 - Always lean in to trust the model's intelligence to follow intent.
 - We always keep decision making and critical thinking to be the responsiblity of the user. Never delegate thinking to agents
 - In all prompts, skills, commands, agents we write, describe the behavior and outcome we want. Use negative instructions only for genuine constraints or demonstrated failure modes—not as residue from the previous skill.

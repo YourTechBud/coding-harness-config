@@ -14,6 +14,7 @@ import {
   initialReviewerPrompt,
   initialWriterPrompt,
   PROMPT_FOOTER,
+  retryWriterPrompt,
 } from '../src/prompts.js';
 
 type State = Parameters<typeof workflow.step>[1];
@@ -96,6 +97,7 @@ test('a failed revision judgment stops instead of prompting the writer again', a
       reviewer: agent(12, 22),
       writerResponse: 'I need another turn to finish the requested changes.',
       reviewRound: 2,
+      mode: 'normal',
     }),
     headlessResult('{"outcome":"failed"}'),
   );
@@ -111,6 +113,7 @@ test('a ready writer starts the independently configured reviewer with the same 
     kind: 'await_initial_writer_judgment',
     writer: agent(11, 21),
     writerResponse: 'Artifact complete.',
+    mode: 'normal',
   });
   const result = await workflow.step(
     harness.ctx,
@@ -134,6 +137,101 @@ test('a ready writer starts the independently configured reviewer with the same 
   assert.match(harness.spawned[0]?.prompt ?? '', /do not propose target architecture/);
   assert.match(harness.spawned[0]?.prompt ?? '', /repeatedly disagreed/);
   assert.equal(harness.spawned[0]?.prompt?.endsWith(PROMPT_FOOTER), true);
+});
+
+test('retry judges a newer complete writer turn without sending another prompt', async () => {
+  const harness = workflowHarness({
+    invocationKind: 'retry',
+    histories: { 11: [message('assistant', 'Current-state analysis is complete and verified.')] },
+  });
+  const result = await workflow.step(
+    harness.ctx,
+    baseState({
+      kind: 'await_initial_writer_judgment',
+      writer: agent(11, 21),
+      writerResponse: 'I will inspect the repository next.',
+      mode: 'normal',
+    }),
+    headlessResult('{"outcome":"failed"}'),
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.equal(harness.sent.length, 0);
+  assert.match(harness.headless[0]?.prompt ?? '', /Current-state analysis is complete and verified/);
+  const recovered = suspendedState(result);
+  assert.equal(
+    recovered.stage.kind === 'await_initial_writer_judgment' ? recovered.stage.mode : undefined,
+    'retry_recheck',
+  );
+});
+
+test('retry sends one continuation when the writer history has not advanced', async () => {
+  const response = 'I will inspect the repository next.';
+  const harness = workflowHarness({
+    invocationKind: 'retry',
+    histories: { 11: [message('assistant', response)] },
+  });
+  const result = await workflow.step(
+    harness.ctx,
+    baseState({
+      kind: 'await_initial_writer_judgment',
+      writer: agent(11, 21),
+      writerResponse: response,
+      mode: 'normal',
+    }),
+    headlessResult('{"outcome":"failed"}'),
+  );
+
+  assert.equal(result.type, 'suspend');
+  assert.equal(harness.headless.length, 0);
+  assert.deepEqual(harness.sent[0], {
+    agentSessionId: 11,
+    prompt: retryWriterPrompt(),
+  });
+  assert.equal(suspendedState(result).stage.kind, 'await_initial_writer');
+});
+
+test('a failed retry recheck sends one continuation and a second failure remains terminal', async () => {
+  const histories: Record<number, readonly WorkflowConversationMessage[]> = {
+    11: [message('assistant', 'Current-state analysis is now complete.')],
+  };
+  const harness = workflowHarness({ invocationKind: 'retry', histories });
+  const recheck = await workflow.step(
+    harness.ctx,
+    baseState({
+      kind: 'await_revision_judgment',
+      writer: agent(11, 21),
+      reviewer: agent(12, 22),
+      writerResponse: 'I will verify the artifact next.',
+      reviewRound: 2,
+      mode: 'normal',
+    }),
+    headlessResult('{"outcome":"failed"}'),
+  );
+  harness.setInvocationKind('normal');
+  const continuation = await workflow.step(
+    harness.ctx,
+    suspendedState(recheck),
+    headlessResult('{"outcome":"failed"}'),
+  );
+
+  assert.equal(continuation.type, 'suspend');
+  assert.equal(harness.sent.length, 1);
+  assert.equal(suspendedState(continuation).stage.kind, 'await_revision');
+
+  histories[11] = [message('assistant', 'I still need another turn.')];
+  const judgedContinuation = await workflow.step(
+    harness.ctx,
+    suspendedState(continuation),
+    endedTurn(),
+  );
+  const terminal = await workflow.step(
+    harness.ctx,
+    suspendedState(judgedContinuation),
+    headlessResult('{"outcome":"failed"}'),
+  );
+  assert.equal(terminal.type, 'fail');
+  assert.equal(harness.sent.length, 1);
 });
 
 test('review findings are judged and sent to the persistent writer', async () => {
@@ -288,6 +386,7 @@ test('a failed agent turn fails with visible feedback and diagnostics', async ()
 
 function workflowHarness(input?: {
   readonly histories?: Record<number, readonly WorkflowConversationMessage[]>;
+  readonly invocationKind?: 'normal' | 'retry';
 }) {
   const spawned: Array<Parameters<WorkflowContext['spawnAgentSession']>[0]> = [];
   const sent: Array<Parameters<WorkflowContext['sendAgentPrompt']>[0]> = [];
@@ -303,9 +402,13 @@ function workflowHarness(input?: {
   const feedback: Array<Parameters<WorkflowContext['setUiFeedback']>[0]> = [];
   const logs: Array<{ readonly level: string; readonly message: string }> = [];
   let nextAgentId = 11;
+  let invocationKind = input?.invocationKind ?? 'normal';
 
-  const ctx: WorkflowContext = {
+  const ctx = {
     worktreePath: '/workspace',
+    get invocation() {
+      return { kind: invocationKind } as const;
+    },
     spawnAgentSession: async (spawnInput) => {
       spawned.push(spawnInput);
       const agentSessionId = nextAgentId;
@@ -355,9 +458,20 @@ function workflowHarness(input?: {
     setUiFeedback: async (value) => {
       feedback.push(value);
     },
-  };
+  } as WorkflowContext & { readonly invocation: { readonly kind: 'normal' | 'retry' } };
 
-  return { ctx, spawned, sent, headless, closedPanes, feedback, logs };
+  return {
+    ctx,
+    spawned,
+    sent,
+    headless,
+    closedPanes,
+    feedback,
+    logs,
+    setInvocationKind: (kind: 'normal' | 'retry') => {
+      invocationKind = kind;
+    },
+  };
 }
 
 function baseState(stage: State['stage']): State {

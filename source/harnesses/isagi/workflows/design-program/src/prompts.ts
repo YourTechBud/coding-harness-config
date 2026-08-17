@@ -50,6 +50,10 @@ ${review}
 Evaluate every finding against the story, architecture, current-state analysis, repository evidence, and program-design drivers. Update the program-design artifact directly wherever the review improves its correctness, simplicity, coherence, exactness, or decision quality. Correct a predecessor artifact only when resolving a substantive predecessor flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect or would make the design worse. Finish with the current artifact set ready for another independent review.`);
 }
 
+export function retryWriterPrompt(): string {
+  return withPromptFooter(`Resume the program-design work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`);
+}
+
 export function initialReviewerPrompt(input: {
   readonly repositoryPath: string;
   readonly story: string;
