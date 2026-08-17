@@ -113,7 +113,7 @@ var reviewerJudgment = {
 };
 
 // src/prompts.ts
-var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
+var PROMPT_FOOTER = "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
 var ARCHITECTURE_REVIEW_CONTRACT = `Review the artifact through each of these sections:
 
 - **Contradictions:** Decisions or claims that conflict with the story, verified current-state facts, repository constraints, applicable engineering guidance, another architectural decision, or the architecture's own boundaries and flows. Distinguish repository facts from proposed design choices.
@@ -151,7 +151,9 @@ ${review}
 Evaluate every finding against the story, current-state analysis, repository evidence, and architectural drivers. Update the architecture artifact directly wherever the review improves its correctness, simplicity, coherence, or decision quality. Correct the current-state artifact only when resolving a substantive predecessor flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect or would make the architecture worse. Finish with the artifacts ready for another independent review.`);
 }
 function retryWriterPrompt() {
-  return withPromptFooter(`Resume the architecture work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`);
+  return withPromptFooter(
+    `Resume the architecture work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`
+  );
 }
 function initialReviewerPrompt(input) {
   return withPromptFooter(`Independently review the target architecture from first principles.

@@ -108,7 +108,7 @@ var reviewer = {
 };
 
 // src/prompts.ts
-var PROMPT_FOOTER = "Work unattended and finish the requested artifact in this turn. Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
+var PROMPT_FOOTER = "Work unattended and finish the requested artifact in this turn. Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
 function currentStatePrompt(input) {
   return withPromptFooter(`Create the current-state review artifact for this implementation story.
 

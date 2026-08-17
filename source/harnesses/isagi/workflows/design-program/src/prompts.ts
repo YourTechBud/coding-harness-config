@@ -1,5 +1,5 @@
 export const PROMPT_FOOTER =
-  "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
+  "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
 
 const PROGRAM_REVIEW_CONTRACT = `Review the artifact through each of these sections:
 
@@ -51,7 +51,9 @@ Evaluate every finding against the story, architecture, current-state analysis, 
 }
 
 export function retryWriterPrompt(): string {
-  return withPromptFooter(`Resume the program-design work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`);
+  return withPromptFooter(
+    `Resume the program-design work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`,
+  );
 }
 
 export function initialReviewerPrompt(input: {

@@ -113,7 +113,7 @@ var reviewerJudgment = {
 };
 
 // src/prompts.ts
-var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
+var PROMPT_FOOTER = "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
 var CURRENT_STATE_REVIEW_CONTRACT = `Review the artifact through each of these sections:
 
 - **Contradictions:** Claims that conflict with the story, repository behavior, tests, documentation, another part of the artifact, or stronger evidence. Distinguish a false claim from evidence that is merely incomplete.
@@ -148,7 +148,9 @@ ${review}
 Evaluate every finding against the story and repository evidence. Update the artifact directly wherever the review improves its correctness, completeness, simplicity, or evidentiary support. Push back with concrete evidence when a finding is incorrect or would make the artifact worse. Finish with the artifact ready for another independent review.`);
 }
 function retryWriterPrompt() {
-  return withPromptFooter(`Resume the current-state analysis from the current conversation, worktree, and artifact. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`);
+  return withPromptFooter(
+    `Resume the current-state analysis from the current conversation, worktree, and artifact. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`
+  );
 }
 function initialReviewerPrompt(input) {
   return withPromptFooter(`Independently review the current-state analysis from first principles.

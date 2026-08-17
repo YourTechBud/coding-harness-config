@@ -1,5 +1,5 @@
 export const PROMPT_FOOTER =
-  'Work unattended and finish the requested artifact in this turn. Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.';
+  "Work unattended and finish the requested artifact in this turn. Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
 
 type SharedPromptInput = {
   readonly repositoryPath: string;

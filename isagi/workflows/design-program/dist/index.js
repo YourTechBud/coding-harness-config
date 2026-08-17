@@ -113,7 +113,7 @@ var reviewerJudgment = {
 };
 
 // src/prompts.ts
-var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
+var PROMPT_FOOTER = "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
 var PROGRAM_REVIEW_CONTRACT = `Review the artifact through each of these sections:
 
 - **Contradictions:** Decisions or claims that conflict with the story, verified repository behavior or framework constraints, the architecture's system shape or ownership boundaries, applicable engineering guidance, or another contract, representation, invariant, flow, or decision in the program design. Distinguish repository facts, inherited architecture decisions, and proposed program-design choices.
@@ -154,7 +154,9 @@ ${review}
 Evaluate every finding against the story, architecture, current-state analysis, repository evidence, and program-design drivers. Update the program-design artifact directly wherever the review improves its correctness, simplicity, coherence, exactness, or decision quality. Correct a predecessor artifact only when resolving a substantive predecessor flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect or would make the design worse. Finish with the current artifact set ready for another independent review.`);
 }
 function retryWriterPrompt() {
-  return withPromptFooter(`Resume the program-design work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`);
+  return withPromptFooter(
+    `Resume the program-design work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`
+  );
 }
 function initialReviewerPrompt(input) {
   return withPromptFooter(`Independently review the program design from first principles.
