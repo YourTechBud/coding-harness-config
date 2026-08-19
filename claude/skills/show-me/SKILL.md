@@ -2,7 +2,6 @@
 name: show-me
 description: |
   Explain a bounded subject from supplied source material and a comprehension objective with concise diagrams, code-shape sketches, and focused representations. Invoke only when explicitly asked to show or explain something visually.
-disable-model-invocation: true
 ---
 
 # Show Me
