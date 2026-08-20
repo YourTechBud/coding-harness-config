@@ -1,0 +1,16 @@
+kind: skill
+frontmatter:
+  description: |
+    Domain companion for product issue shaping — turns raw Sparks and project context into sequenced active and candidate epics with acceptance-oriented stories, reshapes existing epic scope, and supports repository-specific issue-tracker persistence. Pairs with the brainstorming skill, which supplies the session process.
+    Invoke only when the user explicitly asks to shape or reshape epics or stories, work with Sparks, or configure issue-tracker persistence.
+targets:
+  opencode: {}
+  pi:
+    frontmatter:
+      disable-model-invocation: true
+  claude:
+    frontmatter:
+      disable-model-invocation: true
+  codex:
+    policy:
+      allow_implicit_invocation: false
