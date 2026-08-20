@@ -1,7 +1,7 @@
 ---
 name: shaping-milestones
 description: |
-  Domain companion for product milestone work — turns raw Sparks and project context into valuable milestones and acceptance-oriented stories, reshapes existing milestone scope, and supports repository-specific persistence. Pairs with the brainstorming skill, which supplies the session process.
+  Domain companion for product milestone work — turns raw Sparks and project context into sequenced active and candidate milestones with acceptance-oriented stories, reshapes existing milestone scope, and supports repository-specific persistence. Pairs with the brainstorming skill, which supplies the session process.
   Invoke only when the user explicitly asks to shape or reshape milestones or stories, work with Sparks, or configure milestone persistence.
 disable-model-invocation: true
 ---
@@ -17,27 +17,29 @@ Milestones and stories preserve the product understanding that future humans and
 ## Shared Terms
 
 - **Spark:** raw input such as an idea, pain, bug, feature notion, observation, or unfinished thread. Sparks are processed into milestone understanding or remain raw for later.
-- **Milestone:** a mostly stable, product-oriented account of a valuable direction, its context, its scope, and what would make it complete.
-- **Story:** a disposable, acceptance-oriented vertical slice under one milestone. A story preserves enough product context to seed later brainstorming while leaving its engineering path open.
-- **Acceptance criteria:** observable product or operational conditions used to judge whether a story achieved its outcome.
+- **Milestone:** a mostly stable, product-oriented account of the valuable promise currently being pursued, its context, its scope, and what would make it complete.
+- **Candidate milestone:** an uncommitted seed for a direction that may become valuable later. It preserves enough context to resume shaping without treating today's understanding as settled.
+- **Story:** a disposable, acceptance-oriented increment under one milestone. A story preserves enough product context to seed later brainstorming while leaving its engineering path open.
+- **Acceptance criteria:** observable conditions used to judge whether a story achieved its outcome.
 
 Every story belongs to one milestone, and the persistence representation must make navigation possible in both directions. Every story has exactly one kind:
 
 - **Exploration:** reduces consequential uncertainty and applies its conclusions to the milestone or downstream stories.
-- **Implementation:** delivers a coherent product outcome that satisfies its acceptance criteria.
+- **Implementation:** delivers a coherent valuable outcome that satisfies its acceptance criteria.
 - **Release:** handles an exceptional external transition whose coordination, judgment, or risk requires direct human-agent work.
 
 ## Shaping Phases
 
 Give each shaping phase its own focused user turn. Surface the phase's working understanding, apply the relevant pushback, and invite the user to correct or deepen it. Advance after the user can meaningfully confirm or edit the phase's completion criterion, then make the phase change visible.
 
-1. **Collect:** gather relevant Sparks and product context into a grounded inventory of inputs and important ambiguities. Complete when the user can correct that inventory and identify missing inputs.
-2. **Discover value:** uncover the user, product, learning, capability, or decision value beneath the inputs, separate that value from attractive engineering ideas, and return a product-value frame. Complete when the user can explain or revise what should become better and why it matters.
+1. **Collect:** gather relevant Sparks, current needs, longer aspirations, and product context into a grounded inventory of inputs and important ambiguities. Complete when the user can correct that inventory and identify missing inputs.
+2. **Discover value:** uncover the user, product, learning, capability, or decision value beneath the inputs, distinguish value available now from payoff contingent on distant work, and return a product-value frame. Complete when the user can explain or revise what should become better and why it matters.
 3. **Converge:** draft and compare candidate milestone directions, then deliberately merge, split, park, or discard them. Complete when the user has chosen or reshaped one direction with a coherent center of gravity and the meaningful alternatives have a known disposition.
-4. **Harden:** turn the chosen direction into a milestone with a product goal, boundaries, completion condition, known unresolved areas, and an initial set of stories. Complete when the user can revise the shaped milestone and future work can resume without reconstructing its originating product reasoning.
-5. **Persist:** translate the shared understanding into the repository's milestone representation.
+4. **Sharpen:** sequence the chosen direction into a now promise that delivers worthwhile observable value and optional candidate milestones for later increments. Weigh current value, dependencies, acceptable rework, and available effort without forcing a fixed roadmap depth. Complete when the user can explain or revise why the now promise should be pursued next and how deferred directions should be preserved.
+5. **Harden:** turn the now promise into a milestone with a product goal, boundaries, completion condition, known unresolved areas, and an initial set of stories. Complete when the user can revise the shaped milestone and future work can resume without reconstructing its originating product reasoning.
+6. **Persist:** translate the shared understanding into the repository's milestone representation.
 
-Draft candidate milestone directions in Converge and draft stories in Harden. Earlier phases produce the understanding those artifacts depend on.
+Draft possible directions in Converge, sequence the active and candidate milestones in Sharpen, and draft stories only for the active milestone in Harden. Earlier phases produce the understanding those artifacts depend on.
 
 Persistence may follow any shaping phase when the user wants a checkpoint. Resume from the phase that matches the user's next question rather than restarting the sequence.
 

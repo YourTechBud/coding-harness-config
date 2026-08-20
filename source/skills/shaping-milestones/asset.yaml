@@ -1,7 +1,7 @@
 kind: skill
 frontmatter:
   description: |
-    Domain companion for product milestone work — turns raw Sparks and project context into valuable milestones and acceptance-oriented stories, reshapes existing milestone scope, and supports repository-specific persistence. Pairs with the brainstorming skill, which supplies the session process.
+    Domain companion for product milestone work — turns raw Sparks and project context into sequenced active and candidate milestones with acceptance-oriented stories, reshapes existing milestone scope, and supports repository-specific persistence. Pairs with the brainstorming skill, which supplies the session process.
     Invoke only when the user explicitly asks to shape or reshape milestones or stories, work with Sparks, or configure milestone persistence.
 targets:
   opencode: {}

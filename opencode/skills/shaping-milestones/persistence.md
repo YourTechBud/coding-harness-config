@@ -1,6 +1,6 @@
 # Persistence
 
-Use `docs/milestone-guidance.md` as the repository-specific source of truth for milestone and story representation. It defines the storage system, exact formats, headings, fields, metadata, relationships, and publication behavior for that repository.
+Use `docs/milestone-guidance.md` as the repository-specific source of truth for active milestone, candidate milestone, and story representation. It defines the storage system, exact formats, headings, fields, metadata, relationships, and publication behavior for that repository.
 
 ## Using Repository Guidance
 
@@ -10,10 +10,11 @@ When persistence is requested and `docs/milestone-guidance.md` is absent, help t
 
 ## Persistence Operations
 
-Repository guidance maps the milestone-to-story relationship and story kinds defined in `SKILL.md` onto its chosen storage system. It also maps these persistence operations and conditional relationships:
+Repository guidance maps active and candidate milestones, the milestone-to-story relationship, and story kinds defined in `SKILL.md` onto its chosen storage system. It also maps these persistence operations and conditional relationships:
 
-- Create, retrieve, revise, remove, complete, preview, and publish milestones and stories.
+- Create, retrieve, revise, remove, activate, complete, preview, and publish active milestones, candidate milestones, and stories.
 - Preserve navigation through the milestone-to-story relationship.
+- Distinguish uncommitted candidate milestones and preserve them without stories.
 - Represent story acceptance criteria.
 - Represent dependencies when one story genuinely gates another.
 - Identify the milestone or downstream stories that consume an exploration story's conclusions.
@@ -27,6 +28,7 @@ Help the user decide the mappings their repository needs:
 
 - Where milestones and stories live and how they are identified.
 - The exact milestone and story formats, including required and optional content.
+- How candidate milestones are identified, represented without stories, and returned to shaping when activated.
 - How parent-child navigation, dependencies, and exploration consumers are represented.
 - How story kinds, lifecycle state, priority, or other useful metadata are represented.
 - Whether persistence is previewed before publication or published directly after approval.
@@ -40,5 +42,7 @@ Write the resulting decisions to `docs/milestone-guidance.md`. Keep the document
 Mine the conversation for product intent, decisions, rationale, serious alternatives, tradeoffs, unresolved areas, boundaries, and story context that would be expensive to rediscover. Use the repository guidance's structure and include only sections supported by meaningful content.
 
 Preserve existing user-written context and material historical reasoning when revising artifacts. Prefer focused updates when the milestone's scope or story set changes, and keep ordinary engineering execution detail with the story's working conversation or temporary plan.
+
+For candidate milestones, preserve the possible outcome, its value, the reason it was deferred, and any additional context the conversation established as useful for resuming shaping. Keep the representation lightweight and omit stories until a fresh shaping discussion activates and hardens the candidate.
 
 For exploration stories, acceptance requires reconciliation through this skill: apply the conclusions to the parent milestone and every affected downstream story, then persist those changes through the repository guidance.
