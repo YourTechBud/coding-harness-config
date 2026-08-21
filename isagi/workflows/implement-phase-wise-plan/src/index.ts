@@ -132,10 +132,7 @@ type ActiveStage =
       readonly kind: "advance-phase";
       readonly implementer: Implementer;
     }
-  | {
-      readonly kind: "done";
-      readonly finalImplementer?: Implementer | undefined;
-    };
+  | { readonly kind: "done" };
 
 type ActiveState = CommonState & {
   readonly plan: PlanContext;
@@ -675,12 +672,13 @@ export default defineWorkflow<State, Variables>({
           await setWorkflowStatus(ctx, { kind: "complete" });
           await ctx.log(
             "info",
-            `Plan implementation completed after phase ${phase.number}/${activeState.plan.phases.length}. Final implementer pane remains open.`,
+            `Plan implementation completed after phase ${phase.number}/${activeState.plan.phases.length}; closing final implementer pane ${state.stage.implementer.paneId}.`,
           );
+          await ctx.closePane(state.stage.implementer.paneId);
           return cont({
             ...activeState,
             plan: { ...activeState.plan, currentPhaseIndex: nextPhaseIndex },
-            stage: { kind: "done", finalImplementer: state.stage.implementer },
+            stage: { kind: "done" },
           } satisfies State);
         }
         await ctx.log(
@@ -705,7 +703,6 @@ export default defineWorkflow<State, Variables>({
           decisionLogPath: activeState.plan.decisionLogPath,
           phases: activeState.plan.phases,
           completedPhaseCount: activeState.plan.phases.length,
-          finalImplementerPaneId: state.stage.finalImplementer?.paneId,
         });
       }
 
@@ -1174,7 +1171,7 @@ function initialMockUiPrompt(input: {
   readonly phaseNumber: number;
   readonly entryPlanPath: string;
 }): string {
-  return `I want to start designing mock UIs for phase ${input.phaseNumber} in ${input.entryPlanPath}. Before creating any mockups, ask me questions so we can establish a shared understanding.`;
+  return `I want to start designing mock UIs for phase ${input.phaseNumber} in ${input.entryPlanPath}. Before creating any mockups, walk me through what the phase is about and what we need to achieve, ask me questions so we can establish a shared understanding.`;
 }
 
 function implementerFollowUpPrompt(plannerTurn: string): string {

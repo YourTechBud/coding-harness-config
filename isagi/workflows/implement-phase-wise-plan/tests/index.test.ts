@@ -189,7 +189,7 @@ test("mock-ui phase selects the UI-heavy profile without a classifier", async ()
   ]);
   assert.equal(
     harness.spawnedSessions[0]?.prompt,
-    "I want to start designing mock UIs for phase 2 in docs/plan.md. Before creating any mockups, ask me questions so we can establish a shared understanding.",
+    "I want to start designing mock UIs for phase 2 in docs/plan.md. Before creating any mockups, walk me through what the phase is about and what we need to achieve, ask me questions so we can establish a shared understanding.",
   );
 });
 
@@ -588,6 +588,44 @@ test("verified commit advances the phase", async () => {
   );
 });
 
+test("the final phase closes its implementer while preserving the planner session", async () => {
+  const harness = workflowHarness();
+  const state = activeState({
+    kind: "advance-phase",
+    implementer: { agentSessionId: 22, paneId: 32 },
+  });
+  const phases = [
+    { number: 1, slug: "phase-01-foundations", type: "prep" as const },
+    { number: 2, slug: "phase-02-production-wiring", type: "implementation" as const },
+    { number: 3, slug: "phase-03-docs", type: "implementation" as const },
+    { number: 4, slug: "phase-04-release", type: "release" as const },
+  ];
+  const finalState = {
+    ...state,
+    plan: {
+      entryPlanPath: "docs/plan.md",
+      decisionLogPath: "docs/plan-decisions.md",
+      phases,
+      currentPhaseIndex: 3,
+    },
+  } as WorkflowState;
+
+  const advanced = await workflow.step(harness.ctx, finalState, null);
+  assert.equal(advanced.type, "cont");
+  assert.deepEqual(harness.closedPanes, [32]);
+  assert.equal(advanced.type === "cont" ? (advanced.state as WorkflowState).stage.kind : undefined, "done");
+
+  const completed = await workflow.step(harness.ctx, advanced.type === "cont" ? advanced.state as WorkflowState : finalState, null);
+  assert.equal(completed.type, "done");
+  assert.deepEqual(completed.type === "done" ? completed.value : undefined, {
+    entryPlanPath: "docs/plan.md",
+    decisionLogPath: "docs/plan-decisions.md",
+    phases,
+    completedPhaseCount: 4,
+  });
+  assert.deepEqual(harness.closedPanes, [32]);
+});
+
 function activeState(
   stage: WorkflowState["stage"],
   input?: {
@@ -643,6 +681,7 @@ function workflowHarness(input?: {
     readonly workflowKey: string;
     readonly variables: Record<string, unknown> | undefined;
   }> = [];
+  const closedPanes: number[] = [];
   let headlessLaunchCount = 0;
   const ctx: WorkflowContext = {
     worktreePath: "/workspace",
@@ -660,7 +699,9 @@ function workflowHarness(input?: {
       sentPrompts.push({ agentSessionId, text: prompt });
       return { agentSessionId, sentAt: "2026-07-10T00:00:00.000Z" };
     },
-    closePane: async () => unexpected("closePane"),
+    closePane: async (paneId) => {
+      closedPanes.push(paneId);
+    },
     getConversationHistory: async () => input?.conversationHistory ?? [],
     runHeadlessAgent: async (headlessInput) => {
       headlessLaunchCount += 1;
@@ -689,6 +730,7 @@ function workflowHarness(input?: {
     spawnedSessions,
     headlessLaunches,
     startedWorkflows,
+    closedPanes,
     get headlessLaunchCount() {
       return headlessLaunchCount;
     },
