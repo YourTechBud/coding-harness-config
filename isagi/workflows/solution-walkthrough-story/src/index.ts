@@ -20,7 +20,7 @@ import {
   validateHtmlArtifacts,
   validatePresentationSpecifications,
 } from './contracts.js';
-import { reviewPaths } from './paths.js';
+import { walkthroughV2Paths } from './paths.js';
 import {
   curriculumIntegrationPrompt,
   htmlRealizationPrompt,
@@ -31,16 +31,23 @@ import {
 } from './prompts.js';
 import {
   artifactDescriptors,
+  deliveryModes,
+  familiarityLevels,
   pathFor,
+  technicalDepthLevels,
   type ArtifactKind,
   type ArtifactPaths,
   type Curriculum,
   type Guide,
+  type DeliveryMode,
+  type Familiarity,
   type ReviewPaths,
+  type TechnicalDepth,
   type VisibleAgent,
 } from './types.js';
+import { stepV2, type V2State } from './v2.js';
 
-type Stage =
+type LegacyStage =
   | { readonly kind: 'start_topic_discovery' }
   | {
       readonly kind: 'await_topic_discovery_turn';
@@ -120,14 +127,16 @@ type Stage =
       readonly guide: Guide;
     };
 
-type State = {
+type LegacyState = {
   readonly stateVersion: 1;
   readonly repositoryPath: string;
   readonly story: string;
   readonly sources: ArtifactPaths;
   readonly review: ReviewPaths;
-  readonly stage: Stage;
+  readonly stage: LegacyStage;
 };
+
+type State = LegacyState | V2State;
 
 type Variables = {
   readonly story?: unknown;
@@ -135,6 +144,9 @@ type Variables = {
   readonly architecturePath?: unknown;
   readonly programDesignPath?: unknown;
   readonly reviewDirectory?: unknown;
+  readonly familiarity?: unknown;
+  readonly technicalDepth?: unknown;
+  readonly deliveryMode?: unknown;
 };
 
 export default defineWorkflow<State, Variables>({
@@ -147,6 +159,37 @@ export default defineWorkflow<State, Variables>({
       { kind: 'text', key: 'architecturePath', label: 'Architecture source path', default: 'scratch/story/design/architecture.md' },
       { kind: 'text', key: 'programDesignPath', label: 'Program-design source path', default: 'scratch/story/design/program-design.md' },
       { kind: 'text', key: 'reviewDirectory', label: 'Walkthrough output directory', default: 'scratch/story/walkthrough' },
+      {
+        kind: 'select',
+        key: 'familiarity',
+        label: 'Codebase familiarity',
+        options: [
+          { value: 'new', label: 'New to this codebase' },
+          { value: 'familiar', label: 'Familiar with this codebase' },
+        ],
+        default: 'new',
+      },
+      {
+        kind: 'select',
+        key: 'technicalDepth',
+        label: 'Technical depth',
+        options: [
+          { value: 'product', label: 'Product overview' },
+          { value: 'system-design', label: 'System design' },
+          { value: 'implementation', label: 'Implementation detail' },
+        ],
+        default: 'system-design',
+      },
+      {
+        kind: 'select',
+        key: 'deliveryMode',
+        label: 'Delivery mode',
+        options: [
+          { value: 'presentation-first', label: 'Presentation first' },
+          { value: 'guided-tutorial', label: 'Guided tutorial' },
+        ],
+        default: 'presentation-first',
+      },
     ],
   }),
   validate: (_launchCtx, variables) => {
@@ -155,16 +198,22 @@ export default defineWorkflow<State, Variables>({
   init: (launchCtx, variables): State => {
     const parsed = parseVariables(variables);
     return {
-      stateVersion: 1,
+      stateVersion: 2,
       repositoryPath: launchCtx.worktreePath,
       story: parsed.story,
       sources: parsed.sources,
-      review: reviewPaths(parsed.reviewDirectory),
-      stage: { kind: 'start_topic_discovery' },
+      paths: walkthroughV2Paths(parsed.reviewDirectory),
+      audienceProfile: {
+        familiarity: parsed.familiarity,
+        technicalDepth: parsed.technicalDepth,
+      },
+      deliveryMode: parsed.deliveryMode,
+      stage: { kind: 'start_source_analysis' },
     };
   },
   step: async (ctx, state, incoming) => {
     await ctx.log('debug', `Walk through story stage=${state.stage.kind}.`);
+    if (state.stateVersion === 2) return stepV2(ctx, state, incoming);
     const promptInput = sharedPromptInput(state);
 
     switch (state.stage.kind) {
@@ -654,6 +703,9 @@ function parseVariables(variables: Variables): {
   readonly story: string;
   readonly sources: ArtifactPaths;
   readonly reviewDirectory: string;
+  readonly familiarity: Familiarity;
+  readonly technicalDepth: TechnicalDepth;
+  readonly deliveryMode: DeliveryMode;
 } {
   return {
     story: parseText(variables.story, 'story'),
@@ -663,10 +715,13 @@ function parseVariables(variables: Variables): {
       programDesignPath: parsePath(variables.programDesignPath, 'programDesignPath', 'scratch/story/design/program-design.md'),
     },
     reviewDirectory: parsePath(variables.reviewDirectory, 'reviewDirectory', 'scratch/story/walkthrough'),
+    familiarity: parseEnum(variables.familiarity, 'familiarity', familiarityLevels, 'new'),
+    technicalDepth: parseEnum(variables.technicalDepth, 'technicalDepth', technicalDepthLevels, 'system-design'),
+    deliveryMode: parseEnum(variables.deliveryMode, 'deliveryMode', deliveryModes, 'presentation-first'),
   };
 }
 
-function ensurePreparationDirectories(state: State): void {
+function ensurePreparationDirectories(state: LegacyState): void {
   for (const path of [
     state.review.reviewDirectory,
     `${state.review.reviewDirectory}/.walkthrough/inventories`,
@@ -741,7 +796,7 @@ function visibleTurnError(
 
 async function finishWalkthrough(
   ctx: WorkflowContext,
-  state: State,
+  state: LegacyState,
   curriculum: Curriculum,
   guideSession: Guide,
 ): Promise<WorkflowResult> {
@@ -795,7 +850,7 @@ function artifactLabel(kind: ArtifactKind): string {
   }
 }
 
-function sharedPromptInput(state: State) {
+function sharedPromptInput(state: LegacyState) {
   return {
     repositoryPath: state.repositoryPath,
     story: state.story,
@@ -863,8 +918,8 @@ function visibleAgentAt(
   return agent;
 }
 
-function withStage(state: State, stage: Stage): State {
-  return { ...state, stage } satisfies State;
+function withStage(state: LegacyState, stage: LegacyStage): LegacyState {
+  return { ...state, stage } satisfies LegacyState;
 }
 
 function parseText(value: unknown, key: string): string {
@@ -875,6 +930,17 @@ function parseText(value: unknown, key: string): string {
 function parsePath(value: unknown, key: string, fallback: string): string {
   if (value === undefined) return fallback;
   return parseText(value, key);
+}
+
+function parseEnum<const T extends readonly string[]>(
+  value: unknown,
+  key: string,
+  options: T,
+  fallback: T[number],
+): T[number] {
+  const candidate = value === undefined ? fallback : value;
+  if (typeof candidate === 'string' && options.includes(candidate)) return candidate;
+  throw new Error(`${key} must be one of ${options.join(', ')}.`);
 }
 
 function errorText(value: unknown): string {

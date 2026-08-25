@@ -13,7 +13,7 @@ import type {
 
 import { guide, pageBuilder, preparer } from "../src/constants.js";
 import workflow from "../src/index.js";
-import { reviewPaths } from "../src/paths.js";
+import { reviewPaths, walkthroughV2Paths } from "../src/paths.js";
 import {
   curriculumIntegrationPrompt,
   htmlRealizationPrompt,
@@ -25,6 +25,7 @@ import {
 import type { ArtifactPaths, Curriculum, VisibleAgent } from "../src/types.js";
 
 type State = Parameters<typeof workflow.step>[1];
+type LegacyState = Extract<State, { stateVersion: 1 }>;
 
 const launchCtx: WorkflowLaunchContext = {
   worktreeId: 1,
@@ -40,7 +41,7 @@ const sources: ArtifactPaths = {
 
 const reviewDirectory = "scratch/plans/example/review";
 
-test("command captures all technical sources and starts topic discovery", async () => {
+test("command captures audience and delivery controls and starts v2 source analysis", async () => {
   const variables = {
     story: "https://github.com/owner/repo/issues/2",
     ...sources,
@@ -56,16 +57,21 @@ test("command captures all technical sources and starts topic discovery", async 
       "architecturePath",
       "programDesignPath",
       "reviewDirectory",
+      "familiarity",
+      "technicalDepth",
+      "deliveryMode",
     ],
   );
   await workflow.validate(launchCtx, variables);
   assert.deepEqual(await workflow.init(launchCtx, variables), {
-    stateVersion: 1,
+    stateVersion: 2,
     repositoryPath: "/workspace",
     story: variables.story,
     sources,
-    review: reviewPaths(reviewDirectory),
-    stage: { kind: "start_topic_discovery" },
+    paths: walkthroughV2Paths(reviewDirectory),
+    audienceProfile: { familiarity: "new", technicalDepth: "system-design" },
+    deliveryMode: "presentation-first",
+    stage: { kind: "start_source_analysis" },
   });
 });
 
@@ -76,7 +82,8 @@ test("command defaults compose with the singular story pack", async () => {
     architecturePath: "scratch/story/design/architecture.md",
     programDesignPath: "scratch/story/design/program-design.md",
   });
-  assert.equal(state.review.reviewDirectory, "scratch/story/walkthrough");
+  assert.equal(state.stateVersion, 2);
+  assert.equal(state.stateVersion === 2 ? state.paths.reviewDirectory : null, "scratch/story/walkthrough");
 });
 
 test("topic discovery launches one visible pane per artifact and waits for the first turn", async () => {
@@ -844,7 +851,7 @@ function workflowHarness(repositoryPath: string) {
   return { ctx, headless, spawned, sent, closedPanes, feedback, logs };
 }
 
-function baseState(repositoryPath: string, stage: State["stage"]): State {
+function baseState(repositoryPath: string, stage: LegacyState["stage"]): LegacyState {
   return {
     stateVersion: 1,
     repositoryPath,
@@ -856,6 +863,7 @@ function baseState(repositoryPath: string, stage: State["stage"]): State {
 }
 
 function sharedPromptInput(state: State) {
+  if (state.stateVersion !== 1) throw new Error("Expected legacy state.");
   return {
     repositoryPath: state.repositoryPath,
     story: state.story,

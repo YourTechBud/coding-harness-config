@@ -23,3 +23,19 @@ export const guide = {
   model: 'gpt-5.6-sol',
   effort: 'low',
 } satisfies AgentProfile;
+
+export const deckArchitect = preparer;
+
+export const deckBuilder = pageBuilder;
+
+export const deckVerifier = {
+  harness: 'codex',
+  model: 'gpt-5.6-sol',
+  effort: 'medium',
+} satisfies AgentProfile;
+
+export const deckReviewRouting = {
+  harness: 'codex',
+  model: 'gpt-5.6-luna',
+  effort: 'medium',
+} satisfies AgentProfile;
