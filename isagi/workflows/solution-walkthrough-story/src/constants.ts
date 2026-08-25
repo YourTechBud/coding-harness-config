@@ -12,7 +12,7 @@ export const preparer = {
   effort: 'low',
 } satisfies AgentProfile;
 
-export const pageBuilder = {
+export const deckBuilder = {
   harness: 'claude',
   model: 'opus',
   effort: 'medium',
@@ -25,8 +25,6 @@ export const guide = {
 } satisfies AgentProfile;
 
 export const deckArchitect = preparer;
-
-export const deckBuilder = pageBuilder;
 
 export const deckVerifier = {
   harness: 'codex',

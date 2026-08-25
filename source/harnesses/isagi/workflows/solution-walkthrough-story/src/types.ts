@@ -8,15 +8,6 @@ export type ArtifactPaths = {
   readonly programDesignPath: string;
 };
 
-export type ReviewPaths = {
-  readonly reviewDirectory: string;
-  readonly inventoryPaths: ArtifactPaths;
-  readonly manifestPath: string;
-  readonly presentationPaths: ArtifactPaths;
-  readonly htmlPaths: ArtifactPaths;
-  readonly defaultFeedbackPath: string;
-};
-
 export type SourceReference = {
   readonly heading: string;
   readonly locator: string;
@@ -25,55 +16,6 @@ export type SourceReference = {
 export type InventoryTerm = {
   readonly term: string;
   readonly meaning: string;
-};
-
-export type InventoryTopic = {
-  readonly candidateId: string;
-  readonly title: string;
-  readonly learningObjective: string;
-  readonly whyRequired: string;
-  readonly prerequisiteCandidateIds: readonly string[];
-  readonly terms: readonly InventoryTerm[];
-  readonly sourceReferences: readonly SourceReference[];
-  readonly critical: boolean;
-  readonly comprehensionObjective: string | null;
-};
-
-export type TopicInventory = {
-  readonly schemaVersion: 1;
-  readonly artifact: {
-    readonly kind: ArtifactKind;
-    readonly sourcePath: string;
-  };
-  readonly topics: readonly InventoryTopic[];
-};
-
-export type WalkthroughTopic = {
-  readonly id: string;
-  readonly artifact: ArtifactKind;
-  readonly candidateId: string;
-  readonly title: string;
-  readonly learningObjective: string;
-  readonly prerequisiteTopicIds: readonly string[];
-  readonly sourceReferences: readonly SourceReference[];
-  readonly critical: boolean;
-  readonly comprehensionObjective: string | null;
-  readonly browserAnchor: string;
-};
-
-export type Curriculum = {
-  readonly schemaVersion: 1;
-  readonly artifactOrder: readonly ArtifactKind[];
-  readonly artifacts: Record<
-    ArtifactKind,
-    { readonly sourcePath: string; readonly presentationPath: string }
-  >;
-  readonly topics: readonly WalkthroughTopic[];
-  readonly omissions: readonly {
-    readonly artifact: ArtifactKind;
-    readonly candidateId: string;
-    readonly reason: string;
-  }[];
 };
 
 export type Guide = {
@@ -110,7 +52,7 @@ export type CandidateReference = {
   readonly candidateId: string;
 };
 
-export type InventoryCandidateV2 = {
+export type InventoryCandidate = {
   readonly candidateId: string;
   readonly title: string;
   readonly learningObjective: string;
@@ -122,13 +64,13 @@ export type InventoryCandidateV2 = {
   readonly sourceReferences: readonly SourceReference[];
 };
 
-export type TopicInventoryV2 = {
+export type TopicInventory = {
   readonly schemaVersion: 2;
   readonly artifact: {
     readonly kind: ArtifactKind;
     readonly sourcePath: string;
   };
-  readonly candidates: readonly InventoryCandidateV2[];
+  readonly candidates: readonly InventoryCandidate[];
 };
 
 export type CurriculumBeat = {
@@ -156,7 +98,7 @@ export type CurriculumChapter = {
   readonly beats: readonly CurriculumBeat[];
 };
 
-export type CurriculumV2 = {
+export type Curriculum = {
   readonly schemaVersion: 2;
   readonly story: {
     readonly reference: string;
@@ -170,6 +112,7 @@ export type CurriculumV2 = {
     readonly orientationPolicy: string;
     readonly technicalDetailPolicy: string;
     readonly evidencePolicy: string;
+    readonly languagePolicy?: string | undefined;
   };
   readonly chapters: readonly CurriculumChapter[];
   readonly omissions: readonly {
@@ -202,21 +145,7 @@ export type DeckPlan = {
   readonly realizationUnits: readonly RealizationUnit[];
 };
 
-export type LegacyDeckReview = {
-  readonly schemaVersion: 1;
-  readonly round: number;
-  readonly outcome: 'approved' | 'revise' | 'human-decision';
-  readonly findings: readonly {
-    readonly id: string;
-    readonly owners: readonly ('architect' | 'builder' | 'human')[];
-    readonly severity: 'blocker' | 'concern' | 'suggestion';
-    readonly slideIds: readonly string[];
-    readonly evidence: string;
-    readonly requiredOutcome: string;
-  }[];
-};
-
-export type WalkthroughV2Paths = {
+export type WalkthroughPaths = {
   readonly reviewDirectory: string;
   readonly inventoryPaths: ArtifactPaths;
   readonly curriculumPath: string;

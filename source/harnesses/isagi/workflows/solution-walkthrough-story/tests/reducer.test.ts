@@ -8,9 +8,9 @@ import type { WorkflowContext, WorkflowConversationMessage } from '@yourtechbuds
 
 import { deckArchitect, deckBuilder, deckReviewRouting, deckVerifier, preparer } from '../src/constants.js';
 import workflow from '../src/index.js';
-import { deckReviewPath, legacyDeckReviewPath, walkthroughV2Paths } from '../src/paths.js';
-import type { V2Stage, V2State } from '../src/v2.js';
-import type { ArtifactPaths, CurriculumV2, DeckPlan } from '../src/types.js';
+import { deckReviewPath, walkthroughPaths } from '../src/paths.js';
+import type { Stage, State } from '../src/workflow.js';
+import type { ArtifactPaths, Curriculum, DeckPlan } from '../src/types.js';
 
 const sources: ArtifactPaths = {
   currentStatePath: 'design/current-state.md',
@@ -19,8 +19,8 @@ const sources: ArtifactPaths = {
 };
 const reviewDirectory = 'review';
 
-test('v2 source analysis starts all three visible analyst sessions before waiting', async () => {
-  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-v2-'));
+test('source analysis starts all three visible analyst sessions before waiting', async () => {
+  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-'));
   try {
     const harness = workflowHarness(repositoryPath);
     const result = await workflow.step(harness.ctx, state(repositoryPath, { kind: 'start_source_analysis' }), null);
@@ -34,11 +34,19 @@ test('v2 source analysis starts all three visible analyst sessions before waitin
   }
 });
 
+test('deck architecture invokes Show Me for depth-aware representation planning', async () => {
+  const harness = workflowHarness('/workspace');
+  const result = await workflow.step(harness.ctx, state('/workspace', { kind: 'start_deck_architecture', curriculum: curriculum() }), null);
+  assert.equal(result.type, 'suspend');
+  assert.deepEqual(harness.spawned[0]?.modifiers, [{ kind: 'skill', name: 'show-me' }]);
+  assert.match(harness.spawned[0]?.prompt ?? '', /boundary maps, ownership views, data or control flow/);
+});
+
 test('deck builder uses shell, one turn per realization unit, then final assembly', async () => {
-  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-v2-'));
+  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-'));
   try {
     const harness = workflowHarness(repositoryPath);
-    const paths = walkthroughV2Paths(reviewDirectory);
+    const paths = walkthroughPaths(reviewDirectory);
     write(repositoryPath, paths.htmlPath, '<main data-walkthrough-deck><div data-slide-viewport></div><nav data-slide-navigation></nav></main>');
     const common = { curriculum: curriculum(), plan: plan(paths.curriculumPath, paths.htmlPath), architect: agent(31, 41), builder: agent(32, 42) };
     const shell = await workflow.step(harness.ctx, state(repositoryPath, { kind: 'await_deck_shell', ...common }), ended());
@@ -49,6 +57,7 @@ test('deck builder uses shell, one turn per realization unit, then final assembl
     assert.equal(building.type, 'suspend');
     assert.equal(harness.sent.length, 1);
     assert.match(harness.sent[0]?.prompt ?? '', /Unit: main-unit/);
+    assert.deepEqual(harness.sent[0]?.modifiers, [{ kind: 'skill', name: 'show-me' }]);
 
     write(repositoryPath, paths.htmlPath, '<main data-walkthrough-deck><div data-slide-viewport><!-- Example: <section data-walkthrough-slide id="<exact plan slide id>"> --><section data-walkthrough-slide id="slide-one"></section><section data-walkthrough-slide id="slide-two"></section><section data-walkthrough-slide id="slide-three"></section></div><nav data-slide-navigation></nav></main>');
     const built = await workflow.step(harness.ctx, resultState(building), ended());
@@ -66,9 +75,9 @@ test('deck builder uses shell, one turn per realization unit, then final assembl
 });
 
 test('Markdown verification is routed headlessly before completed review closes presentation workers', async () => {
-  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-v2-'));
+  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-'));
   try {
-    const paths = walkthroughV2Paths(reviewDirectory);
+    const paths = walkthroughPaths(reviewDirectory);
     const deckPlan = plan(paths.curriculumPath, paths.htmlPath);
     const review = '# Deck Review — Round 1\n\n## Findings\n\nNo findings.\n\n## Conclusion\n\nNo required work remains.';
     write(repositoryPath, deckReviewPath(paths, 1), review);
@@ -93,7 +102,7 @@ test('Markdown verification is routed headlessly before completed review closes 
 });
 
 test('review routing supports all four workflow outcomes', async () => {
-  const paths = walkthroughV2Paths(reviewDirectory);
+  const paths = walkthroughPaths(reviewDirectory);
   const routes = [
     ['complete', 'start_presentation_review', 'cont'],
     ['builder', 'send_builder_revision', 'cont'],
@@ -119,32 +128,34 @@ test('review routing supports all four workflow outcomes', async () => {
   }
 });
 
-test('legacy JSON review is copied into routing without validating finding slide IDs', async () => {
-  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-v2-'));
-  try {
-    const paths = walkthroughV2Paths(reviewDirectory);
-    write(repositoryPath, legacyDeckReviewPath(paths, 1), JSON.stringify({
-      schemaVersion: 1,
-      round: 1,
-      outcome: 'revise',
-      findings: [{ id: 'finding-2', owners: ['builder'], severity: 'concern', slideIds: ['cover'], evidence: 'The opening needs work.', requiredOutcome: 'Improve it.' }],
-    }));
-    const harness = workflowHarness(repositoryPath);
-    const result = await workflow.step(harness.ctx, state(repositoryPath, {
-      kind: 'await_verification', curriculum: curriculum(), plan: plan(paths.curriculumPath, paths.htmlPath), architect: agent(31, 41), builder: agent(32, 42), verifier: agent(33, 43), round: 1,
-    }), ended());
-    assert.equal(result.type, 'suspend');
-    assert.equal(resultStage(result).kind, 'await_review_routing');
-    assert.match(harness.headless[0]?.prompt ?? '', /"cover"/);
-  } finally {
-    rmSync(repositoryPath, { recursive: true, force: true });
+test('fifth review routes remaining findings to the usual fixers', async () => {
+  const paths = walkthroughPaths(reviewDirectory);
+  const routes = [
+    ['builder', 'send_builder_revision'],
+    ['architect-and-builder', 'send_architect_revision'],
+  ] as const;
+
+  for (const [outcome, expectedStage] of routes) {
+    const harness = workflowHarness('/workspace');
+    const result = await workflow.step(harness.ctx, state('/workspace', {
+      kind: 'await_review_routing',
+      curriculum: curriculum(),
+      plan: plan(paths.curriculumPath, paths.htmlPath),
+      review: `Round five review requesting ${outcome}.`,
+      architect: agent(31, 41),
+      builder: agent(32, 42),
+      verifier: agent(33, 43),
+      round: 5,
+    }), headlessResult(outcome));
+    assert.equal(result.type, 'cont', outcome);
+    assert.equal(resultStage(result).kind, expectedStage, outcome);
   }
 });
 
-test('verification still requires a review artifact to exist', async () => {
-  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-v2-'));
+ test('verification still requires a review artifact to exist', async () => {
+  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-'));
   try {
-    const paths = walkthroughV2Paths(reviewDirectory);
+    const paths = walkthroughPaths(reviewDirectory);
     const harness = workflowHarness(repositoryPath);
     const result = await workflow.step(harness.ctx, state(repositoryPath, {
       kind: 'await_verification', curriculum: curriculum(), plan: plan(paths.curriculumPath, paths.htmlPath), architect: agent(31, 41), builder: agent(32, 42), verifier: agent(33, 43), round: 1,
@@ -158,9 +169,9 @@ test('verification still requires a review artifact to exist', async () => {
 });
 
 test('builder response is handed to the next review directly from conversation history', async () => {
-  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-v2-'));
+  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-'));
   try {
-    const paths = walkthroughV2Paths(reviewDirectory);
+    const paths = walkthroughPaths(reviewDirectory);
     const review = '# Deck Review — Round 1\n\n### F-01 — [Concern] Navigation\n\nRequired outcome: preserve focus.';
     const histories = new Map<number, readonly WorkflowConversationMessage[]>([
       [32, [message('user', 'Apply the review.'), message('assistant', 'Applied F-01 and verified keyboard focus.')]],
@@ -184,9 +195,31 @@ test('builder response is handed to the next review directly from conversation h
   }
 });
 
+test('fifth-round builder fixes end the review loop without a sixth verification', async () => {
+  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-'));
+  try {
+    const paths = walkthroughPaths(reviewDirectory);
+    const review = '# Deck Review — Round 5\n\n### F-01 — [Concern] Navigation\n\nRequired outcome: preserve focus.';
+    const histories = new Map<number, readonly WorkflowConversationMessage[]>([
+      [32, [message('user', 'Apply the review.'), message('assistant', 'Applied the remaining findings.')]],
+    ]);
+    write(repositoryPath, paths.htmlPath, '<main>Final revised deck</main>');
+    const harness = workflowHarness(repositoryPath, histories);
+    const result = await workflow.step(harness.ctx, state(repositoryPath, {
+      kind: 'await_builder_revision', curriculum: curriculum(), plan: plan(paths.curriculumPath, paths.htmlPath), review, architect: agent(31, 41), builder: agent(32, 42), verifier: agent(33, 43), round: 5,
+    }), ended());
+    assert.equal(result.type, 'cont');
+    assert.equal(resultStage(result).kind, 'start_presentation_review');
+    assert.deepEqual(harness.closedPanes, [41, 42, 43]);
+    assert.equal(harness.sent.length, 0);
+  } finally {
+    rmSync(repositoryPath, { recursive: true, force: true });
+  }
+});
+
 test('presentation Continue finishes review rather than advancing a tutorial beat', async () => {
   const harness = workflowHarness('/workspace');
-  const paths = walkthroughV2Paths(reviewDirectory);
+  const paths = walkthroughPaths(reviewDirectory);
   const result = await workflow.step(harness.ctx, state('/workspace', {
     kind: 'await_presentation_continue', curriculum: curriculum(), plan: plan(paths.curriculumPath, paths.htmlPath), guide: { agentSessionId: 11, paneId: 21 },
   }), { kind: 'user_continue' });
@@ -202,20 +235,20 @@ test('presentation roles keep their intended visible-session profiles', () => {
   assert.deepEqual(deckReviewRouting, { harness: 'codex', model: 'gpt-5.6-luna', effort: 'medium' });
 });
 
-function state(repositoryPath: string, stage: V2Stage): V2State {
+function state(repositoryPath: string, stage: Stage): State {
   return {
     stateVersion: 2,
     repositoryPath,
     story: 'Story 42',
     sources,
-    paths: walkthroughV2Paths(reviewDirectory),
+    paths: walkthroughPaths(reviewDirectory),
     audienceProfile: { familiarity: 'new', technicalDepth: 'system-design' },
     deliveryMode: 'presentation-first',
     stage,
   };
 }
 
-function curriculum(): CurriculumV2 {
+function curriculum(): Curriculum {
   const chapter = (id: 'current-state' | 'architecture' | 'program-design', beatId: string) => ({
     id,
     title: id,
@@ -243,7 +276,7 @@ function curriculum(): CurriculumV2 {
     story: { reference: 'Story 42', title: 'Story 42', throughline: 'From current state to implementation' },
     sources,
     audienceProfile: { familiarity: 'new', technicalDepth: 'system-design' },
-    audienceContract: { assumedKnowledge: [], orientationPolicy: 'Orient first', technicalDetailPolicy: 'System boundaries', evidencePolicy: 'Ground claims' },
+    audienceContract: { assumedKnowledge: [], orientationPolicy: 'Orient first', technicalDetailPolicy: 'System boundaries', evidencePolicy: 'Ground claims', languagePolicy: 'Use plain and precise language.' },
     chapters: [chapter('current-state', 'cs-01'), chapter('architecture', 'ar-01'), chapter('program-design', 'pd-01')],
     omissions: [],
   };

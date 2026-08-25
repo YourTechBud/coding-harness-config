@@ -14,21 +14,20 @@ import {
 
 import { deckArchitect, deckBuilder, deckReviewRouting, deckVerifier, guide, preparer } from './constants.js';
 import {
-  artifactFileExists,
   assertExpectedFile,
   readArtifactText,
-  readCurriculumV2,
+  readCurriculum,
   readDeckPlan,
-  readTopicInventoriesV2,
+  readTopicInventories,
 } from './contracts.js';
-import { deckReviewPath, legacyDeckReviewPath } from './paths.js';
+import { deckReviewPath } from './paths.js';
 import {
   completedSingleHeadlessResult,
   deckReviewRoutingPrompt,
   latestAssistantTurnText,
   parseDeckReviewRoute,
   type DeckReviewRoute,
-} from './v2-judgments.js';
+} from './judgments.js';
 import {
   architectRevisionPrompt,
   builderRevisionPrompt,
@@ -42,70 +41,68 @@ import {
   realizationUnitPrompt,
   sourceInventoryPrompt,
   verifierPrompt,
-  type V2PromptInput,
-} from './v2-prompts.js';
+  type PromptInput,
+} from './prompts.js';
 import {
   artifactDescriptors,
   type ArtifactPaths,
   type AudienceProfile,
-  type CurriculumV2,
+  type Curriculum,
   type DeckPlan,
   type DeliveryMode,
   type Guide,
-  type LegacyDeckReview,
   type VisibleAgent,
-  type WalkthroughV2Paths,
+  type WalkthroughPaths,
 } from './types.js';
 
-const MAX_REVIEW_ROUNDS = 3;
+const MAX_REVIEW_ROUNDS = 5;
+const SHOW_ME_MODIFIER = [{ kind: 'skill', name: 'show-me' }] as const;
 
-type ReviewArtifact = string | LegacyDeckReview;
-
-export type V2Stage =
+export type Stage =
   | { readonly kind: 'start_source_analysis' }
   | { readonly kind: 'await_source_analysis'; readonly agents: readonly VisibleAgent[]; readonly agentIndex: number }
   | { readonly kind: 'start_curriculum_integration' }
   | { readonly kind: 'await_curriculum_integration'; readonly agent: VisibleAgent }
-  | { readonly kind: 'start_guided_tutorial'; readonly curriculum: CurriculumV2 }
-  | { readonly kind: 'await_guided_beat'; readonly curriculum: CurriculumV2; readonly chapterIndex: number; readonly beatIndex: number; readonly guide: Guide }
-  | { readonly kind: 'await_guided_continue'; readonly curriculum: CurriculumV2; readonly chapterIndex: number; readonly beatIndex: number; readonly guide: Guide }
-  | { readonly kind: 'send_guided_beat'; readonly curriculum: CurriculumV2; readonly chapterIndex: number; readonly beatIndex: number; readonly guide: Guide }
-  | { readonly kind: 'send_chapter_review'; readonly curriculum: CurriculumV2; readonly chapterIndex: number; readonly guide: Guide }
-  | { readonly kind: 'await_chapter_review'; readonly curriculum: CurriculumV2; readonly chapterIndex: number; readonly guide: Guide }
-  | { readonly kind: 'await_chapter_continue'; readonly curriculum: CurriculumV2; readonly chapterIndex: number; readonly guide: Guide }
-  | { readonly kind: 'start_deck_architecture'; readonly curriculum: CurriculumV2 }
-  | { readonly kind: 'await_deck_architecture'; readonly curriculum: CurriculumV2; readonly architect: VisibleAgent }
-  | { readonly kind: 'start_deck_shell'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly architect: VisibleAgent }
-  | { readonly kind: 'await_deck_shell'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
-  | { readonly kind: 'send_realization_unit'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly unitIndex: number }
-  | { readonly kind: 'await_realization_unit'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly unitIndex: number }
-  | { readonly kind: 'send_final_assembly'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
-  | { readonly kind: 'await_final_assembly'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
-  | { readonly kind: 'start_verification'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly round: number }
-  | { readonly kind: 'await_verification'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
-  | { readonly kind: 'await_review_routing'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly review: string; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
-  | { readonly kind: 'await_human_decision'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly review: string; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
-  | { readonly kind: 'send_architect_revision'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly review: ReviewArtifact; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round?: number | undefined }
-  | { readonly kind: 'await_architect_revision'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly review: ReviewArtifact; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round?: number | undefined }
-  | { readonly kind: 'send_builder_revision'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly review: ReviewArtifact; readonly architectResponse?: string | undefined; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round?: number | undefined }
-  | { readonly kind: 'await_builder_revision'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly review: ReviewArtifact; readonly architectResponse?: string | undefined; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round?: number | undefined }
-  | { readonly kind: 'send_reverification'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number; readonly previousReview?: string | undefined; readonly architectResponse?: string | undefined; readonly builderResponse?: string | undefined }
-  | { readonly kind: 'start_presentation_review'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan }
-  | { readonly kind: 'await_presentation_guide'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly guide: Guide }
-  | { readonly kind: 'await_presentation_continue'; readonly curriculum: CurriculumV2; readonly plan: DeckPlan; readonly guide: Guide };
+  | { readonly kind: 'start_guided_tutorial'; readonly curriculum: Curriculum }
+  | { readonly kind: 'await_guided_beat'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly beatIndex: number; readonly guide: Guide }
+  | { readonly kind: 'await_guided_continue'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly beatIndex: number; readonly guide: Guide }
+  | { readonly kind: 'send_guided_beat'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly beatIndex: number; readonly guide: Guide }
+  | { readonly kind: 'send_chapter_review'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly guide: Guide }
+  | { readonly kind: 'await_chapter_review'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly guide: Guide }
+  | { readonly kind: 'await_chapter_continue'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly guide: Guide }
+  | { readonly kind: 'start_deck_architecture'; readonly curriculum: Curriculum }
+  | { readonly kind: 'await_deck_architecture'; readonly curriculum: Curriculum; readonly architect: VisibleAgent }
+  | { readonly kind: 'start_deck_shell'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent }
+  | { readonly kind: 'await_deck_shell'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
+  | { readonly kind: 'send_realization_unit'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly unitIndex: number }
+  | { readonly kind: 'await_realization_unit'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly unitIndex: number }
+  | { readonly kind: 'send_final_assembly'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
+  | { readonly kind: 'await_final_assembly'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
+  | { readonly kind: 'start_verification'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly round: number }
+  | { readonly kind: 'await_verification'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
+  | { readonly kind: 'await_review_routing'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
+  | { readonly kind: 'await_human_decision'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
+  | { readonly kind: 'send_architect_revision'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
+  | { readonly kind: 'await_architect_revision'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
+  | { readonly kind: 'send_builder_revision'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architectResponse?: string | undefined; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
+  | { readonly kind: 'await_builder_revision'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architectResponse?: string | undefined; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
+  | { readonly kind: 'send_reverification'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number; readonly previousReview?: string | undefined; readonly architectResponse?: string | undefined; readonly builderResponse?: string | undefined }
+  | { readonly kind: 'start_presentation_review'; readonly curriculum: Curriculum; readonly plan: DeckPlan }
+  | { readonly kind: 'await_presentation_guide'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly guide: Guide }
+  | { readonly kind: 'await_presentation_continue'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly guide: Guide };
 
-export type V2State = {
+export type State = {
   readonly stateVersion: 2;
   readonly repositoryPath: string;
   readonly story: string;
   readonly sources: ArtifactPaths;
-  readonly paths: WalkthroughV2Paths;
+  readonly paths: WalkthroughPaths;
   readonly audienceProfile: AudienceProfile;
   readonly deliveryMode: DeliveryMode;
-  readonly stage: V2Stage;
+  readonly stage: Stage;
 };
 
-export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unknown): Promise<WorkflowResult> {
+export async function step(ctx: WorkflowContext, state: State, incoming: unknown): Promise<WorkflowResult> {
   const input = promptInput(state);
   switch (state.stage.kind) {
     case 'start_source_analysis': {
@@ -124,7 +121,7 @@ export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unk
       const next = state.stage.agentIndex + 1;
       if (next < state.stage.agents.length) return suspend(withStage(state, { ...state.stage, agentIndex: next }), wait.agentTurn(at(state.stage.agents, next)));
       try {
-        readTopicInventoriesV2(state.repositoryPath, state.sources, state.paths);
+        readTopicInventories(state.repositoryPath, state.sources, state.paths);
         await closeAll(ctx, state.stage.agents, 'source analysts');
         return cont(withStage(state, { kind: 'start_curriculum_integration' }));
       } catch (error) {
@@ -140,8 +137,8 @@ export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unk
       const error = turnError(incoming, 'Curriculum integration', state.stage.agent);
       if (error) return failed(ctx, 'Curriculum integration failed. Its pane remains open.', error);
       try {
-        const inventories = readTopicInventoriesV2(state.repositoryPath, state.sources, state.paths);
-        const curriculum = readCurriculumV2(state.repositoryPath, state.story, state.sources, state.audienceProfile, state.paths, inventories);
+        const inventories = readTopicInventories(state.repositoryPath, state.sources, state.paths);
+        const curriculum = readCurriculum(state.repositoryPath, state.story, state.sources, state.audienceProfile, state.paths, inventories);
         await closeAll(ctx, [state.stage.agent], 'curriculum integrator');
         return cont(withStage(state, state.deliveryMode === 'guided-tutorial' ? { kind: 'start_guided_tutorial', curriculum } : { kind: 'start_deck_architecture', curriculum }));
       } catch (error) {
@@ -199,7 +196,7 @@ export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unk
     }
     case 'start_deck_architecture': {
       await ctx.setUiFeedback({ phase: 'Architecting the walkthrough deck' });
-      const architect = visible(await ctx.spawnAgentSession({ ...deckArchitect, prompt: deckArchitecturePrompt(input) }));
+      const architect = visible(await ctx.spawnAgentSession({ ...deckArchitect, modifiers: SHOW_ME_MODIFIER, prompt: deckArchitecturePrompt(input) }));
       return suspend(withStage(state, { kind: 'await_deck_architecture', curriculum: state.stage.curriculum, architect }), wait.agentTurn(architect));
     }
     case 'await_deck_architecture': {
@@ -231,7 +228,7 @@ export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unk
       const unit = state.stage.plan.realizationUnits[state.stage.unitIndex];
       if (!unit) return cont(withStage(state, { kind: 'send_final_assembly', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, builder: state.stage.builder }));
       await ctx.setUiFeedback({ phase: 'Building walkthrough slides', message: `Realization unit ${state.stage.unitIndex + 1} of ${state.stage.plan.realizationUnits.length}: ${unit.id}.` });
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, prompt: realizationUnitPrompt(input, state.stage.plan, unit) });
+      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, modifiers: SHOW_ME_MODIFIER, prompt: realizationUnitPrompt(input, state.stage.plan, unit) });
       return suspend(withStage(state, { ...state.stage, kind: 'await_realization_unit' }), wait.agentTurn(sent));
     }
     case 'await_realization_unit': {
@@ -276,7 +273,7 @@ export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unk
       const error = turnError(incoming, 'Deck verification', state.stage.verifier);
       if (error) return failed(ctx, 'Deck verification failed. Presentation panes remain open.', error);
       try {
-        const review = readDeckReviewArtifact(state.repositoryPath, state.paths, state.stage.round);
+        const review = readDeckReview(state.repositoryPath, state.paths, state.stage.round);
         return startDeckReviewRouting(ctx, state, { ...state.stage, kind: 'await_review_routing', review });
       } catch (error) {
         return failed(ctx, 'The deck review file is missing. Presentation panes remain open.', errorText(error));
@@ -300,7 +297,6 @@ export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unk
           return suspend(withStage(state, { ...state.stage, kind: 'await_human_decision' }), wait.userContinue());
         case 'builder':
         case 'architect-and-builder': {
-          if (state.stage.round >= MAX_REVIEW_ROUNDS) return failed(ctx, 'The deck still needs revision after three reviews. Presentation panes remain open.', `Review limit reached at ${deckReviewPath(state.paths, state.stage.round)}.`);
           const common = { curriculum: state.stage.curriculum, plan: state.stage.plan, review: state.stage.review, architect: state.stage.architect, builder: state.stage.builder, verifier: state.stage.verifier, round: state.stage.round };
           return cont(withStage(state, route === 'architect-and-builder' ? { kind: 'send_architect_revision', ...common } : { kind: 'send_builder_revision', ...common }));
         }
@@ -319,9 +315,7 @@ export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unk
       }
     }
     case 'send_architect_revision': {
-      const round = reviewRound(state.stage.round, state.stage.review);
-      const review = reviewArtifactText(state.stage.review);
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.architect.agentSessionId, prompt: architectRevisionPrompt(input, round, review) });
+      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.architect.agentSessionId, modifiers: SHOW_ME_MODIFIER, prompt: architectRevisionPrompt(input, state.stage.round, state.stage.review) });
       return suspend(withStage(state, { ...state.stage, kind: 'await_architect_revision' }), wait.agentTurn(sent));
     }
     case 'await_architect_revision': {
@@ -330,15 +324,13 @@ export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unk
       try {
         const response = await latestCompleteTurn(ctx, state.stage.architect, 'architect');
         const plan = readDeckPlan(state.repositoryPath, state.paths, state.stage.curriculum);
-        return cont(withStage(state, { ...state.stage, kind: 'send_builder_revision', plan, review: reviewArtifactText(state.stage.review), architectResponse: response, round: reviewRound(state.stage.round, state.stage.review) }));
+        return cont(withStage(state, { ...state.stage, kind: 'send_builder_revision', plan, architectResponse: response }));
       } catch (error) {
         return failed(ctx, 'The architect revision could not be handed off. Presentation panes remain open.', errorText(error));
       }
     }
     case 'send_builder_revision': {
-      const round = reviewRound(state.stage.round, state.stage.review);
-      const review = reviewArtifactText(state.stage.review);
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, prompt: builderRevisionPrompt(input, round, review, state.stage.architectResponse) });
+      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, modifiers: SHOW_ME_MODIFIER, prompt: builderRevisionPrompt(input, state.stage.round, state.stage.review, state.stage.architectResponse) });
       return suspend(withStage(state, { ...state.stage, kind: 'await_builder_revision' }), wait.agentTurn(sent));
     }
     case 'await_builder_revision': {
@@ -347,8 +339,12 @@ export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unk
       try {
         const response = await latestCompleteTurn(ctx, state.stage.builder, 'builder');
         assertExpectedFile(state.repositoryPath, state.paths.htmlPath, 'walkthrough deck');
-        const round = reviewRound(state.stage.round, state.stage.review);
-        return cont(withStage(state, { kind: 'send_reverification', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, builder: state.stage.builder, verifier: state.stage.verifier, round: round + 1, previousReview: reviewArtifactText(state.stage.review), architectResponse: state.stage.architectResponse, builderResponse: response }));
+        if (state.stage.round >= MAX_REVIEW_ROUNDS) {
+          await ctx.log('info', `Deck review loop stopped after the final fixes from round ${state.stage.round}.`);
+          await closeAll(ctx, [state.stage.architect, state.stage.builder, state.stage.verifier], 'deck architect, builder, and verifier');
+          return cont(withStage(state, { kind: 'start_presentation_review', curriculum: state.stage.curriculum, plan: state.stage.plan }));
+        }
+        return cont(withStage(state, { kind: 'send_reverification', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, builder: state.stage.builder, verifier: state.stage.verifier, round: state.stage.round + 1, previousReview: state.stage.review, architectResponse: state.stage.architectResponse, builderResponse: response }));
       } catch (error) {
         return failed(ctx, 'The builder revision could not be handed off. Presentation panes remain open.', errorText(error));
       }
@@ -375,11 +371,11 @@ export async function stepV2(ctx: WorkflowContext, state: V2State, incoming: unk
   }
 }
 
-function promptInput(state: V2State): V2PromptInput {
+function promptInput(state: State): PromptInput {
   return { repositoryPath: state.repositoryPath, story: state.story, sources: state.sources, paths: state.paths, audienceProfile: state.audienceProfile };
 }
 
-function ensureDirectories(state: V2State): void {
+function ensureDirectories(state: State): void {
   for (const path of [state.paths.reviewDirectory, `${state.paths.reviewDirectory}/.walkthrough/inventories`, state.paths.reviewsDirectory]) mkdirSync(resolve(state.repositoryPath, path), { recursive: true });
 }
 
@@ -407,8 +403,8 @@ function guideError(incoming: unknown, label: string): string | null {
 
 async function startDeckReviewRouting(
   ctx: WorkflowContext,
-  state: V2State,
-  stage: Extract<V2Stage, { readonly kind: 'await_review_routing' }>,
+  state: State,
+  stage: Extract<Stage, { readonly kind: 'await_review_routing' }>,
 ): Promise<WorkflowResult> {
   await ctx.setUiFeedback({ phase: 'Routing deck review', message: `Review round ${stage.round}.` });
   const op = await ctx.runHeadlessAgent({ ...deckReviewRouting, prompt: deckReviewRoutingPrompt(stage.review) });
@@ -416,13 +412,8 @@ async function startDeckReviewRouting(
   return suspend(withStage(state, stage), wait.headlessAgent(op));
 }
 
-function readDeckReviewArtifact(repositoryPath: string, paths: WalkthroughV2Paths, round: number): string {
-  const markdownPath = deckReviewPath(paths, round);
-  if (artifactFileExists(repositoryPath, markdownPath)) return readArtifactText(repositoryPath, markdownPath);
-  const legacyPath = legacyDeckReviewPath(paths, round);
-  if (artifactFileExists(repositoryPath, legacyPath)) return readArtifactText(repositoryPath, legacyPath);
-  assertExpectedFile(repositoryPath, markdownPath, 'deck review');
-  return '';
+function readDeckReview(repositoryPath: string, paths: WalkthroughPaths, round: number): string {
+  return readArtifactText(repositoryPath, deckReviewPath(paths, round));
 }
 
 async function latestCompleteTurn(ctx: WorkflowContext, agent: VisibleAgent, label: string): Promise<string> {
@@ -430,14 +421,6 @@ async function latestCompleteTurn(ctx: WorkflowContext, agent: VisibleAgent, lab
   const text = latestAssistantTurnText(history);
   if (!text) throw new Error(`${label} session ${agent.agentSessionId} has no complete assistant turn to hand off.`);
   return text;
-}
-
-function reviewArtifactText(review: ReviewArtifact): string {
-  return typeof review === 'string' ? review : JSON.stringify(review, null, 2);
-}
-
-function reviewRound(round: number | undefined, review: ReviewArtifact): number {
-  return round ?? (typeof review === 'string' ? 1 : review.round);
 }
 
 async function closeAll(ctx: WorkflowContext, agents: readonly VisibleAgent[], label: string): Promise<void> {
@@ -451,23 +434,23 @@ async function failed(ctx: WorkflowContext, message: string, diagnostic: string)
   return fail(diagnostic);
 }
 
-function chapterAt(curriculum: CurriculumV2, index: number) {
+function chapterAt(curriculum: Curriculum, index: number) {
   const chapter = curriculum.chapters[index];
   if (!chapter) throw new Error(`No curriculum chapter at index ${index}.`);
   return chapter;
 }
 
-function beatAt(chapter: CurriculumV2['chapters'][number], index: number) {
+function beatAt(chapter: Curriculum['chapters'][number], index: number) {
   const beat = chapter.beats[index];
   if (!beat) throw new Error(`No curriculum beat at index ${index} in ${chapter.id}.`);
   return beat;
 }
 
-function beatCount(curriculum: CurriculumV2): number {
+function beatCount(curriculum: Curriculum): number {
   return curriculum.chapters.reduce((count, chapter) => count + chapter.beats.length, 0);
 }
 
-function withStage(state: V2State, stage: V2Stage): V2State {
+function withStage(state: State, stage: Stage): State {
   return { ...state, stage };
 }
 
@@ -476,5 +459,5 @@ function errorText(value: unknown): string {
 }
 
 function assertNever(value: never): never {
-  throw new Error(`Unsupported v2 workflow stage: ${String(value)}`);
+  throw new Error(`Unsupported workflow stage: ${String(value)}`);
 }

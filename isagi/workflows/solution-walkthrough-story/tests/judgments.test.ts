@@ -8,7 +8,7 @@ import {
   deckReviewRoutingPrompt,
   latestAssistantTurnText,
   parseDeckReviewRoute,
-} from '../src/v2-judgments.js';
+} from '../src/judgments.js';
 
 test('parses every deck review route and rejects additional machine fields', () => {
   assert.equal(parseDeckReviewRoute('{"outcome":"complete"}'), 'complete');
