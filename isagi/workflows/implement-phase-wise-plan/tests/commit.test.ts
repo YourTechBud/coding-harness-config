@@ -13,6 +13,7 @@ const implementationPhase = {
   slug: 'phase-03-production-wiring',
   type: 'implementation',
 } as const;
+const docsPhase = { number: 4, slug: 'phase-04-docs', type: 'docs' } as const;
 
 test('commit prompt includes phase context and requires the phase-specific prefix', () => {
   const prompt = commitPrompt({
@@ -87,6 +88,25 @@ test('implementation and release results allow only feat, fix, or chore', () => 
         implementationPhase,
       ),
     /feat:, fix:, chore:/,
+  );
+});
+
+test('docs results use the normal non-draft commit contract', () => {
+  const commit = 'c'.repeat(40);
+  assert.equal(
+    parseCommitResult(
+      `{"outcome":"commit-created","commit":"${commit}","subject":"chore: update architecture guidance"}`,
+      docsPhase,
+    ).subject,
+    'chore: update architecture guidance',
+  );
+  assert.throws(
+    () =>
+      parseCommitResult(
+        `{"outcome":"commit-created","commit":"${commit}","subject":"draft: update architecture guidance"}`,
+        docsPhase,
+      ),
+    /phase type docs must begin with feat:, fix:, chore:/,
   );
 });
 

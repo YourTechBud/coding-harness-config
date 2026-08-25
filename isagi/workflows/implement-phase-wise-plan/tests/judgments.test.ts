@@ -228,7 +228,7 @@ test('discovery rejects non-contiguous phase metadata and frontmatter mismatches
       () =>
         normalizeDiscoveryResult({
           worktreePath,
-          result: { ...baseResult, phases: [{ ...phases[0], number: 2 }, phases[1]] },
+          result: { ...baseResult, phases: [{ ...phases[0], number: 2 }, ...phases.slice(1)] },
         }),
       /expected contiguous phase number 1/,
     );
@@ -236,7 +236,7 @@ test('discovery rejects non-contiguous phase metadata and frontmatter mismatches
       () =>
         normalizeDiscoveryResult({
           worktreePath,
-          result: { ...baseResult, phases: [{ ...phases[0], type: 'release' }, phases[1]] },
+          result: { ...baseResult, phases: [{ ...phases[0], type: 'release' }, ...phases.slice(1)] },
         }),
       /does not match frontmatter type prep/,
     );
@@ -248,6 +248,7 @@ test('discovery rejects non-contiguous phase metadata and frontmatter mismatches
 const phases = [
   { number: 1, slug: 'phase-01-foundations', type: 'prep' },
   { number: 2, slug: 'phase-02-dashboard-mock', type: 'mock-ui' },
+  { number: 3, slug: 'phase-03-docs', type: 'docs' },
 ] as const;
 
 function createPlan(worktreePath: string): void {

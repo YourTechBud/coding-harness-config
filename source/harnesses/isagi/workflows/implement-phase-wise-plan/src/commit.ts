@@ -111,6 +111,7 @@ function prefixesForPhase(phase: PlanPhase): readonly string[] {
     case 'mock-ui':
       return ['draft: '];
     case 'implementation':
+    case 'docs':
     case 'release':
       return ['feat: ', 'fix: ', 'chore: '];
   }

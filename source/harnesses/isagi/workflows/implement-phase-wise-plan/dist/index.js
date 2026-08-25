@@ -215,6 +215,7 @@ function prefixesForPhase(phase) {
     case "mock-ui":
       return ["draft: "];
     case "implementation":
+    case "docs":
     case "release":
       return ["feat: ", "fix: ", "chore: "];
   }
@@ -455,7 +456,8 @@ Return exactly one JSON object with exactly these fields:
   "phases": [
     {"number": 1, "slug": "phase-01-foundations", "type": "prep"},
     {"number": 2, "slug": "phase-02-interface-mock", "type": "mock-ui"},
-    {"number": 3, "slug": "phase-03-production-wiring", "type": "implementation"}
+    {"number": 3, "slug": "phase-03-production-wiring", "type": "implementation"},
+    {"number": 4, "slug": "phase-04-docs", "type": "docs"}
   ],
   "completedPhaseCount": 1
 }
@@ -466,7 +468,7 @@ Rules:
 - When planReferenceFound is true, entryPlanPath must be the path to the entry plan file relative to the worktree root. Never return an absolute path or a path outside the worktree.
 - When planReferenceFound is true, decisionLogPath must be the path relative to the worktree root where the plan says phase decisions are or will be recorded. Never return an absolute path or a path outside the worktree.
 - When planReferenceFound is true, phases must contain every phase in plan order. Read each linked phase file and return its one-based number, complete filename stem as slug, and frontmatter type.
-- Phase type must be exactly one of "prep", "mock-ui", "implementation", or "release". Do not classify or infer a different type from the prose when frontmatter supplies it.
+- Phase type must be exactly one of "prep", "mock-ui", "implementation", "docs", or "release". Do not classify or infer a different type from the prose when frontmatter supplies it.
 - Use the full conversation history to identify the current plan reference. Consider both user and assistant messages.
 - If multiple plan references appear, choose the latest current or agreed phase-wise plan, not stale examples or superseded paths.
 - The decision log file may not exist yet. If it does not exist, implementation has not started; return completedPhaseCount 0.
@@ -644,14 +646,14 @@ function validatePhasesValue(value) {
     }
     if (!isPhaseType(record.type)) {
       throw new Error(
-        `Discovery phase ${index + 1} type must be prep, mock-ui, implementation, or release.`
+        `Discovery phase ${index + 1} type must be prep, mock-ui, implementation, docs, or release.`
       );
     }
     return { number: record.number, slug: record.slug, type: record.type };
   });
 }
 function isPhaseType(value) {
-  return value === "prep" || value === "mock-ui" || value === "implementation" || value === "release";
+  return value === "prep" || value === "mock-ui" || value === "implementation" || value === "docs" || value === "release";
 }
 function validateImplementationKindResult(value) {
   return validateStringEnumOnly(value, "implementationKind", [
@@ -721,7 +723,7 @@ function readPhaseType(path, slug) {
   const typeLines = frontmatter.split(/\r?\n/u).map((line) => /^type:\s*(\S+)\s*$/u.exec(line)?.[1]).filter((value) => value !== void 0);
   if (typeLines.length !== 1 || !isPhaseType(typeLines[0])) {
     throw new Error(
-      `Phase ${slug} frontmatter must contain exactly one valid type: prep, mock-ui, implementation, or release.`
+      `Phase ${slug} frontmatter must contain exactly one valid type: prep, mock-ui, implementation, docs, or release.`
     );
   }
   return typeLines[0];
@@ -1464,7 +1466,7 @@ async function completePhase(ctx, state, implementer, requiresHumanVerification)
   );
 }
 async function continueAfterAutoReview(ctx, state, implementer, requiresHumanVerification) {
-  if (state.options.humanInTheLoop || requiresHumanVerification) {
+  if (state.options.humanInTheLoop || requiresHumanVerification || activePhase(state).type === "docs") {
     await setHumanCompletionStatus(ctx, state, requiresHumanVerification);
     return a(
       withStage(state, { kind: "await-human-completion", implementer }),

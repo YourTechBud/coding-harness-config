@@ -912,7 +912,11 @@ async function continueAfterAutoReview(
   implementer: Implementer,
   requiresHumanVerification: boolean,
 ): Promise<WorkflowResult> {
-  if (state.options.humanInTheLoop || requiresHumanVerification) {
+  if (
+    state.options.humanInTheLoop ||
+    requiresHumanVerification ||
+    activePhase(state).type === "docs"
+  ) {
     await setHumanCompletionStatus(ctx, state, requiresHumanVerification);
     return suspend(
       withStage(state, { kind: "await-human-completion", implementer }),

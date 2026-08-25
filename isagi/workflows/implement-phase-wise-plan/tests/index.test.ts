@@ -400,6 +400,106 @@ test("required human verification forces a checkpoint when auto review and phase
   assert.equal(harness.startedWorkflows.length, 0);
 });
 
+test("docs phase runs enabled auto review before forcing human approval", async () => {
+  const harness = workflowHarness();
+  const reviewStarted = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: "await-implementer-outcome",
+        implementer: { agentSessionId: 22, paneId: 32 },
+        implementerTurn: "Documentation phase complete.",
+        exchangeNumber: 3,
+      },
+      { phaseType: "docs", autoReview: true, humanInTheLoop: false },
+    ),
+    headlessResult('{"outcome":"phase-complete"}'),
+  );
+
+  assert.equal(reviewStarted.type, "suspend");
+  assert.equal(
+    reviewStarted.type === "suspend"
+      ? (reviewStarted.state as WorkflowState).stage.kind
+      : undefined,
+    "await-auto-review",
+  );
+  assert.equal(harness.startedWorkflows.length, 1);
+
+  const awaitingApproval = await workflow.step(
+    harness.ctx,
+    suspendedState(reviewStarted),
+    workflowResult(44, {
+      outcome: "workflow-executed-successfully",
+      reviewCount: 1,
+    }),
+  );
+
+  assert.equal(awaitingApproval.type, "suspend");
+  assert.equal(
+    awaitingApproval.type === "suspend"
+      ? (awaitingApproval.state as WorkflowState).stage.kind
+      : undefined,
+    "await-human-completion",
+  );
+  assert.equal(harness.feedback.at(-1)?.phase, "phase-review");
+
+  const approved = await workflow.step(
+    harness.ctx,
+    suspendedState(awaitingApproval),
+    { kind: "user_continue" },
+  );
+  assert.equal(
+    approved.type === "cont"
+      ? (approved.state as WorkflowState).stage.kind
+      : undefined,
+    "start-commit",
+  );
+});
+
+test("docs phase respects disabled auto review and commit while still forcing human approval", async () => {
+  const harness = workflowHarness();
+  const awaitingApproval = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: "await-implementer-outcome",
+        implementer: { agentSessionId: 22, paneId: 32 },
+        implementerTurn: "Documentation phase complete.",
+        exchangeNumber: 3,
+      },
+      {
+        phaseType: "docs",
+        autoReview: false,
+        autoCommit: false,
+        humanInTheLoop: false,
+      },
+    ),
+    headlessResult('{"outcome":"phase-complete"}'),
+  );
+
+  assert.equal(awaitingApproval.type, "suspend");
+  assert.equal(
+    awaitingApproval.type === "suspend"
+      ? (awaitingApproval.state as WorkflowState).stage.kind
+      : undefined,
+    "await-human-completion",
+  );
+  assert.equal(harness.startedWorkflows.length, 0);
+  assert.equal(harness.feedback.at(-1)?.phase, "phase-review");
+
+  const approved = await workflow.step(
+    harness.ctx,
+    suspendedState(awaitingApproval),
+    { kind: "user_continue" },
+  );
+  assert.equal(
+    approved.type === "cont"
+      ? (approved.state as WorkflowState).stage.kind
+      : undefined,
+    "advance-phase",
+  );
+});
+
 test("disabled auto review skips directly to commit when no human approval is required", async () => {
   const harness = workflowHarness();
   const result = await workflow.step(
@@ -597,7 +697,7 @@ test("the final phase closes its implementer while preserving the planner sessio
   const phases = [
     { number: 1, slug: "phase-01-foundations", type: "prep" as const },
     { number: 2, slug: "phase-02-production-wiring", type: "implementation" as const },
-    { number: 3, slug: "phase-03-docs", type: "implementation" as const },
+    { number: 3, slug: "phase-03-docs", type: "docs" as const },
     { number: 4, slug: "phase-04-release", type: "release" as const },
   ];
   const finalState = {
@@ -632,7 +732,7 @@ function activeState(
     readonly autoCommit?: boolean;
     readonly autoReview?: boolean;
     readonly humanInTheLoop?: boolean;
-    readonly phaseType?: "prep" | "mock-ui" | "implementation" | "release";
+    readonly phaseType?: "prep" | "mock-ui" | "implementation" | "docs" | "release";
   },
 ): WorkflowState {
   return {
@@ -653,7 +753,7 @@ function activeState(
           slug: "phase-02-production-wiring",
           type: input?.phaseType ?? "implementation",
         },
-        { number: 3, slug: "phase-03-docs", type: "implementation" },
+        { number: 3, slug: "phase-03-docs", type: "docs" },
         { number: 4, slug: "phase-04-release", type: "release" },
       ],
       currentPhaseIndex: 1,
@@ -682,6 +782,7 @@ function workflowHarness(input?: {
     readonly variables: Record<string, unknown> | undefined;
   }> = [];
   const closedPanes: number[] = [];
+  const feedback: Array<Parameters<WorkflowContext["setUiFeedback"]>[0]> = [];
   let headlessLaunchCount = 0;
   const ctx: WorkflowContext = {
     worktreePath: "/workspace",
@@ -722,7 +823,9 @@ function workflowHarness(input?: {
       return 44;
     },
     log: async () => {},
-    setUiFeedback: async () => {},
+    setUiFeedback: async (value) => {
+      feedback.push(value);
+    },
   };
   return {
     ctx,
@@ -731,6 +834,7 @@ function workflowHarness(input?: {
     headlessLaunches,
     startedWorkflows,
     closedPanes,
+    feedback,
     get headlessLaunchCount() {
       return headlessLaunchCount;
     },
