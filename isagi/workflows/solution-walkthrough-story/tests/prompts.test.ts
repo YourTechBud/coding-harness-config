@@ -9,7 +9,7 @@ import {
   curriculumPrompt,
   deckArchitecturePrompt,
   finalAssemblyPrompt,
-  realizationUnitPrompt,
+  narrativeUnitPrompt,
   verifierPrompt,
   type PromptInput,
 } from '../src/prompts.js';
@@ -28,27 +28,37 @@ const input: PromptInput = {
 };
 
 const plan: DeckPlan = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   curriculumPath: input.paths.curriculumPath,
   outputPath: input.paths.htmlPath,
-  slides: [{
-    id: 'system-flow',
-    chapterId: 'architecture',
-    beatIds: ['ar-01'],
-    title: 'System flow',
-    purpose: 'Explain the system flow',
-    contentResponsibilities: ['Show the important boundary'],
-    representationIntent: 'A data-flow view',
-    progressiveDisclosure: [],
+  story: { title: 'Story 42', openingPromise: 'Understand the change', throughline: 'Follow the system', endingResolution: 'Know how it works' },
+  chapters: [{
+    id: 'architecture',
+    title: 'Architecture',
+    storyRole: 'Explain the system relationships',
+    openingContext: 'The current state is understood',
+    closingSynthesis: 'The boundaries are clear',
+    transitionToNext: 'Move into implementation',
+    narrativeUnits: [{
+      title: 'System flow',
+      storyPurpose: 'Explain the system flow',
+      beatIds: ['ar-01'],
+      narrativeBridge: 'Follow the request through the system',
+      realizationPoints: ['The boundary owns the transition'],
+      requiredContent: ['Show the important boundary'],
+      supportingContent: [],
+      representationIntent: 'A data-flow view',
+      progressiveDisclosure: [],
+      sourceReferences: [{ heading: 'Architecture', locator: 'design/architecture.md' }],
+    }],
   }],
-  realizationUnits: [{ id: 'architecture-flow', slideIds: ['system-flow'] }],
 };
 
 test('the curriculum and every deck-writing turn share one plain-language standard', () => {
   const prompts = [
     curriculumPrompt(input),
     deckArchitecturePrompt(input),
-    realizationUnitPrompt(input, plan, plan.realizationUnits[0]!),
+    narrativeUnitPrompt(input, plan, plan.chapters[0]!, plan.chapters[0]!.narrativeUnits[0]!, 0),
     finalAssemblyPrompt(input),
     architectRevisionPrompt(input, 1, 'Simplify the title.'),
     builderRevisionPrompt(input, 1, 'Rewrite the visible copy.'),
@@ -69,7 +79,17 @@ test('Show Me guidance follows the selected technical depth', () => {
   assert.match(product, /user journey, before-and-after comparison, or tradeoff view/);
   assert.match(system, /boundary maps, ownership views, data or control flow/);
   assert.match(implementation, /code-shape sketches, call trees, state transitions, diffs, algorithms, and failure paths/);
-  assert.match(realizationUnitPrompt(input, plan, plan.realizationUnits[0]!), /representations that reduce explanation rather than decorate it/);
+  assert.match(narrativeUnitPrompt(input, plan, plan.chapters[0]!, plan.chapters[0]!.narrativeUnits[0]!, 0), /representations that reduce explanation rather than decorate it/);
+});
+
+test('the deck brief owns the story while narrative-unit turns leave slide composition to the builder', () => {
+  const architecture = deckArchitecturePrompt(input);
+  const realization = narrativeUnitPrompt(input, plan, plan.chapters[0]!, plan.chapters[0]!.narrativeUnits[0]!, 0);
+  for (const field of ['openingPromise', 'throughline', 'endingResolution', 'storyRole', 'narrativeUnits', 'realizationPoints']) assert.match(architecture, new RegExp(field));
+  assert.match(architecture, /one focused construction turn and one coherent movement/);
+  assert.doesNotMatch(architecture, /slideIds|realizationUnits/);
+  assert.match(realization, /Decide how many slides it needs/);
+  assert.match(realization, /data-walkthrough-chapter="architecture"/);
 });
 
 test('each review round requests a complete standalone Markdown artifact', () => {
@@ -89,6 +109,7 @@ test('each review round requests a complete standalone Markdown artifact', () =>
   assert.match(prompt, /Suggestions are optional and never require another revision round/);
   assert.match(prompt, /stable ID across rounds/);
   assert.match(prompt, /one or more of/);
+  assert.match(prompt, /Browser inspection is not required/);
   assert.doesNotMatch(prompt, /schemaVersion/);
 });
 

@@ -37,8 +37,8 @@ import {
   finalAssemblyPrompt,
   guidedBeatPrompt,
   guidedChapterReviewPrompt,
+  narrativeUnitPrompt,
   presentationGuidePrompt,
-  realizationUnitPrompt,
   sourceInventoryPrompt,
   verifierPrompt,
   type PromptInput,
@@ -74,9 +74,10 @@ export type Stage =
   | { readonly kind: 'await_deck_architecture'; readonly curriculum: Curriculum; readonly architect: VisibleAgent }
   | { readonly kind: 'start_deck_shell'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent }
   | { readonly kind: 'await_deck_shell'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
-  | { readonly kind: 'send_realization_unit'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly unitIndex: number }
-  | { readonly kind: 'await_realization_unit'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly unitIndex: number }
-  | { readonly kind: 'send_final_assembly'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
+  | { readonly kind: 'start_chapter_build'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly chapterIndex: number }
+  | { readonly kind: 'send_narrative_unit'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly chapterIndex: number; readonly unitIndex: number }
+  | { readonly kind: 'await_narrative_unit'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly chapterIndex: number; readonly unitIndex: number }
+  | { readonly kind: 'start_final_assembly'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent }
   | { readonly kind: 'await_final_assembly'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
   | { readonly kind: 'start_verification'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly round: number }
   | { readonly kind: 'await_verification'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
@@ -219,32 +220,49 @@ export async function step(ctx: WorkflowContext, state: State, incoming: unknown
       if (error) return failed(ctx, 'Deck shell creation failed. Build panes remain open.', error);
       try {
         assertExpectedFile(state.repositoryPath, state.paths.htmlPath, 'walkthrough deck');
-        return cont(withStage(state, { ...state.stage, kind: 'send_realization_unit', unitIndex: 0 }));
+        await ctx.closePane(state.stage.builder.paneId);
+        return cont(withStage(state, { kind: 'start_chapter_build', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, chapterIndex: 0 }));
       } catch (error) {
         return failed(ctx, 'The deck shell is missing. Build panes remain open.', errorText(error));
       }
     }
-    case 'send_realization_unit': {
-      const unit = state.stage.plan.realizationUnits[state.stage.unitIndex];
-      if (!unit) return cont(withStage(state, { kind: 'send_final_assembly', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, builder: state.stage.builder }));
-      await ctx.setUiFeedback({ phase: 'Building walkthrough slides', message: `Realization unit ${state.stage.unitIndex + 1} of ${state.stage.plan.realizationUnits.length}: ${unit.id}.` });
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, modifiers: SHOW_ME_MODIFIER, prompt: realizationUnitPrompt(input, state.stage.plan, unit) });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_realization_unit' }), wait.agentTurn(sent));
+    case 'start_chapter_build': {
+      const chapter = deckChapterAt(state.stage.plan, state.stage.chapterIndex);
+      const unitIndex = 0;
+      const unit = narrativeUnitAt(chapter, unitIndex);
+      await ctx.setUiFeedback({ phase: `Building ${chapter.title}`, message: `Narrative unit 1 of ${chapter.narrativeUnits.length}: ${unit.title}.` });
+      const builder = visible(await ctx.spawnAgentSession({ ...deckBuilder, modifiers: SHOW_ME_MODIFIER, prompt: narrativeUnitPrompt(input, state.stage.plan, chapter, unit, unitIndex) }));
+      return suspend(withStage(state, { ...state.stage, kind: 'await_narrative_unit', builder, unitIndex }), wait.agentTurn(builder));
     }
-    case 'await_realization_unit': {
-      const error = turnError(incoming, 'Deck realization', state.stage.builder);
-      if (error) return failed(ctx, 'Deck realization failed. Build panes remain open.', error);
+    case 'send_narrative_unit': {
+      const chapter = deckChapterAt(state.stage.plan, state.stage.chapterIndex);
+      const unit = narrativeUnitAt(chapter, state.stage.unitIndex);
+      await ctx.setUiFeedback({ phase: `Building ${chapter.title}`, message: `Narrative unit ${state.stage.unitIndex + 1} of ${chapter.narrativeUnits.length}: ${unit.title}.` });
+      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, modifiers: SHOW_ME_MODIFIER, prompt: narrativeUnitPrompt(input, state.stage.plan, chapter, unit, state.stage.unitIndex) });
+      return suspend(withStage(state, { ...state.stage, kind: 'await_narrative_unit' }), wait.agentTurn(sent));
+    }
+    case 'await_narrative_unit': {
+      const error = turnError(incoming, 'Narrative-unit construction', state.stage.builder);
+      if (error) return failed(ctx, 'Narrative-unit construction failed. Build panes remain open.', error);
       try {
         assertExpectedFile(state.repositoryPath, state.paths.htmlPath, 'walkthrough deck');
-        return cont(withStage(state, { ...state.stage, kind: 'send_realization_unit', unitIndex: state.stage.unitIndex + 1 }));
+        const chapter = deckChapterAt(state.stage.plan, state.stage.chapterIndex);
+        if (state.stage.unitIndex + 1 < chapter.narrativeUnits.length) {
+          return cont(withStage(state, { ...state.stage, kind: 'send_narrative_unit', unitIndex: state.stage.unitIndex + 1 }));
+        }
+        await ctx.closePane(state.stage.builder.paneId);
+        if (state.stage.chapterIndex + 1 < state.stage.plan.chapters.length) {
+          return cont(withStage(state, { kind: 'start_chapter_build', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, chapterIndex: state.stage.chapterIndex + 1 }));
+        }
+        return cont(withStage(state, { kind: 'start_final_assembly', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect }));
       } catch (error) {
-        return failed(ctx, 'The walkthrough deck is missing after realization. Build panes remain open.', errorText(error));
+        return failed(ctx, 'The walkthrough deck is missing after narrative-unit construction. Build panes remain open.', errorText(error));
       }
     }
-    case 'send_final_assembly': {
+    case 'start_final_assembly': {
       await ctx.setUiFeedback({ phase: 'Assembling the unified walkthrough deck' });
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, prompt: finalAssemblyPrompt(input) });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_final_assembly' }), wait.agentTurn(sent));
+      const builder = visible(await ctx.spawnAgentSession({ ...deckBuilder, prompt: finalAssemblyPrompt(input) }));
+      return suspend(withStage(state, { ...state.stage, kind: 'await_final_assembly', builder }), wait.agentTurn(builder));
     }
     case 'await_final_assembly': {
       const error = turnError(incoming, 'Final deck assembly', state.stage.builder);
@@ -364,7 +382,7 @@ export async function step(ctx: WorkflowContext, state: State, incoming: unknown
     case 'await_presentation_continue': {
       if (!workflowEvent.isUserContinue(incoming)) return failed(ctx, 'Presentation review could not finish.', 'Expected user Continue.');
       await ctx.closePane(state.stage.guide.paneId);
-      return done({ outcome: 'presentation-review-completed', curriculumPath: state.paths.curriculumPath, deckPlanPath: state.paths.deckPlanPath, presentationPath: state.paths.htmlPath, slideCount: state.stage.plan.slides.length });
+      return done({ outcome: 'presentation-review-completed', curriculumPath: state.paths.curriculumPath, deckPlanPath: state.paths.deckPlanPath, presentationPath: state.paths.htmlPath, ...deckPlanMetrics(state.stage.plan) });
     }
     default:
       return assertNever(state.stage);
@@ -444,6 +462,27 @@ function beatAt(chapter: Curriculum['chapters'][number], index: number) {
   const beat = chapter.beats[index];
   if (!beat) throw new Error(`No curriculum beat at index ${index} in ${chapter.id}.`);
   return beat;
+}
+
+function deckChapterAt(plan: DeckPlan, index: number) {
+  const chapter = plan.chapters[index];
+  if (!chapter) throw new Error(`No deck chapter at index ${index}.`);
+  return chapter;
+}
+
+function narrativeUnitAt(chapter: DeckPlan['chapters'][number], index: number) {
+  const unit = chapter.narrativeUnits[index];
+  if (!unit) throw new Error(`No narrative unit at index ${index} in ${chapter.id}.`);
+  return unit;
+}
+
+function deckPlanMetrics(plan: DeckPlan): Record<string, number> {
+  const legacy = plan as unknown as { readonly slides?: readonly unknown[] };
+  if (legacy.slides) return { slideCount: legacy.slides.length };
+  return {
+    chapterCount: plan.chapters.length,
+    narrativeUnitCount: plan.chapters.reduce((count, chapter) => count + chapter.narrativeUnits.length, 0),
+  };
 }
 
 function beatCount(curriculum: Curriculum): number {

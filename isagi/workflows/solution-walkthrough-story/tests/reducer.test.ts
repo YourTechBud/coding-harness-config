@@ -42,7 +42,7 @@ test('deck architecture invokes Show Me for depth-aware representation planning'
   assert.match(harness.spawned[0]?.prompt ?? '', /boundary maps, ownership views, data or control flow/);
 });
 
-test('deck builder uses shell, one turn per realization unit, then final assembly', async () => {
+test('deck construction uses a fresh session per chapter and one turn per narrative unit', async () => {
   const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-'));
   try {
     const harness = workflowHarness(repositoryPath);
@@ -51,27 +51,58 @@ test('deck builder uses shell, one turn per realization unit, then final assembl
     const common = { curriculum: curriculum(), plan: plan(paths.curriculumPath, paths.htmlPath), architect: agent(31, 41), builder: agent(32, 42) };
     const shell = await workflow.step(harness.ctx, state(repositoryPath, { kind: 'await_deck_shell', ...common }), ended());
     assert.equal(shell.type, 'cont');
-    assert.equal(resultStage(shell).kind, 'send_realization_unit');
+    assert.equal(resultStage(shell).kind, 'start_chapter_build');
+    assert.deepEqual(harness.closedPanes, [42]);
 
-    const building = await workflow.step(harness.ctx, resultState(shell), null);
-    assert.equal(building.type, 'suspend');
+    const firstUnit = await workflow.step(harness.ctx, resultState(shell), null);
+    assert.equal(firstUnit.type, 'suspend');
+    assert.equal(resultStage(firstUnit).kind, 'await_narrative_unit');
+    assert.equal(harness.spawned.length, 1);
+    assert.match(harness.spawned[0]?.prompt ?? '', /Chapter: .*current-state/);
+    assert.match(harness.spawned[0]?.prompt ?? '', /Narrative unit 1 of 2/);
+    assert.deepEqual(harness.spawned[0]?.modifiers, [{ kind: 'skill', name: 'show-me' }]);
+
+    const nextUnitReady = await workflow.step(harness.ctx, resultState(firstUnit), ended());
+    assert.equal(resultStage(nextUnitReady).kind, 'send_narrative_unit');
+    const secondUnit = await workflow.step(harness.ctx, resultState(nextUnitReady), null);
+    assert.equal(secondUnit.type, 'suspend');
     assert.equal(harness.sent.length, 1);
-    assert.match(harness.sent[0]?.prompt ?? '', /Unit: main-unit/);
-    assert.deepEqual(harness.sent[0]?.modifiers, [{ kind: 'skill', name: 'show-me' }]);
+    assert.equal(harness.sent[0]?.agentSessionId, 11);
+    assert.match(harness.sent[0]?.prompt ?? '', /Narrative unit 2 of 2/);
 
-    write(repositoryPath, paths.htmlPath, '<main data-walkthrough-deck><div data-slide-viewport><!-- Example: <section data-walkthrough-slide id="<exact plan slide id>"> --><section data-walkthrough-slide id="slide-one"></section><section data-walkthrough-slide id="slide-two"></section><section data-walkthrough-slide id="slide-three"></section></div><nav data-slide-navigation></nav></main>');
-    const built = await workflow.step(harness.ctx, resultState(building), ended());
-    assert.equal(built.type, 'cont');
-    const assemblyReady = await workflow.step(harness.ctx, resultState(built), null);
-    assert.equal(assemblyReady.type, 'cont');
-    assert.equal(resultStage(assemblyReady).kind, 'send_final_assembly');
-    const assembly = await workflow.step(harness.ctx, resultState(assemblyReady), null);
-    assert.equal(assembly.type, 'suspend');
-    assert.equal(harness.sent.length, 2);
-    assert.match(harness.sent[1]?.prompt ?? '', /Complete and polish the assembled/);
+    const nextChapterReady = await workflow.step(harness.ctx, resultState(secondUnit), ended());
+    assert.equal(resultStage(nextChapterReady).kind, 'start_chapter_build');
+    assert.deepEqual(harness.closedPanes, [42, 21]);
+    const architecture = await workflow.step(harness.ctx, resultState(nextChapterReady), null);
+    assert.equal(architecture.type, 'suspend');
+    assert.equal(harness.spawned.length, 2);
+    assert.match(harness.spawned[1]?.prompt ?? '', /Chapter: .*architecture/);
+
+    const programReady = await workflow.step(harness.ctx, resultState(architecture), ended());
+    assert.equal(resultStage(programReady).kind, 'start_chapter_build');
+    const program = await workflow.step(harness.ctx, resultState(programReady), null);
+    assert.equal(program.type, 'suspend');
+    assert.equal(harness.spawned.length, 3);
+    assert.match(harness.spawned[2]?.prompt ?? '', /Chapter: .*program-design/);
+
+    const assemblyReady = await workflow.step(harness.ctx, resultState(program), ended());
+    assert.equal(resultStage(assemblyReady).kind, 'start_final_assembly');
+    assert.deepEqual(harness.closedPanes, [42, 21, 22, 23]);
   } finally {
     rmSync(repositoryPath, { recursive: true, force: true });
   }
+});
+
+test('final assembly starts a fresh builder session that continues into deck review', async () => {
+  const paths = walkthroughPaths(reviewDirectory);
+  const harness = workflowHarness('/workspace');
+  const result = await workflow.step(harness.ctx, state('/workspace', {
+    kind: 'start_final_assembly', curriculum: curriculum(), plan: plan(paths.curriculumPath, paths.htmlPath), architect: agent(31, 41),
+  }), null);
+  assert.equal(result.type, 'suspend');
+  assert.equal(resultStage(result).kind, 'await_final_assembly');
+  assert.deepEqual(harness.spawned[0] && { harness: harness.spawned[0].harness, model: harness.spawned[0].model, effort: harness.spawned[0].effort }, deckBuilder);
+  assert.match(harness.spawned[0]?.prompt ?? '', /Complete and polish the assembled/);
 });
 
 test('Markdown verification is routed headlessly before completed review closes presentation workers', async () => {
@@ -228,8 +259,18 @@ test('presentation Continue finishes review rather than advancing a tutorial bea
   assert.deepEqual(harness.closedPanes, [21]);
 });
 
+test('a waiting presentation created with the previous deck-plan shape can still complete', async () => {
+  const harness = workflowHarness('/workspace');
+  const legacyPlan = { schemaVersion: 1, slides: [{ id: 'one' }, { id: 'two' }] } as unknown as DeckPlan;
+  const result = await workflow.step(harness.ctx, state('/workspace', {
+    kind: 'await_presentation_continue', curriculum: curriculum(), plan: legacyPlan, guide: { agentSessionId: 11, paneId: 21 },
+  }), { kind: 'user_continue' });
+  assert.equal(result.type, 'done');
+  assert.equal(result.type === 'done' ? (result.value as { slideCount: number }).slideCount : null, 2);
+});
+
 test('presentation roles keep their intended visible-session profiles', () => {
-  assert.deepEqual(deckArchitect, preparer);
+  assert.deepEqual(deckArchitect, { harness: 'claude', model: 'fable', effort: 'high' });
   assert.deepEqual(deckBuilder, { harness: 'claude', model: 'opus', effort: 'medium' });
   assert.deepEqual(deckVerifier, { harness: 'codex', model: 'gpt-5.6-sol', effort: 'medium' });
   assert.deepEqual(deckReviewRouting, { harness: 'codex', model: 'gpt-5.6-luna', effort: 'medium' });
@@ -283,22 +324,43 @@ function curriculum(): Curriculum {
 }
 
 function plan(curriculumPath: string, outputPath: string): DeckPlan {
-  const slide = (id: string, chapterId: 'current-state' | 'architecture' | 'program-design', beatId: string) => ({
+  const chapter = (id: 'current-state' | 'architecture' | 'program-design', beatId: string) => ({
     id,
-    chapterId,
-    beatIds: [beatId],
     title: id,
-    purpose: `Explain ${id}`,
-    contentResponsibilities: ['Explain the point'],
-    representationIntent: null,
-    progressiveDisclosure: [],
+    storyRole: `Explain ${id}`,
+    openingContext: `Enter ${id}`,
+    closingSynthesis: `Synthesize ${id}`,
+    transitionToNext: `Continue from ${id}`,
+    narrativeUnits: [{
+      title: `${id} first movement`,
+      storyPurpose: `Explain the first part of ${id}`,
+      beatIds: [beatId],
+      narrativeBridge: `Continue through ${id}`,
+      realizationPoints: [`Understand ${id}`],
+      requiredContent: ['Explain the point'],
+      supportingContent: [],
+      representationIntent: null,
+      progressiveDisclosure: [],
+      sourceReferences: [{ heading: id, locator: id }],
+    }, ...(id === 'current-state' ? [{
+      title: `${id} synthesis`,
+      storyPurpose: `Synthesize ${id}`,
+      beatIds: [beatId],
+      narrativeBridge: `Conclude ${id}`,
+      realizationPoints: [`Connect ${id}`],
+      requiredContent: ['Connect the point'],
+      supportingContent: [],
+      representationIntent: null,
+      progressiveDisclosure: [],
+      sourceReferences: [{ heading: id, locator: id }],
+    }] : [])],
   });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     curriculumPath,
     outputPath,
-    slides: [slide('slide-one', 'current-state', 'cs-01'), slide('slide-two', 'architecture', 'ar-01'), slide('slide-three', 'program-design', 'pd-01')],
-    realizationUnits: [{ id: 'main-unit', slideIds: ['slide-one', 'slide-two', 'slide-three'] }],
+    story: { title: 'Story 42', openingPromise: 'Understand the change', throughline: 'Follow the system', endingResolution: 'Know how it works' },
+    chapters: [chapter('current-state', 'cs-01'), chapter('architecture', 'ar-01'), chapter('program-design', 'pd-01')],
   };
 }
 

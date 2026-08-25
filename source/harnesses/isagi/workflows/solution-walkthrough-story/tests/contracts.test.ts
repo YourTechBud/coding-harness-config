@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { readCurriculum, readTopicInventories } from '../src/contracts.js';
+import { readCurriculum, readDeckPlan, readTopicInventories } from '../src/contracts.js';
 import { walkthroughPaths } from '../src/paths.js';
 import { artifactKinds, pathFor, type ArtifactKind, type ArtifactPaths } from '../src/types.js';
 
@@ -27,6 +27,41 @@ test('curriculum accepts the language policy and existing files without it', () 
     } finally {
       rmSync(repositoryPath, { recursive: true, force: true });
     }
+  }
+});
+
+test('deck plan is hierarchical and maps ordered narrative units to every curriculum beat', () => {
+  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-contract-'));
+  try {
+    const paths = walkthroughPaths('review');
+    for (const kind of artifactKinds) writeJson(repositoryPath, pathFor(paths.inventoryPaths, kind), inventory(kind));
+    writeJson(repositoryPath, paths.curriculumPath, curriculum('Use plain and precise language.'));
+    const inventories = readTopicInventories(repositoryPath, sources, paths);
+    const parsedCurriculum = readCurriculum(repositoryPath, 'Story 42', sources, { familiarity: 'new', technicalDepth: 'system-design' }, paths, inventories);
+    writeJson(repositoryPath, paths.deckPlanPath, deckPlan(paths.curriculumPath, paths.htmlPath));
+    const parsed = readDeckPlan(repositoryPath, paths, parsedCurriculum);
+    assert.equal(parsed.schemaVersion, 2);
+    assert.deepEqual(parsed.chapters.map(({ id }) => id), artifactKinds);
+    assert.equal(parsed.chapters[0]?.narrativeUnits[0]?.realizationPoints[0], 'Understand current-state');
+  } finally {
+    rmSync(repositoryPath, { recursive: true, force: true });
+  }
+});
+
+test('deck plan rejects a narrative unit without a realization point', () => {
+  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-contract-'));
+  try {
+    const paths = walkthroughPaths('review');
+    for (const kind of artifactKinds) writeJson(repositoryPath, pathFor(paths.inventoryPaths, kind), inventory(kind));
+    writeJson(repositoryPath, paths.curriculumPath, curriculum('Use plain and precise language.'));
+    const inventories = readTopicInventories(repositoryPath, sources, paths);
+    const parsedCurriculum = readCurriculum(repositoryPath, 'Story 42', sources, { familiarity: 'new', technicalDepth: 'system-design' }, paths, inventories);
+    const value = deckPlan(paths.curriculumPath, paths.htmlPath);
+    value.chapters[0]!.narrativeUnits[0]!.realizationPoints = [];
+    writeJson(repositoryPath, paths.deckPlanPath, value);
+    assert.throws(() => readDeckPlan(repositoryPath, paths, parsedCurriculum), /requires at least one realization point/);
+  } finally {
+    rmSync(repositoryPath, { recursive: true, force: true });
   }
 });
 
@@ -85,6 +120,36 @@ function curriculum(languagePolicy: string | undefined) {
     },
     chapters: [chapter('current-state', 'cs-01'), chapter('architecture', 'ar-01'), chapter('program-design', 'pd-01')],
     omissions: [],
+  };
+}
+
+function deckPlan(curriculumPath: string, outputPath: string) {
+  const chapter = (id: ArtifactKind, beatId: string) => ({
+    id,
+    title: id,
+    storyRole: `Explain ${id}`,
+    openingContext: `Enter ${id}`,
+    closingSynthesis: `Synthesize ${id}`,
+    transitionToNext: `Continue from ${id}`,
+    narrativeUnits: [{
+      title: `${id} movement`,
+      storyPurpose: `Teach ${id}`,
+      beatIds: [beatId],
+      narrativeBridge: `Move through ${id}`,
+      realizationPoints: [`Understand ${id}`],
+      requiredContent: ['A required point'],
+      supportingContent: [],
+      representationIntent: null,
+      progressiveDisclosure: [],
+      sourceReferences: [{ heading: id, locator: pathFor(sources, id) }],
+    }],
+  });
+  return {
+    schemaVersion: 2,
+    curriculumPath,
+    outputPath,
+    story: { title: 'Story 42', openingPromise: 'Understand the change', throughline: 'Follow the system', endingResolution: 'Know how it works' },
+    chapters: [chapter('current-state', 'cs-01'), chapter('architecture', 'ar-01'), chapter('program-design', 'pd-01')],
   };
 }
 

@@ -23,7 +23,7 @@ Return exactly one JSON object with exactly this field:
 
 Apply this precedence:
 1. Return "human-decision" when the review explicitly identifies a product, narrative, scope, or tradeoff decision that only the user can make. An explicit human decision takes precedence over every other outcome.
-2. Return "architect-and-builder" when any required finding needs the curriculum or deck plan changed, including slide purpose, ordering, content responsibility, narrative structure, or realization boundaries. This also wins when architect and builder work are both required.
+2. Return "architect-and-builder" when any required finding needs the curriculum or detailed deck brief changed, including the storyline, chapter or narrative-unit order, content responsibility, realization points, or narrative-unit boundaries. This also wins when architect and builder work are both required.
 3. Return "builder" when required findings remain but the current curriculum and deck plan are sufficient, so the HTML presentation can be corrected directly.
 4. Return "complete" when no required findings remain. Suggestions alone do not require another revision round.
 

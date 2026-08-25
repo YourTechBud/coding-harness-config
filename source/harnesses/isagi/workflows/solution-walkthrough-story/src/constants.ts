@@ -24,7 +24,11 @@ export const guide = {
   effort: 'low',
 } satisfies AgentProfile;
 
-export const deckArchitect = preparer;
+export const deckArchitect = {
+  harness: 'claude',
+  model: 'fable',
+  effort: 'high',
+} satisfies AgentProfile;
 
 export const deckVerifier = {
   harness: 'codex',

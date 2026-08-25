@@ -121,28 +121,40 @@ export type Curriculum = {
   }[];
 };
 
-export type DeckSlide = {
-  readonly id: string;
-  readonly chapterId: ArtifactKind;
-  readonly beatIds: readonly string[];
+export type NarrativeUnit = {
   readonly title: string;
-  readonly purpose: string;
-  readonly contentResponsibilities: readonly string[];
+  readonly storyPurpose: string;
+  readonly beatIds: readonly string[];
+  readonly narrativeBridge: string;
+  readonly realizationPoints: readonly string[];
+  readonly requiredContent: readonly string[];
+  readonly supportingContent: readonly string[];
   readonly representationIntent: string | null;
   readonly progressiveDisclosure: readonly string[];
+  readonly sourceReferences: readonly SourceReference[];
 };
 
-export type RealizationUnit = {
-  readonly id: string;
-  readonly slideIds: readonly string[];
+export type DeckChapter = {
+  readonly id: ArtifactKind;
+  readonly title: string;
+  readonly storyRole: string;
+  readonly openingContext: string;
+  readonly closingSynthesis: string;
+  readonly transitionToNext: string;
+  readonly narrativeUnits: readonly NarrativeUnit[];
 };
 
 export type DeckPlan = {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly curriculumPath: string;
   readonly outputPath: string;
-  readonly slides: readonly DeckSlide[];
-  readonly realizationUnits: readonly RealizationUnit[];
+  readonly story: {
+    readonly title: string;
+    readonly openingPromise: string;
+    readonly throughline: string;
+    readonly endingResolution: string;
+  };
+  readonly chapters: readonly DeckChapter[];
 };
 
 export type WalkthroughPaths = {

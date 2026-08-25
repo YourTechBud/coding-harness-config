@@ -7,8 +7,9 @@ import {
   type Curriculum,
   type CurriculumBeat,
   type CurriculumChapter,
+  type DeckChapter,
   type DeckPlan,
-  type RealizationUnit,
+  type NarrativeUnit,
   type WalkthroughPaths,
 } from "./types.js";
 import { deckReviewPath } from "./paths.js";
@@ -127,41 +128,56 @@ Create exactly three chapters in this order with IDs current-state, architecture
 }
 
 export function deckArchitecturePrompt(input: PromptInput): string {
-  return withPreparationFooter(`Architect one standalone slide presentation from the finalized curriculum.
+  return withPreparationFooter(`Create the detailed narrative brief for one standalone slide presentation from the finalized curriculum.
 
 Story: ${input.story}
 Curriculum: ${input.paths.curriculumPath}
 Output deck: ${input.paths.htmlPath}
 Output plan: ${input.paths.deckPlanPath}
 
-Design a unified deck that can be understood without an agent. It must feel like slides rather than a scrolling document: each frame has a clear purpose, concise briefing prose, and the smallest representation that makes its relationship understandable. Preserve the curriculum's narrative and content obligations. Decide the number of slides creatively; a beat may use one or several slides, and a slide may combine closely connected beats from the same chapter.
+Own the storytelling before construction begins. Define the opening promise, the throughline, the ending resolution, each chapter's role and transitions, and the ordered narrative units that carry the audience from one understanding to the next. Preserve the curriculum's narrative and content obligations. A narrative unit is one focused construction turn and one coherent movement in the story, not a predetermined slide. The builder may realize it with one or several slides.
 
 Writing standard:
 ${PLAIN_LANGUAGE_STANDARD}
 
-Use the Show Me skill to choose representations that carry real explanatory work. ${representationGuidance(input.audienceProfile.technicalDepth)} Keep each representation focused on the slide's comprehension objective and place it beside the short explanation it supports. When prose is clearer than a visual, use prose.
+Use the Show Me skill to choose representations that carry real explanatory work. ${representationGuidance(input.audienceProfile.technicalDepth)} Keep each representation focused on the narrative unit's realization points and place it beside the short explanation it supports. When prose is clearer than a visual, use prose.
 
-Group contiguous slides into coherent realization units for incremental construction. Units are build boundaries, not visible sections, and their count should follow the design rather than a quota.
+Give every narrative unit enough detail that building it is the act of making the presentation rather than discovering the story. Its realizationPoints are the ordered insights the audience should reach together. Keep insights in one unit when they form one coherent chain; separate them when they require different narrative movements. Let the number of narrative units follow the story rather than a quota.
 
 Write exactly one JSON object:
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "curriculumPath": ${JSON.stringify(input.paths.curriculumPath)},
   "outputPath": ${JSON.stringify(input.paths.htmlPath)},
-  "slides": [{
-    "id": "descriptive-kebab-id",
-    "chapterId": "current-state",
-    "beatIds": ["cs-01"],
-    "title": "Visible slide title",
-    "purpose": "What this slide accomplishes",
-    "contentResponsibilities": ["Required visible or disclosed content"],
-    "representationIntent": "Optional visual relationship",
-    "progressiveDisclosure": []
-  }],
-  "realizationUnits": [{ "id": "coherent-unit", "slideIds": ["descriptive-kebab-id"] }]
+  "story": {
+    "title": "Presentation title",
+    "openingPromise": "What the audience is about to understand",
+    "throughline": "The idea connecting the complete presentation",
+    "endingResolution": "What the audience should understand when the story closes"
+  },
+  "chapters": [{
+    "id": "current-state",
+    "title": "Chapter title",
+    "storyRole": "What this chapter contributes to the whole story",
+    "openingContext": "Where the audience is when the chapter begins",
+    "closingSynthesis": "What should be established when the chapter ends",
+    "transitionToNext": "How this understanding leads into the next chapter or ending",
+    "narrativeUnits": [{
+      "title": "Working title for this narrative movement",
+      "storyPurpose": "Why this movement exists in the story",
+      "beatIds": ["cs-01"],
+      "narrativeBridge": "How it follows the previous movement and prepares the next",
+      "realizationPoints": ["The insight the audience should reach"],
+      "requiredContent": ["Content that must be conveyed"],
+      "supportingContent": ["Useful secondary detail"],
+      "representationIntent": "Optional visual relationship",
+      "progressiveDisclosure": [],
+      "sourceReferences": [{ "heading": "Source heading", "locator": "Retrievable locator" }]
+    }]
+  }]
 }
 
-Every beat must map to at least one slide. Assign every slide exactly once to units in deck order. Write only ${input.paths.deckPlanPath}.`);
+Create exactly three chapters in curriculum order. Every beat must map to at least one narrative unit in its chapter, and the units must follow curriculum order. Write only ${input.paths.deckPlanPath}.`);
 }
 
 export function deckShellPrompt(input: PromptInput): string {
@@ -176,17 +192,24 @@ Create one self-contained HTML file with embedded CSS and JavaScript. Establish 
 Write only ${input.paths.htmlPath}.`);
 }
 
-export function realizationUnitPrompt(input: PromptInput, plan: DeckPlan, unit: RealizationUnit): string {
-  const slides = plan.slides.filter((slide) => unit.slideIds.includes(slide.id));
-  return withPreparationFooter(`Realize one planned unit in the existing standalone deck.
+export function narrativeUnitPrompt(
+  input: PromptInput,
+  plan: DeckPlan,
+  chapter: DeckChapter,
+  unit: NarrativeUnit,
+  unitIndex: number,
+): string {
+  return withPreparationFooter(`Realize one narrative unit in the existing standalone deck.
 
 Curriculum: ${input.paths.curriculumPath}
 Deck plan: ${input.paths.deckPlanPath}
 Deck: ${input.paths.htmlPath}
-Unit: ${unit.id}
-Slides: ${JSON.stringify(slides, null, 2)}
+Story: ${JSON.stringify(plan.story)}
+Chapter: ${JSON.stringify({ id: chapter.id, title: chapter.title, storyRole: chapter.storyRole, openingContext: chapter.openingContext, closingSynthesis: chapter.closingSynthesis, transitionToNext: chapter.transitionToNext })}
+Narrative unit ${unitIndex + 1} of ${chapter.narrativeUnits.length}:
+${JSON.stringify(unit, null, 2)}
 
-Edit the existing HTML and add exactly these slides in their planned order. Each slide is a section carrying data-walkthrough-slide and its exact planned id. Supply enough briefing prose and source-grounded context for the deck to stand alone. Use focused diagrams, code shapes, comparisons, or sequences when the representation intent warrants them. Keep slides scannable and place genuine secondary detail behind accessible progressive disclosure. Preserve the shell and every previously built slide.
+Continue the established presentation and realize only this narrative movement. Decide how many slides it needs and how they should be composed. Each added slide is a section carrying data-walkthrough-slide, a unique id, and data-walkthrough-chapter="${chapter.id}". Fulfill the unit's story purpose, realization points, required content, and narrative bridge. Supply enough briefing prose and source-grounded context for the deck to stand alone. Use focused diagrams, code shapes, comparisons, or sequences when the representation intent warrants them. Keep slides scannable and place genuine secondary detail behind accessible progressive disclosure. Preserve the shell and every previously built slide.
 
 Writing standard:
 ${PLAIN_LANGUAGE_STANDARD}
@@ -203,7 +226,7 @@ Curriculum: ${input.paths.curriculumPath}
 Deck plan: ${input.paths.deckPlanPath}
 Deck: ${input.paths.htmlPath}
 
-All realization units are present. Integrate the opening, chapter transitions, ending, navigation state, progress behavior, responsive layout, accessibility, and visual consistency so the file reads as one presentation. Preserve exact planned slide IDs and order. Run a deck-wide editorial pass using this writing standard:
+All narrative units are present. Integrate the opening promise, chapter transitions, ending resolution, navigation state, progress behavior, responsive layout, accessibility, and visual consistency so the file reads as one presentation. Preserve the completed narrative order and content while using your judgment to add structural slides where they improve the story. Run a deck-wide editorial pass using this writing standard:
 
 ${PLAIN_LANGUAGE_STANDARD}
 
@@ -249,7 +272,7 @@ Deck: ${input.paths.htmlPath}
 Output: ${output}
 ${previousContext}
 
-Inspect the HTML in a browser at ordinary laptop and narrow viewport sizes. Check standalone comprehension, curriculum coverage, narrative continuity, factual grounding, planned slide identity and order, true slide behavior, navigation, progressive disclosure, accessibility, overflow, and visual legibility.
+Review the curriculum, detailed deck brief, and HTML as source artifacts. Prioritize standalone comprehension, curriculum coverage, narrative continuity, factual grounding, preservation of the planned narrative units, navigation semantics, progressive disclosure, accessibility, and obvious content-density or legibility problems. Browser inspection is not required.
 
 Review the visible copy as an editor using this standard:
 ${PLAIN_LANGUAGE_STANDARD}
@@ -269,7 +292,7 @@ State what you inspected, the viewport and interaction checks you performed, and
 For round one, state that this is the initial review. On later rounds, account for every prior blocker and concern with a status of Verified, Incomplete, Not addressed, or Withdrawn, followed by current evidence and any remaining required outcome. Verify the files and browser behavior yourself rather than trusting agent summaries.
 
 ## Findings
-Report every current finding under a heading in the form "### F-NN — [Severity] Short title", where severity is Blocker, Concern, or Suggestion. Keep a finding's stable ID across rounds while it remains relevant. For each finding, include responsibility, affected area, evidence, consequence, required outcome, and how the next review can verify it. Responsibility names one or more of: Deck architecture when the curriculum or plan must change, including overloaded slides, unclear titles, or a narrative that depends on jargon; Deck implementation when the current plan can be realized with clearer copy or representations; or Human decision when only the user can choose the product, narrative, scope, or tradeoff direction. Use "No findings" when there are none. Suggestions are optional and never require another revision round.
+Report every current finding under a heading in the form "### F-NN — [Severity] Short title", where severity is Blocker, Concern, or Suggestion. Keep a finding's stable ID across rounds while it remains relevant. For each finding, include responsibility, affected area, evidence, consequence, required outcome, and how the next review can verify it. Responsibility names one or more of: Deck architecture when the curriculum or detailed brief must change, including the storyline, narrative-unit purpose, ordering, content responsibility, or realization points; Deck implementation when the current brief can be realized with clearer slides, copy, or representations; or Human decision when only the user can choose the product, narrative, scope, or tradeoff direction. Use "No findings" when there are none. Suggestions are optional and never require another revision round.
 
 ## Human decision
 Write "No human decision required" unless a genuine user decision is necessary. When one is necessary, state the decision, why agents cannot decide it safely, the available options, and their material tradeoffs.
@@ -291,7 +314,7 @@ Review: ${deckReviewPath(input.paths, round)}
 ${review}
 </deck_review>
 
-Update the deck plan where the review requires architectural changes while preserving the curriculum contract and valid slide and realization-unit accounting. Evaluate every finding on its evidence. In your response, summarize what changed, explain any finding you declined with evidence, and clearly identify any genuine decision that only the user can make.
+Update the detailed deck brief where the review requires architectural changes while preserving the curriculum contract, chapter order, narrative-unit coherence, and beat coverage. Evaluate every finding on its evidence. In your response, summarize what changed, explain any finding you declined with evidence, and clearly identify any genuine decision that only the user can make.
 
 Keep every revised title, purpose, and content responsibility aligned with this writing standard:
 ${PLAIN_LANGUAGE_STANDARD}

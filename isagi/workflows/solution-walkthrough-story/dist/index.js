@@ -177,7 +177,11 @@ var guide = {
   model: "gpt-5.6-sol",
   effort: "low"
 };
-var deckArchitect = preparer;
+var deckArchitect = {
+  harness: "claude",
+  model: "fable",
+  effort: "high"
+};
 var deckVerifier = {
   harness: "codex",
   model: "gpt-5.6-sol",
@@ -439,56 +443,81 @@ function accountCandidate(reference, inventories, accounted, label) {
   accounted.add(key);
 }
 function parseDeckPlan(value, paths, curriculum) {
-  const record = exactRecord(value, ["schemaVersion", "curriculumPath", "outputPath", "slides", "realizationUnits"], "deck plan");
-  if (record.schemaVersion !== 1) throw new Error("deck plan schemaVersion must be 1.");
+  const record = exactRecord(value, ["schemaVersion", "curriculumPath", "outputPath", "story", "chapters"], "deck plan");
+  if (record.schemaVersion !== 2) throw new Error("deck plan schemaVersion must be 2.");
   if (record.curriculumPath !== paths.curriculumPath || record.outputPath !== paths.htmlPath) throw new Error("deck plan paths must match the workflow paths.");
+  const story = exactRecord(record.story, ["title", "openingPromise", "throughline", "endingResolution"], "deck plan story");
   const beatOrder = curriculum.chapters.flatMap((chapter) => chapter.beats.map((beat) => beat.id));
-  const beatChapter = new Map(curriculum.chapters.flatMap((chapter) => chapter.beats.map((beat) => [beat.id, chapter.id])));
-  const slides = arrayValue(record.slides, "deck plan slides").map((value2, index) => {
-    const label = `deck plan slide ${index + 1}`;
-    const slide = exactRecord(value2, ["id", "chapterId", "beatIds", "title", "purpose", "contentResponsibilities", "representationIntent", "progressiveDisclosure"], label);
-    const beatIds = stringArray(slide.beatIds, `${label} beatIds`);
-    if (beatIds.length === 0) throw new Error(`${label} requires a beatId.`);
-    const chapterId = artifactKind(slide.chapterId, `${label} chapterId`);
-    for (const beatId of beatIds) {
-      if (!beatChapter.has(beatId) || beatChapter.get(beatId) !== chapterId) throw new Error(`${label} beat ${beatId} must belong to ${chapterId}.`);
-    }
+  const chapters = arrayValue(record.chapters, "deck plan chapters").map((value2, chapterIndex) => {
+    const expectedChapter = curriculum.chapters[chapterIndex];
+    const label = `deck plan chapter ${chapterIndex + 1}`;
+    const chapter = exactRecord(value2, ["id", "title", "storyRole", "openingContext", "closingSynthesis", "transitionToNext", "narrativeUnits"], label);
+    const id = artifactKind(chapter.id, `${label} id`);
+    if (!expectedChapter || id !== expectedChapter.id) throw new Error(`${label} must be ${expectedChapter?.id ?? "absent"}.`);
+    const chapterBeatOrder = expectedChapter.beats.map((beat) => beat.id);
+    let lastBeatIndex = -1;
+    const narrativeUnits = arrayValue(chapter.narrativeUnits, `${label} narrativeUnits`).map((value3, unitIndex) => {
+      const unitLabel = `${label} narrative unit ${unitIndex + 1}`;
+      const unit = exactRecord(
+        value3,
+        ["title", "storyPurpose", "beatIds", "narrativeBridge", "realizationPoints", "requiredContent", "supportingContent", "representationIntent", "progressiveDisclosure", "sourceReferences"],
+        unitLabel
+      );
+      const beatIds = stringArray(unit.beatIds, `${unitLabel} beatIds`);
+      if (beatIds.length === 0) throw new Error(`${unitLabel} requires at least one beatId.`);
+      for (const beatId of beatIds) {
+        const beatIndex = chapterBeatOrder.indexOf(beatId);
+        if (beatIndex < 0) throw new Error(`${unitLabel} beat ${beatId} must belong to ${id}.`);
+        if (beatIndex < lastBeatIndex) throw new Error(`${unitLabel} beats must follow curriculum order.`);
+        lastBeatIndex = beatIndex;
+      }
+      const realizationPoints = stringArray(unit.realizationPoints, `${unitLabel} realizationPoints`);
+      if (realizationPoints.length === 0) throw new Error(`${unitLabel} requires at least one realization point.`);
+      const requiredContent = stringArray(unit.requiredContent, `${unitLabel} requiredContent`);
+      if (requiredContent.length === 0) throw new Error(`${unitLabel} requires requiredContent.`);
+      const sourceReferences = sourceReferenceArray(unit.sourceReferences, `${unitLabel} sourceReferences`);
+      if (sourceReferences.length === 0) throw new Error(`${unitLabel} requires a source reference.`);
+      return {
+        title: nonEmptyString(unit.title, `${unitLabel} title`),
+        storyPurpose: nonEmptyString(unit.storyPurpose, `${unitLabel} storyPurpose`),
+        beatIds,
+        narrativeBridge: nonEmptyString(unit.narrativeBridge, `${unitLabel} narrativeBridge`),
+        realizationPoints,
+        requiredContent,
+        supportingContent: stringArray(unit.supportingContent, `${unitLabel} supportingContent`),
+        representationIntent: nullableString(unit.representationIntent, `${unitLabel} representationIntent`),
+        progressiveDisclosure: stringArray(unit.progressiveDisclosure, `${unitLabel} progressiveDisclosure`),
+        sourceReferences
+      };
+    });
+    if (narrativeUnits.length === 0) throw new Error(`${label} requires at least one narrative unit.`);
     return {
-      id: kebabString(slide.id, `${label} id`),
-      chapterId,
-      beatIds,
-      title: nonEmptyString(slide.title, `${label} title`),
-      purpose: nonEmptyString(slide.purpose, `${label} purpose`),
-      contentResponsibilities: stringArray(slide.contentResponsibilities, `${label} contentResponsibilities`),
-      representationIntent: nullableString(slide.representationIntent, `${label} representationIntent`),
-      progressiveDisclosure: stringArray(slide.progressiveDisclosure, `${label} progressiveDisclosure`)
+      id,
+      title: nonEmptyString(chapter.title, `${label} title`),
+      storyRole: nonEmptyString(chapter.storyRole, `${label} storyRole`),
+      openingContext: nonEmptyString(chapter.openingContext, `${label} openingContext`),
+      closingSynthesis: nonEmptyString(chapter.closingSynthesis, `${label} closingSynthesis`),
+      transitionToNext: nonEmptyString(chapter.transitionToNext, `${label} transitionToNext`),
+      narrativeUnits
     };
   });
-  if (slides.length === 0) throw new Error("deck plan requires at least one slide.");
-  uniqueValues(slides.map((slide) => slide.id), "deck plan slide IDs");
-  const mappedBeats = new Set(slides.flatMap((slide) => slide.beatIds));
-  if (!sameValues(beatOrder, beatOrder.filter((beatId) => mappedBeats.has(beatId))) || mappedBeats.size !== beatOrder.length) {
+  if (chapters.length !== curriculum.chapters.length) throw new Error("deck plan requires exactly the curriculum chapters.");
+  const mappedBeats = new Set(chapters.flatMap((chapter) => chapter.narrativeUnits.flatMap((unit) => unit.beatIds)));
+  if (mappedBeats.size !== beatOrder.length || beatOrder.some((beatId) => !mappedBeats.has(beatId))) {
     throw new Error("deck plan must map every curriculum beat.");
   }
-  let lastBeatIndex = -1;
-  for (const slide of slides) {
-    const firstIndex = beatOrder.indexOf(slide.beatIds[0]);
-    if (firstIndex < lastBeatIndex) throw new Error("deck plan slides must follow curriculum order.");
-    lastBeatIndex = firstIndex;
-  }
-  const units = arrayValue(record.realizationUnits, "deck plan realizationUnits").map((value2, index) => {
-    const label = `deck plan realization unit ${index + 1}`;
-    const unit = exactRecord(value2, ["id", "slideIds"], label);
-    const slideIds = stringArray(unit.slideIds, `${label} slideIds`);
-    if (slideIds.length === 0) throw new Error(`${label} requires a slideId.`);
-    return { id: kebabString(unit.id, `${label} id`), slideIds };
-  });
-  if (units.length === 0) throw new Error("deck plan requires at least one realization unit.");
-  uniqueValues(units.map((unit) => unit.id), "deck plan realization unit IDs");
-  const plannedSlideIds = slides.map((slide) => slide.id);
-  const unitSlideIds = units.flatMap((unit) => unit.slideIds);
-  if (!sameValues(unitSlideIds, plannedSlideIds)) throw new Error("realization units must assign every slide exactly once in deck order.");
-  return { schemaVersion: 1, curriculumPath: paths.curriculumPath, outputPath: paths.htmlPath, slides, realizationUnits: units };
+  return {
+    schemaVersion: 2,
+    curriculumPath: paths.curriculumPath,
+    outputPath: paths.htmlPath,
+    story: {
+      title: nonEmptyString(story.title, "deck plan story title"),
+      openingPromise: nonEmptyString(story.openingPromise, "deck plan story openingPromise"),
+      throughline: nonEmptyString(story.throughline, "deck plan story throughline"),
+      endingResolution: nonEmptyString(story.endingResolution, "deck plan story endingResolution")
+    },
+    chapters
+  };
 }
 function parseCandidateReference(value, label) {
   const record = exactRecord(value, ["artifact", "candidateId"], label);
@@ -518,9 +547,6 @@ function kebabString(value, label) {
   const result = nonEmptyString(value, label);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(result)) throw new Error(`${label} must be kebab-case ASCII.`);
   return result;
-}
-function uniqueValues(values, label) {
-  if (new Set(values).size !== values.length) throw new Error(`${label} must be unique.`);
 }
 function parseSourceReference(value, label) {
   const record = exactRecord(value, ["heading", "locator"], label);
@@ -582,9 +608,6 @@ function artifactKind(value, label) {
   }
   throw new Error(`${label} must be one of: ${artifactKinds.join(", ")}.`);
 }
-function sameValues(left, right) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
 function errorText(value) {
   return value instanceof Error ? value.message : String(value);
 }
@@ -603,7 +626,7 @@ Return exactly one JSON object with exactly this field:
 
 Apply this precedence:
 1. Return "human-decision" when the review explicitly identifies a product, narrative, scope, or tradeoff decision that only the user can make. An explicit human decision takes precedence over every other outcome.
-2. Return "architect-and-builder" when any required finding needs the curriculum or deck plan changed, including slide purpose, ordering, content responsibility, narrative structure, or realization boundaries. This also wins when architect and builder work are both required.
+2. Return "architect-and-builder" when any required finding needs the curriculum or detailed deck brief changed, including the storyline, chapter or narrative-unit order, content responsibility, realization points, or narrative-unit boundaries. This also wins when architect and builder work are both required.
 3. Return "builder" when required findings remain but the current curriculum and deck plan are sufficient, so the HTML presentation can be corrected directly.
 4. Return "complete" when no required findings remain. Suggestions alone do not require another revision round.
 
@@ -763,41 +786,56 @@ Write exactly one JSON object with this shape:
 Create exactly three chapters in this order with IDs current-state, architecture, program-design. Use sequential cs-NN, ar-NN, and pd-NN beat IDs. Write only ${input.paths.curriculumPath}.`);
 }
 function deckArchitecturePrompt(input) {
-  return withPreparationFooter(`Architect one standalone slide presentation from the finalized curriculum.
+  return withPreparationFooter(`Create the detailed narrative brief for one standalone slide presentation from the finalized curriculum.
 
 Story: ${input.story}
 Curriculum: ${input.paths.curriculumPath}
 Output deck: ${input.paths.htmlPath}
 Output plan: ${input.paths.deckPlanPath}
 
-Design a unified deck that can be understood without an agent. It must feel like slides rather than a scrolling document: each frame has a clear purpose, concise briefing prose, and the smallest representation that makes its relationship understandable. Preserve the curriculum's narrative and content obligations. Decide the number of slides creatively; a beat may use one or several slides, and a slide may combine closely connected beats from the same chapter.
+Own the storytelling before construction begins. Define the opening promise, the throughline, the ending resolution, each chapter's role and transitions, and the ordered narrative units that carry the audience from one understanding to the next. Preserve the curriculum's narrative and content obligations. A narrative unit is one focused construction turn and one coherent movement in the story, not a predetermined slide. The builder may realize it with one or several slides.
 
 Writing standard:
 ${PLAIN_LANGUAGE_STANDARD}
 
-Use the Show Me skill to choose representations that carry real explanatory work. ${representationGuidance(input.audienceProfile.technicalDepth)} Keep each representation focused on the slide's comprehension objective and place it beside the short explanation it supports. When prose is clearer than a visual, use prose.
+Use the Show Me skill to choose representations that carry real explanatory work. ${representationGuidance(input.audienceProfile.technicalDepth)} Keep each representation focused on the narrative unit's realization points and place it beside the short explanation it supports. When prose is clearer than a visual, use prose.
 
-Group contiguous slides into coherent realization units for incremental construction. Units are build boundaries, not visible sections, and their count should follow the design rather than a quota.
+Give every narrative unit enough detail that building it is the act of making the presentation rather than discovering the story. Its realizationPoints are the ordered insights the audience should reach together. Keep insights in one unit when they form one coherent chain; separate them when they require different narrative movements. Let the number of narrative units follow the story rather than a quota.
 
 Write exactly one JSON object:
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "curriculumPath": ${JSON.stringify(input.paths.curriculumPath)},
   "outputPath": ${JSON.stringify(input.paths.htmlPath)},
-  "slides": [{
-    "id": "descriptive-kebab-id",
-    "chapterId": "current-state",
-    "beatIds": ["cs-01"],
-    "title": "Visible slide title",
-    "purpose": "What this slide accomplishes",
-    "contentResponsibilities": ["Required visible or disclosed content"],
-    "representationIntent": "Optional visual relationship",
-    "progressiveDisclosure": []
-  }],
-  "realizationUnits": [{ "id": "coherent-unit", "slideIds": ["descriptive-kebab-id"] }]
+  "story": {
+    "title": "Presentation title",
+    "openingPromise": "What the audience is about to understand",
+    "throughline": "The idea connecting the complete presentation",
+    "endingResolution": "What the audience should understand when the story closes"
+  },
+  "chapters": [{
+    "id": "current-state",
+    "title": "Chapter title",
+    "storyRole": "What this chapter contributes to the whole story",
+    "openingContext": "Where the audience is when the chapter begins",
+    "closingSynthesis": "What should be established when the chapter ends",
+    "transitionToNext": "How this understanding leads into the next chapter or ending",
+    "narrativeUnits": [{
+      "title": "Working title for this narrative movement",
+      "storyPurpose": "Why this movement exists in the story",
+      "beatIds": ["cs-01"],
+      "narrativeBridge": "How it follows the previous movement and prepares the next",
+      "realizationPoints": ["The insight the audience should reach"],
+      "requiredContent": ["Content that must be conveyed"],
+      "supportingContent": ["Useful secondary detail"],
+      "representationIntent": "Optional visual relationship",
+      "progressiveDisclosure": [],
+      "sourceReferences": [{ "heading": "Source heading", "locator": "Retrievable locator" }]
+    }]
+  }]
 }
 
-Every beat must map to at least one slide. Assign every slide exactly once to units in deck order. Write only ${input.paths.deckPlanPath}.`);
+Create exactly three chapters in curriculum order. Every beat must map to at least one narrative unit in its chapter, and the units must follow curriculum order. Write only ${input.paths.deckPlanPath}.`);
 }
 function deckShellPrompt(input) {
   return withPreparationFooter(`Create the reusable shell for the planned standalone slide deck.
@@ -810,17 +848,18 @@ Create one self-contained HTML file with embedded CSS and JavaScript. Establish 
 
 Write only ${input.paths.htmlPath}.`);
 }
-function realizationUnitPrompt(input, plan, unit) {
-  const slides = plan.slides.filter((slide) => unit.slideIds.includes(slide.id));
-  return withPreparationFooter(`Realize one planned unit in the existing standalone deck.
+function narrativeUnitPrompt(input, plan, chapter, unit, unitIndex) {
+  return withPreparationFooter(`Realize one narrative unit in the existing standalone deck.
 
 Curriculum: ${input.paths.curriculumPath}
 Deck plan: ${input.paths.deckPlanPath}
 Deck: ${input.paths.htmlPath}
-Unit: ${unit.id}
-Slides: ${JSON.stringify(slides, null, 2)}
+Story: ${JSON.stringify(plan.story)}
+Chapter: ${JSON.stringify({ id: chapter.id, title: chapter.title, storyRole: chapter.storyRole, openingContext: chapter.openingContext, closingSynthesis: chapter.closingSynthesis, transitionToNext: chapter.transitionToNext })}
+Narrative unit ${unitIndex + 1} of ${chapter.narrativeUnits.length}:
+${JSON.stringify(unit, null, 2)}
 
-Edit the existing HTML and add exactly these slides in their planned order. Each slide is a section carrying data-walkthrough-slide and its exact planned id. Supply enough briefing prose and source-grounded context for the deck to stand alone. Use focused diagrams, code shapes, comparisons, or sequences when the representation intent warrants them. Keep slides scannable and place genuine secondary detail behind accessible progressive disclosure. Preserve the shell and every previously built slide.
+Continue the established presentation and realize only this narrative movement. Decide how many slides it needs and how they should be composed. Each added slide is a section carrying data-walkthrough-slide, a unique id, and data-walkthrough-chapter="${chapter.id}". Fulfill the unit's story purpose, realization points, required content, and narrative bridge. Supply enough briefing prose and source-grounded context for the deck to stand alone. Use focused diagrams, code shapes, comparisons, or sequences when the representation intent warrants them. Keep slides scannable and place genuine secondary detail behind accessible progressive disclosure. Preserve the shell and every previously built slide.
 
 Writing standard:
 ${PLAIN_LANGUAGE_STANDARD}
@@ -836,7 +875,7 @@ Curriculum: ${input.paths.curriculumPath}
 Deck plan: ${input.paths.deckPlanPath}
 Deck: ${input.paths.htmlPath}
 
-All realization units are present. Integrate the opening, chapter transitions, ending, navigation state, progress behavior, responsive layout, accessibility, and visual consistency so the file reads as one presentation. Preserve exact planned slide IDs and order. Run a deck-wide editorial pass using this writing standard:
+All narrative units are present. Integrate the opening promise, chapter transitions, ending resolution, navigation state, progress behavior, responsive layout, accessibility, and visual consistency so the file reads as one presentation. Preserve the completed narrative order and content while using your judgment to add structural slides where they improve the story. Run a deck-wide editorial pass using this writing standard:
 
 ${PLAIN_LANGUAGE_STANDARD}
 
@@ -871,7 +910,7 @@ Deck: ${input.paths.htmlPath}
 Output: ${output}
 ${previousContext}
 
-Inspect the HTML in a browser at ordinary laptop and narrow viewport sizes. Check standalone comprehension, curriculum coverage, narrative continuity, factual grounding, planned slide identity and order, true slide behavior, navigation, progressive disclosure, accessibility, overflow, and visual legibility.
+Review the curriculum, detailed deck brief, and HTML as source artifacts. Prioritize standalone comprehension, curriculum coverage, narrative continuity, factual grounding, preservation of the planned narrative units, navigation semantics, progressive disclosure, accessibility, and obvious content-density or legibility problems. Browser inspection is not required.
 
 Review the visible copy as an editor using this standard:
 ${PLAIN_LANGUAGE_STANDARD}
@@ -891,7 +930,7 @@ State what you inspected, the viewport and interaction checks you performed, and
 For round one, state that this is the initial review. On later rounds, account for every prior blocker and concern with a status of Verified, Incomplete, Not addressed, or Withdrawn, followed by current evidence and any remaining required outcome. Verify the files and browser behavior yourself rather than trusting agent summaries.
 
 ## Findings
-Report every current finding under a heading in the form "### F-NN \u2014 [Severity] Short title", where severity is Blocker, Concern, or Suggestion. Keep a finding's stable ID across rounds while it remains relevant. For each finding, include responsibility, affected area, evidence, consequence, required outcome, and how the next review can verify it. Responsibility names one or more of: Deck architecture when the curriculum or plan must change, including overloaded slides, unclear titles, or a narrative that depends on jargon; Deck implementation when the current plan can be realized with clearer copy or representations; or Human decision when only the user can choose the product, narrative, scope, or tradeoff direction. Use "No findings" when there are none. Suggestions are optional and never require another revision round.
+Report every current finding under a heading in the form "### F-NN \u2014 [Severity] Short title", where severity is Blocker, Concern, or Suggestion. Keep a finding's stable ID across rounds while it remains relevant. For each finding, include responsibility, affected area, evidence, consequence, required outcome, and how the next review can verify it. Responsibility names one or more of: Deck architecture when the curriculum or detailed brief must change, including the storyline, narrative-unit purpose, ordering, content responsibility, or realization points; Deck implementation when the current brief can be realized with clearer slides, copy, or representations; or Human decision when only the user can choose the product, narrative, scope, or tradeoff direction. Use "No findings" when there are none. Suggestions are optional and never require another revision round.
 
 ## Human decision
 Write "No human decision required" unless a genuine user decision is necessary. When one is necessary, state the decision, why agents cannot decide it safely, the available options, and their material tradeoffs.
@@ -912,7 +951,7 @@ Review: ${deckReviewPath(input.paths, round)}
 ${review}
 </deck_review>
 
-Update the deck plan where the review requires architectural changes while preserving the curriculum contract and valid slide and realization-unit accounting. Evaluate every finding on its evidence. In your response, summarize what changed, explain any finding you declined with evidence, and clearly identify any genuine decision that only the user can make.
+Update the detailed deck brief where the review requires architectural changes while preserving the curriculum contract, chapter order, narrative-unit coherence, and beat coverage. Evaluate every finding on its evidence. In your response, summarize what changed, explain any finding you declined with evidence, and clearly identify any genuine decision that only the user can make.
 
 Keep every revised title, purpose, and content responsibility aligned with this writing standard:
 ${PLAIN_LANGUAGE_STANDARD}
@@ -1124,32 +1163,49 @@ async function step(ctx, state, incoming) {
       if (error) return failed(ctx, "Deck shell creation failed. Build panes remain open.", error);
       try {
         assertExpectedFile(state.repositoryPath, state.paths.htmlPath, "walkthrough deck");
-        return i(withStage(state, { ...state.stage, kind: "send_realization_unit", unitIndex: 0 }));
+        await ctx.closePane(state.stage.builder.paneId);
+        return i(withStage(state, { kind: "start_chapter_build", curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, chapterIndex: 0 }));
       } catch (error2) {
         return failed(ctx, "The deck shell is missing. Build panes remain open.", errorText2(error2));
       }
     }
-    case "send_realization_unit": {
-      const unit = state.stage.plan.realizationUnits[state.stage.unitIndex];
-      if (!unit) return i(withStage(state, { kind: "send_final_assembly", curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, builder: state.stage.builder }));
-      await ctx.setUiFeedback({ phase: "Building walkthrough slides", message: `Realization unit ${state.stage.unitIndex + 1} of ${state.stage.plan.realizationUnits.length}: ${unit.id}.` });
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, modifiers: SHOW_ME_MODIFIER, prompt: realizationUnitPrompt(input, state.stage.plan, unit) });
-      return a(withStage(state, { ...state.stage, kind: "await_realization_unit" }), o.agentTurn(sent));
+    case "start_chapter_build": {
+      const chapter = deckChapterAt(state.stage.plan, state.stage.chapterIndex);
+      const unitIndex = 0;
+      const unit = narrativeUnitAt(chapter, unitIndex);
+      await ctx.setUiFeedback({ phase: `Building ${chapter.title}`, message: `Narrative unit 1 of ${chapter.narrativeUnits.length}: ${unit.title}.` });
+      const builder = visible(await ctx.spawnAgentSession({ ...deckBuilder, modifiers: SHOW_ME_MODIFIER, prompt: narrativeUnitPrompt(input, state.stage.plan, chapter, unit, unitIndex) }));
+      return a(withStage(state, { ...state.stage, kind: "await_narrative_unit", builder, unitIndex }), o.agentTurn(builder));
     }
-    case "await_realization_unit": {
-      const error = turnError(incoming, "Deck realization", state.stage.builder);
-      if (error) return failed(ctx, "Deck realization failed. Build panes remain open.", error);
+    case "send_narrative_unit": {
+      const chapter = deckChapterAt(state.stage.plan, state.stage.chapterIndex);
+      const unit = narrativeUnitAt(chapter, state.stage.unitIndex);
+      await ctx.setUiFeedback({ phase: `Building ${chapter.title}`, message: `Narrative unit ${state.stage.unitIndex + 1} of ${chapter.narrativeUnits.length}: ${unit.title}.` });
+      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, modifiers: SHOW_ME_MODIFIER, prompt: narrativeUnitPrompt(input, state.stage.plan, chapter, unit, state.stage.unitIndex) });
+      return a(withStage(state, { ...state.stage, kind: "await_narrative_unit" }), o.agentTurn(sent));
+    }
+    case "await_narrative_unit": {
+      const error = turnError(incoming, "Narrative-unit construction", state.stage.builder);
+      if (error) return failed(ctx, "Narrative-unit construction failed. Build panes remain open.", error);
       try {
         assertExpectedFile(state.repositoryPath, state.paths.htmlPath, "walkthrough deck");
-        return i(withStage(state, { ...state.stage, kind: "send_realization_unit", unitIndex: state.stage.unitIndex + 1 }));
+        const chapter = deckChapterAt(state.stage.plan, state.stage.chapterIndex);
+        if (state.stage.unitIndex + 1 < chapter.narrativeUnits.length) {
+          return i(withStage(state, { ...state.stage, kind: "send_narrative_unit", unitIndex: state.stage.unitIndex + 1 }));
+        }
+        await ctx.closePane(state.stage.builder.paneId);
+        if (state.stage.chapterIndex + 1 < state.stage.plan.chapters.length) {
+          return i(withStage(state, { kind: "start_chapter_build", curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, chapterIndex: state.stage.chapterIndex + 1 }));
+        }
+        return i(withStage(state, { kind: "start_final_assembly", curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect }));
       } catch (error2) {
-        return failed(ctx, "The walkthrough deck is missing after realization. Build panes remain open.", errorText2(error2));
+        return failed(ctx, "The walkthrough deck is missing after narrative-unit construction. Build panes remain open.", errorText2(error2));
       }
     }
-    case "send_final_assembly": {
+    case "start_final_assembly": {
       await ctx.setUiFeedback({ phase: "Assembling the unified walkthrough deck" });
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, prompt: finalAssemblyPrompt(input) });
-      return a(withStage(state, { ...state.stage, kind: "await_final_assembly" }), o.agentTurn(sent));
+      const builder = visible(await ctx.spawnAgentSession({ ...deckBuilder, prompt: finalAssemblyPrompt(input) }));
+      return a(withStage(state, { ...state.stage, kind: "await_final_assembly", builder }), o.agentTurn(builder));
     }
     case "await_final_assembly": {
       const error = turnError(incoming, "Final deck assembly", state.stage.builder);
@@ -1271,7 +1327,7 @@ ${resolution}`;
     case "await_presentation_continue": {
       if (!s.isUserContinue(incoming)) return failed(ctx, "Presentation review could not finish.", "Expected user Continue.");
       await ctx.closePane(state.stage.guide.paneId);
-      return l({ outcome: "presentation-review-completed", curriculumPath: state.paths.curriculumPath, deckPlanPath: state.paths.deckPlanPath, presentationPath: state.paths.htmlPath, slideCount: state.stage.plan.slides.length });
+      return l({ outcome: "presentation-review-completed", curriculumPath: state.paths.curriculumPath, deckPlanPath: state.paths.deckPlanPath, presentationPath: state.paths.htmlPath, ...deckPlanMetrics(state.stage.plan) });
     }
     default:
       return assertNever(state.stage);
@@ -1334,6 +1390,24 @@ function beatAt(chapter, index) {
   const beat = chapter.beats[index];
   if (!beat) throw new Error(`No curriculum beat at index ${index} in ${chapter.id}.`);
   return beat;
+}
+function deckChapterAt(plan, index) {
+  const chapter = plan.chapters[index];
+  if (!chapter) throw new Error(`No deck chapter at index ${index}.`);
+  return chapter;
+}
+function narrativeUnitAt(chapter, index) {
+  const unit = chapter.narrativeUnits[index];
+  if (!unit) throw new Error(`No narrative unit at index ${index} in ${chapter.id}.`);
+  return unit;
+}
+function deckPlanMetrics(plan) {
+  const legacy = plan;
+  if (legacy.slides) return { slideCount: legacy.slides.length };
+  return {
+    chapterCount: plan.chapters.length,
+    narrativeUnitCount: plan.chapters.reduce((count, chapter) => count + chapter.narrativeUnits.length, 0)
+  };
 }
 function beatCount(curriculum) {
   return curriculum.chapters.reduce((count, chapter) => count + chapter.beats.length, 0);

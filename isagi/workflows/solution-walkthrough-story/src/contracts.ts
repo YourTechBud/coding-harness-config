@@ -310,56 +310,81 @@ function accountCandidate(
 }
 
 function parseDeckPlan(value: unknown, paths: WalkthroughPaths, curriculum: Curriculum): DeckPlan {
-  const record = exactRecord(value, ['schemaVersion', 'curriculumPath', 'outputPath', 'slides', 'realizationUnits'], 'deck plan');
-  if (record.schemaVersion !== 1) throw new Error('deck plan schemaVersion must be 1.');
+  const record = exactRecord(value, ['schemaVersion', 'curriculumPath', 'outputPath', 'story', 'chapters'], 'deck plan');
+  if (record.schemaVersion !== 2) throw new Error('deck plan schemaVersion must be 2.');
   if (record.curriculumPath !== paths.curriculumPath || record.outputPath !== paths.htmlPath) throw new Error('deck plan paths must match the workflow paths.');
+  const story = exactRecord(record.story, ['title', 'openingPromise', 'throughline', 'endingResolution'], 'deck plan story');
   const beatOrder = curriculum.chapters.flatMap((chapter) => chapter.beats.map((beat) => beat.id));
-  const beatChapter = new Map(curriculum.chapters.flatMap((chapter) => chapter.beats.map((beat) => [beat.id, chapter.id] as const)));
-  const slides = arrayValue(record.slides, 'deck plan slides').map((value, index) => {
-    const label = `deck plan slide ${index + 1}`;
-    const slide = exactRecord(value, ['id', 'chapterId', 'beatIds', 'title', 'purpose', 'contentResponsibilities', 'representationIntent', 'progressiveDisclosure'], label);
-    const beatIds = stringArray(slide.beatIds, `${label} beatIds`);
-    if (beatIds.length === 0) throw new Error(`${label} requires a beatId.`);
-    const chapterId = artifactKind(slide.chapterId, `${label} chapterId`);
-    for (const beatId of beatIds) {
-      if (!beatChapter.has(beatId) || beatChapter.get(beatId) !== chapterId) throw new Error(`${label} beat ${beatId} must belong to ${chapterId}.`);
-    }
+  const chapters = arrayValue(record.chapters, 'deck plan chapters').map((value, chapterIndex) => {
+    const expectedChapter = curriculum.chapters[chapterIndex];
+    const label = `deck plan chapter ${chapterIndex + 1}`;
+    const chapter = exactRecord(value, ['id', 'title', 'storyRole', 'openingContext', 'closingSynthesis', 'transitionToNext', 'narrativeUnits'], label);
+    const id = artifactKind(chapter.id, `${label} id`);
+    if (!expectedChapter || id !== expectedChapter.id) throw new Error(`${label} must be ${expectedChapter?.id ?? 'absent'}.`);
+    const chapterBeatOrder = expectedChapter.beats.map((beat) => beat.id);
+    let lastBeatIndex = -1;
+    const narrativeUnits = arrayValue(chapter.narrativeUnits, `${label} narrativeUnits`).map((value, unitIndex) => {
+      const unitLabel = `${label} narrative unit ${unitIndex + 1}`;
+      const unit = exactRecord(
+        value,
+        ['title', 'storyPurpose', 'beatIds', 'narrativeBridge', 'realizationPoints', 'requiredContent', 'supportingContent', 'representationIntent', 'progressiveDisclosure', 'sourceReferences'],
+        unitLabel,
+      );
+      const beatIds = stringArray(unit.beatIds, `${unitLabel} beatIds`);
+      if (beatIds.length === 0) throw new Error(`${unitLabel} requires at least one beatId.`);
+      for (const beatId of beatIds) {
+        const beatIndex = chapterBeatOrder.indexOf(beatId);
+        if (beatIndex < 0) throw new Error(`${unitLabel} beat ${beatId} must belong to ${id}.`);
+        if (beatIndex < lastBeatIndex) throw new Error(`${unitLabel} beats must follow curriculum order.`);
+        lastBeatIndex = beatIndex;
+      }
+      const realizationPoints = stringArray(unit.realizationPoints, `${unitLabel} realizationPoints`);
+      if (realizationPoints.length === 0) throw new Error(`${unitLabel} requires at least one realization point.`);
+      const requiredContent = stringArray(unit.requiredContent, `${unitLabel} requiredContent`);
+      if (requiredContent.length === 0) throw new Error(`${unitLabel} requires requiredContent.`);
+      const sourceReferences = sourceReferenceArray(unit.sourceReferences, `${unitLabel} sourceReferences`);
+      if (sourceReferences.length === 0) throw new Error(`${unitLabel} requires a source reference.`);
+      return {
+        title: nonEmptyString(unit.title, `${unitLabel} title`),
+        storyPurpose: nonEmptyString(unit.storyPurpose, `${unitLabel} storyPurpose`),
+        beatIds,
+        narrativeBridge: nonEmptyString(unit.narrativeBridge, `${unitLabel} narrativeBridge`),
+        realizationPoints,
+        requiredContent,
+        supportingContent: stringArray(unit.supportingContent, `${unitLabel} supportingContent`),
+        representationIntent: nullableString(unit.representationIntent, `${unitLabel} representationIntent`),
+        progressiveDisclosure: stringArray(unit.progressiveDisclosure, `${unitLabel} progressiveDisclosure`),
+        sourceReferences,
+      };
+    });
+    if (narrativeUnits.length === 0) throw new Error(`${label} requires at least one narrative unit.`);
     return {
-      id: kebabString(slide.id, `${label} id`),
-      chapterId,
-      beatIds,
-      title: nonEmptyString(slide.title, `${label} title`),
-      purpose: nonEmptyString(slide.purpose, `${label} purpose`),
-      contentResponsibilities: stringArray(slide.contentResponsibilities, `${label} contentResponsibilities`),
-      representationIntent: nullableString(slide.representationIntent, `${label} representationIntent`),
-      progressiveDisclosure: stringArray(slide.progressiveDisclosure, `${label} progressiveDisclosure`),
+      id,
+      title: nonEmptyString(chapter.title, `${label} title`),
+      storyRole: nonEmptyString(chapter.storyRole, `${label} storyRole`),
+      openingContext: nonEmptyString(chapter.openingContext, `${label} openingContext`),
+      closingSynthesis: nonEmptyString(chapter.closingSynthesis, `${label} closingSynthesis`),
+      transitionToNext: nonEmptyString(chapter.transitionToNext, `${label} transitionToNext`),
+      narrativeUnits,
     };
   });
-  if (slides.length === 0) throw new Error('deck plan requires at least one slide.');
-  uniqueValues(slides.map((slide) => slide.id), 'deck plan slide IDs');
-  const mappedBeats = new Set(slides.flatMap((slide) => slide.beatIds));
-  if (!sameValues(beatOrder, beatOrder.filter((beatId) => mappedBeats.has(beatId))) || mappedBeats.size !== beatOrder.length) {
+  if (chapters.length !== curriculum.chapters.length) throw new Error('deck plan requires exactly the curriculum chapters.');
+  const mappedBeats = new Set(chapters.flatMap((chapter) => chapter.narrativeUnits.flatMap((unit) => unit.beatIds)));
+  if (mappedBeats.size !== beatOrder.length || beatOrder.some((beatId) => !mappedBeats.has(beatId))) {
     throw new Error('deck plan must map every curriculum beat.');
   }
-  let lastBeatIndex = -1;
-  for (const slide of slides) {
-    const firstIndex = beatOrder.indexOf(slide.beatIds[0]!);
-    if (firstIndex < lastBeatIndex) throw new Error('deck plan slides must follow curriculum order.');
-    lastBeatIndex = firstIndex;
-  }
-  const units = arrayValue(record.realizationUnits, 'deck plan realizationUnits').map((value, index) => {
-    const label = `deck plan realization unit ${index + 1}`;
-    const unit = exactRecord(value, ['id', 'slideIds'], label);
-    const slideIds = stringArray(unit.slideIds, `${label} slideIds`);
-    if (slideIds.length === 0) throw new Error(`${label} requires a slideId.`);
-    return { id: kebabString(unit.id, `${label} id`), slideIds };
-  });
-  if (units.length === 0) throw new Error('deck plan requires at least one realization unit.');
-  uniqueValues(units.map((unit) => unit.id), 'deck plan realization unit IDs');
-  const plannedSlideIds = slides.map((slide) => slide.id);
-  const unitSlideIds = units.flatMap((unit) => unit.slideIds);
-  if (!sameValues(unitSlideIds, plannedSlideIds)) throw new Error('realization units must assign every slide exactly once in deck order.');
-  return { schemaVersion: 1, curriculumPath: paths.curriculumPath, outputPath: paths.htmlPath, slides, realizationUnits: units };
+  return {
+    schemaVersion: 2,
+    curriculumPath: paths.curriculumPath,
+    outputPath: paths.htmlPath,
+    story: {
+      title: nonEmptyString(story.title, 'deck plan story title'),
+      openingPromise: nonEmptyString(story.openingPromise, 'deck plan story openingPromise'),
+      throughline: nonEmptyString(story.throughline, 'deck plan story throughline'),
+      endingResolution: nonEmptyString(story.endingResolution, 'deck plan story endingResolution'),
+    },
+    chapters,
+  };
 }
 
 function parseCandidateReference(value: unknown, label: string) {
