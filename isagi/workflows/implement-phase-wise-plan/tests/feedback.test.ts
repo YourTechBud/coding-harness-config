@@ -43,11 +43,13 @@ test('mock checkpoint explains the human-owned work and conditional commit hando
     phase: 2,
     phaseCount: 4,
     phaseSlug: 'phase-02-dashboard-mock',
+    autoReview: true,
     autoCommit: true,
   });
   assert.match(committed.message ?? '', /UI-heavy pane/);
   assert.match(committed.message ?? '', /visual iteration/);
   assert.match(committed.message ?? '', /decision-log handoff/);
+  assert.match(committed.message ?? '', /run the engineering review after Continue/);
   assert.match(committed.message ?? '', /Leave the changes uncommitted/);
 
   const uncommitted = renderWorkflowStatus({
@@ -55,8 +57,11 @@ test('mock checkpoint explains the human-owned work and conditional commit hando
     phase: 2,
     phaseCount: 4,
     phaseSlug: 'phase-02-dashboard-mock',
+    autoReview: false,
     autoCommit: false,
   });
+  assert.match(uncommitted.message ?? '', /Run the review before continuing/);
+  assert.doesNotMatch(uncommitted.message ?? '', /run the engineering review after Continue/);
   assert.doesNotMatch(uncommitted.message ?? '', /Leave the changes uncommitted/);
 });
 

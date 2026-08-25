@@ -23,6 +23,7 @@ export type WorkflowStatus =
       readonly phase: number;
       readonly phaseCount: number;
       readonly phaseSlug: string;
+      readonly autoReview: boolean;
       readonly autoCommit: boolean;
     }
   | { readonly kind: 'commit'; readonly phase: number; readonly phaseCount: number }
@@ -107,13 +108,16 @@ export function renderWorkflowStatus(status: WorkflowStatus): WorkflowUiFeedback
         message: `Phase ${status.phase} of ${status.phaseCount} is awaiting required human verification. Complete the manual checks described by the implementer, then Continue to finish the phase.`,
       };
     case 'mock-human-completion': {
+      const reviewInstruction = status.autoReview
+        ? ' The workflow will run the engineering review after Continue.'
+        : ' Run the review before continuing.';
       const commitInstruction = status.autoCommit
         ? ' Leave the changes uncommitted so the workflow can create the phase commit.'
         : '';
       return {
         kind: 'info',
         phase: 'mock-human-completion',
-        message: `Mock-UI phase ${status.phase} of ${status.phaseCount} (${status.phaseSlug}) is ready in the UI-heavy pane. Drive the implementation and visual iteration, run the review, and complete the decision-log handoff.${commitInstruction} Continue when the phase is complete.`,
+        message: `Mock-UI phase ${status.phase} of ${status.phaseCount} (${status.phaseSlug}) is ready in the UI-heavy pane. Drive the implementation and visual iteration, and complete the decision-log handoff.${reviewInstruction}${commitInstruction} Continue when the phase is complete.`,
       };
     }
     case 'commit':

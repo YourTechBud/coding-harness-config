@@ -314,11 +314,12 @@ Resolve it in the planner pane, then Continue. The latest planner response will 
         message: `Phase ${status.phase} of ${status.phaseCount} is awaiting required human verification. Complete the manual checks described by the implementer, then Continue to finish the phase.`
       };
     case "mock-human-completion": {
+      const reviewInstruction = status.autoReview ? " The workflow will run the engineering review after Continue." : " Run the review before continuing.";
       const commitInstruction = status.autoCommit ? " Leave the changes uncommitted so the workflow can create the phase commit." : "";
       return {
         kind: "info",
         phase: "mock-human-completion",
-        message: `Mock-UI phase ${status.phase} of ${status.phaseCount} (${status.phaseSlug}) is ready in the UI-heavy pane. Drive the implementation and visual iteration, run the review, and complete the decision-log handoff.${commitInstruction} Continue when the phase is complete.`
+        message: `Mock-UI phase ${status.phase} of ${status.phaseCount} (${status.phaseSlug}) is ready in the UI-heavy pane. Drive the implementation and visual iteration, and complete the decision-log handoff.${reviewInstruction}${commitInstruction} Continue when the phase is complete.`
       };
     }
     case "commit":
@@ -1223,6 +1224,29 @@ var index_default = r({
           "info",
           `Human completion confirmed for phase ${activePhase(activeState).number}.`
         );
+        if (activePhase(activeState).type === "mock-ui") {
+          return completePhase(
+            ctx,
+            activeState,
+            state.stage.implementer,
+            false
+          );
+        }
+        return continueAfterHumanApproval(activeState, state.stage.implementer);
+      }
+      case "await-mock-human-approval": {
+        const activeState = requireActiveState(state);
+        if (!s.isUserContinue(event)) {
+          return failWorkflow(
+            ctx,
+            `Phase ${activePhase(activeState).number} human approval could not be resumed`,
+            "Mock phase human approval resumed with an unexpected event."
+          );
+        }
+        await ctx.log(
+          "info",
+          `Human approval confirmed for mock phase ${activePhase(activeState).number}.`
+        );
         return continueAfterHumanApproval(activeState, state.stage.implementer);
       }
       case "start-commit": {
@@ -1466,6 +1490,23 @@ async function completePhase(ctx, state, implementer, requiresHumanVerification)
   );
 }
 async function continueAfterAutoReview(ctx, state, implementer, requiresHumanVerification) {
+  if (activePhase(state).type === "mock-ui") {
+    if (state.options.humanInTheLoop) {
+      await setWorkflowStatus(ctx, {
+        kind: "phase-review",
+        phase: activePhase(state).number,
+        phaseCount: state.plan.phases.length
+      });
+      return a(
+        withStage(state, {
+          kind: "await-mock-human-approval",
+          implementer
+        }),
+        o.userContinue()
+      );
+    }
+    return continueAfterHumanApproval(state, implementer);
+  }
   if (state.options.humanInTheLoop || requiresHumanVerification || activePhase(state).type === "docs") {
     await setHumanCompletionStatus(ctx, state, requiresHumanVerification);
     return a(
@@ -1728,6 +1769,7 @@ async function setHumanCompletionStatus(ctx, state, requiresHumanVerification = 
       phase: phase.number,
       phaseCount: state.plan.phases.length,
       phaseSlug: phase.slug,
+      autoReview: state.options.autoReview,
       autoCommit: state.options.autoCommit
     } : {
       kind: "phase-review",

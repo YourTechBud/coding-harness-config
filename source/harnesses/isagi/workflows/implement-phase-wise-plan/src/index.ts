@@ -121,6 +121,10 @@ type ActiveStage =
       readonly implementer: Implementer;
     }
   | {
+      readonly kind: "await-mock-human-approval";
+      readonly implementer: Implementer;
+    }
+  | {
       readonly kind: "start-commit";
       readonly implementer: Implementer;
     }
@@ -602,6 +606,30 @@ export default defineWorkflow<State, Variables>({
           "info",
           `Human completion confirmed for phase ${activePhase(activeState).number}.`,
         );
+        if (activePhase(activeState).type === "mock-ui") {
+          return completePhase(
+            ctx,
+            activeState,
+            state.stage.implementer,
+            false,
+          );
+        }
+        return continueAfterHumanApproval(activeState, state.stage.implementer);
+      }
+
+      case "await-mock-human-approval": {
+        const activeState = requireActiveState(state);
+        if (!workflowEvent.isUserContinue(event)) {
+          return failWorkflow(
+            ctx,
+            `Phase ${activePhase(activeState).number} human approval could not be resumed`,
+            "Mock phase human approval resumed with an unexpected event.",
+          );
+        }
+        await ctx.log(
+          "info",
+          `Human approval confirmed for mock phase ${activePhase(activeState).number}.`,
+        );
         return continueAfterHumanApproval(activeState, state.stage.implementer);
       }
 
@@ -866,8 +894,9 @@ async function completePhase(
   requiresHumanVerification: boolean,
 ): Promise<WorkflowResult> {
   // The decision log remains the cross-run source of truth. We intentionally trust the
-  // implementer's completion report here; add live decision-log verification at this
-  // transition if agent behavior becomes unreliable.
+  // completion signal here: the implementer's report for regular phases and the user's
+  // Continue for mock-UI phases. Add live decision-log verification at this transition if
+  // agent behavior becomes unreliable.
   await ctx.log(
     "info",
     requiresHumanVerification
@@ -912,6 +941,23 @@ async function continueAfterAutoReview(
   implementer: Implementer,
   requiresHumanVerification: boolean,
 ): Promise<WorkflowResult> {
+  if (activePhase(state).type === "mock-ui") {
+    if (state.options.humanInTheLoop) {
+      await setWorkflowStatus(ctx, {
+        kind: "phase-review",
+        phase: activePhase(state).number,
+        phaseCount: state.plan.phases.length,
+      });
+      return suspend(
+        withStage(state, {
+          kind: "await-mock-human-approval",
+          implementer,
+        }),
+        wait.userContinue(),
+      );
+    }
+    return continueAfterHumanApproval(state, implementer);
+  }
   if (
     state.options.humanInTheLoop ||
     requiresHumanVerification ||
@@ -1284,6 +1330,7 @@ async function setHumanCompletionStatus(
             phase: phase.number,
             phaseCount: state.plan.phases.length,
             phaseSlug: phase.slug,
+            autoReview: state.options.autoReview,
             autoCommit: state.options.autoCommit,
           }
         : {

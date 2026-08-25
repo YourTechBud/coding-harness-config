@@ -246,7 +246,7 @@ test("non-mock phase still uses the implementer-kind classifier", async () => {
   );
 });
 
-test("mock-ui initial turn goes directly to the human checkpoint", async () => {
+test("mock-ui completion starts enabled auto review before commit", async () => {
   const harness = workflowHarness();
   const result = await workflow.step(
     harness.ctx,
@@ -279,12 +279,147 @@ test("mock-ui initial turn goes directly to the human checkpoint", async () => {
   const resumed = await workflow.step(harness.ctx, suspendedState(result), {
     kind: "user_continue",
   });
+  assert.equal(resumed.type, "suspend");
   assert.equal(
-    resumed.type === "cont"
+    resumed.type === "suspend"
       ? (resumed.state as WorkflowState).stage.kind
+      : undefined,
+    "await-auto-review",
+  );
+  assert.deepEqual(harness.startedWorkflows, [
+    {
+      workflowKey: "engineering-guidance-review-loop",
+      variables: {
+        context:
+          "We are currently implementing phase 2 of the plan in docs/plan.md. Review all the changes since HEAD.",
+      },
+    },
+  ]);
+
+  const reviewed = await workflow.step(
+    harness.ctx,
+    suspendedState(resumed),
+    workflowResult(44, {
+      outcome: "workflow-executed-successfully",
+      reviewCount: 1,
+    }),
+  );
+  assert.equal(
+    reviewed.type === "cont"
+      ? (reviewed.state as WorkflowState).stage.kind
       : undefined,
     "start-commit",
   );
+});
+
+test("mock-ui phase pauses for human approval after enabled auto review", async () => {
+  const harness = workflowHarness();
+  const reviewStarted = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: "await-human-completion",
+        implementer: { agentSessionId: 22, paneId: 32 },
+      },
+      { phaseType: "mock-ui", autoReview: true, humanInTheLoop: true },
+    ),
+    { kind: "user_continue" },
+  );
+
+  const approval = await workflow.step(
+    harness.ctx,
+    suspendedState(reviewStarted),
+    workflowResult(44, {
+      outcome: "workflow-executed-successfully",
+      reviewCount: 1,
+    }),
+  );
+  assert.equal(approval.type, "suspend");
+  assert.equal(
+    approval.type === "suspend"
+      ? (approval.state as WorkflowState).stage.kind
+      : undefined,
+    "await-mock-human-approval",
+  );
+  assert.equal(harness.feedback.at(-1)?.phase, "phase-review");
+
+  const approved = await workflow.step(
+    harness.ctx,
+    suspendedState(approval),
+    { kind: "user_continue" },
+  );
+  assert.equal(
+    approved.type === "cont"
+      ? (approved.state as WorkflowState).stage.kind
+      : undefined,
+    "start-commit",
+  );
+});
+
+test("mock-ui phase keeps the human approval checkpoint when auto review is disabled", async () => {
+  const harness = workflowHarness();
+  const approval = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: "await-human-completion",
+        implementer: { agentSessionId: 22, paneId: 32 },
+      },
+      { phaseType: "mock-ui", autoReview: false, humanInTheLoop: true },
+    ),
+    { kind: "user_continue" },
+  );
+
+  assert.equal(approval.type, "suspend");
+  assert.equal(
+    approval.type === "suspend"
+      ? (approval.state as WorkflowState).stage.kind
+      : undefined,
+    "await-mock-human-approval",
+  );
+  assert.equal(harness.startedWorkflows.length, 0);
+
+  const approved = await workflow.step(
+    harness.ctx,
+    suspendedState(approval),
+    { kind: "user_continue" },
+  );
+  assert.equal(
+    approved.type === "cont"
+      ? (approved.state as WorkflowState).stage.kind
+      : undefined,
+    "start-commit",
+  );
+});
+
+test("mock-ui phase advances directly when every optional completion step is disabled", async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    harness.ctx,
+    activeState(
+      {
+        kind: "await-human-completion",
+        implementer: { agentSessionId: 22, paneId: 32 },
+      },
+      {
+        phaseType: "mock-ui",
+        autoReview: false,
+        humanInTheLoop: false,
+        autoCommit: false,
+      },
+    ),
+    { kind: "user_continue" },
+  );
+
+  assert.equal(result.type, "cont");
+  assert.equal(
+    result.type === "cont"
+      ? (result.state as WorkflowState).stage.kind
+      : undefined,
+    "advance-phase",
+  );
+  assert.equal(harness.startedWorkflows.length, 0);
+  assert.equal(harness.headlessLaunchCount, 0);
 });
 
 test("completed phase starts the review child with phase-specific context", async () => {
