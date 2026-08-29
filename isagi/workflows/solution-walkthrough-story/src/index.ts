@@ -20,8 +20,13 @@ type Variables = {
   readonly reviewDirectory?: unknown;
   readonly familiarity?: unknown;
   readonly technicalDepth?: unknown;
+  readonly deliveryMechanism?: unknown;
+  readonly presentationMode?: unknown;
   readonly deliveryMode?: unknown;
 };
+
+const deliveryMechanisms = ['presentation', 'socratic-walkthrough'] as const;
+type DeliveryMechanism = (typeof deliveryMechanisms)[number];
 
 export default defineWorkflow<State, Variables>({
   command: () => ({
@@ -56,13 +61,13 @@ export default defineWorkflow<State, Variables>({
       },
       {
         kind: 'select',
-        key: 'deliveryMode',
-        label: 'Delivery mode',
+        key: 'deliveryMechanism',
+        label: 'Walkthrough delivery mechanism?',
         options: [
-          { value: 'presentation-first', label: 'Presentation first' },
-          { value: 'guided-tutorial', label: 'Guided tutorial' },
+          { value: 'presentation', label: 'Presentation' },
+          { value: 'socratic-walkthrough', label: 'Socratic walkthrough' },
         ],
-        default: 'presentation-first',
+        default: 'presentation',
       },
     ],
   }),
@@ -109,7 +114,7 @@ function parseVariables(variables: Variables): {
     reviewDirectory: parsePath(variables.reviewDirectory, 'reviewDirectory', 'scratch/story/walkthrough'),
     familiarity: parseEnum(variables.familiarity, 'familiarity', familiarityLevels, 'new'),
     technicalDepth: parseEnum(variables.technicalDepth, 'technicalDepth', technicalDepthLevels, 'system-design'),
-    deliveryMode: parseEnum(variables.deliveryMode, 'deliveryMode', deliveryModes, 'presentation-first'),
+    deliveryMode: parseDeliveryMechanism(variables.deliveryMechanism, variables.presentationMode, variables.deliveryMode),
   };
 }
 
@@ -132,4 +137,17 @@ function parseEnum<const T extends readonly string[]>(
   const candidate = value === undefined ? fallback : value;
   if (typeof candidate === 'string' && options.includes(candidate)) return candidate;
   throw new Error(`${key} must be one of ${options.join(', ')}.`);
+}
+
+function parseDeliveryMechanism(value: unknown, legacyPresentationMode: unknown, legacyDeliveryMode: unknown): DeliveryMode {
+  if (value !== undefined) return deliveryModeFor(parseEnum(value, 'deliveryMechanism', deliveryMechanisms, 'presentation'));
+  if (legacyPresentationMode !== undefined) {
+    if (typeof legacyPresentationMode === 'boolean') return legacyPresentationMode ? 'presentation-first' : 'guided-tutorial';
+    throw new Error('presentationMode must be a boolean.');
+  }
+  return parseEnum(legacyDeliveryMode, 'deliveryMode', deliveryModes, 'presentation-first');
+}
+
+function deliveryModeFor(deliveryMechanism: DeliveryMechanism): DeliveryMode {
+  return deliveryMechanism === 'presentation' ? 'presentation-first' : 'guided-tutorial';
 }

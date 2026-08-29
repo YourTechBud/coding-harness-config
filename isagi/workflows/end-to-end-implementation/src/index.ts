@@ -10,6 +10,13 @@ import {
   type WorkflowResult,
 } from '@yourtechbudstudio/isagi-workflow-sdk';
 
+import {
+  pullRequestAgent,
+  pullRequestPrompt,
+  readPullRequestResult,
+  type PullRequestResult,
+} from './pull-request.js';
+
 type ArtifactPaths = {
   readonly currentStatePath: string;
   readonly architecturePath: string;
@@ -27,12 +34,51 @@ type DesignResult = {
   };
 };
 
-type WalkthroughResult = {
+type GuidedWalkthroughResult = {
+  readonly outcome: 'guided-tutorial-completed';
+  readonly curriculumPath: string;
+  readonly chapterCount: number;
+  readonly beatCount: number;
+};
+
+type PresentationWalkthroughResult = {
+  readonly outcome: 'presentation-review-completed';
+  readonly curriculumPath: string;
+  readonly deckPlanPath: string;
+  readonly presentationPath: string;
+} & ({ readonly chapterCount: number; readonly narrativeUnitCount: number } | { readonly slideCount: number });
+
+type LegacyWalkthroughResult = {
   readonly outcome: 'story-walkthrough-completed';
   readonly reviewDirectory: string;
   readonly manifestPath: string;
   readonly completedTopicCount: number;
   readonly artifacts: ArtifactPaths;
+};
+
+type WalkthroughResult = GuidedWalkthroughResult | PresentationWalkthroughResult | LegacyWalkthroughResult;
+type ImplementationResult = Record<string, unknown>;
+
+const familiarityLevels = ['new', 'familiar'] as const;
+type Familiarity = (typeof familiarityLevels)[number];
+
+const technicalDepthLevels = ['product', 'system-design', 'implementation'] as const;
+type TechnicalDepth = (typeof technicalDepthLevels)[number];
+
+const deliveryMechanisms = ['presentation', 'socratic-walkthrough'] as const;
+type DeliveryMechanism = (typeof deliveryMechanisms)[number];
+
+type WalkthroughControls = {
+  readonly familiarity: Familiarity;
+  readonly technicalDepth: TechnicalDepth;
+  readonly deliveryMechanism: DeliveryMechanism;
+};
+
+const pullRequestChoices = ['yes', 'no'] as const;
+type PullRequestChoice = (typeof pullRequestChoices)[number];
+
+type RunControls = WalkthroughControls & {
+  readonly submitPullRequest: PullRequestChoice;
 };
 
 type Stage =
@@ -41,16 +87,51 @@ type Stage =
   | { readonly kind: 'start_walkthrough'; readonly design: DesignResult }
   | { readonly kind: 'await_walkthrough'; readonly design: DesignResult; readonly runId: number }
   | { readonly kind: 'start_implementation'; readonly design: DesignResult; readonly walkthrough: WalkthroughResult }
-  | { readonly kind: 'await_implementation'; readonly design: DesignResult; readonly walkthrough: WalkthroughResult; readonly runId: number };
+  | { readonly kind: 'await_implementation'; readonly design: DesignResult; readonly walkthrough: WalkthroughResult; readonly runId: number }
+  | { readonly kind: 'start_pull_request'; readonly design: DesignResult; readonly walkthrough: WalkthroughResult; readonly implementation: ImplementationResult }
+  | { readonly kind: 'await_pull_request'; readonly design: DesignResult; readonly walkthrough: WalkthroughResult; readonly implementation: ImplementationResult; readonly opId: string };
 
-type State = {
+type LegacyState = {
   readonly stateVersion: 1;
   readonly story: string;
   readonly stage: Stage;
 };
 
+type VersionTwoState = {
+  readonly stateVersion: 2;
+  readonly story: string;
+  readonly familiarity: Familiarity;
+  readonly technicalDepth: TechnicalDepth;
+  readonly presentationMode: boolean;
+  readonly stage: Stage;
+};
+
+type VersionThreeState = {
+  readonly stateVersion: 3;
+  readonly story: string;
+  readonly familiarity: Familiarity;
+  readonly technicalDepth: TechnicalDepth;
+  readonly deliveryMechanism: DeliveryMechanism;
+  readonly stage: Stage;
+};
+
+type State = LegacyState | VersionTwoState | VersionThreeState | {
+  readonly stateVersion: 4;
+  readonly story: string;
+  readonly familiarity: Familiarity;
+  readonly technicalDepth: TechnicalDepth;
+  readonly deliveryMechanism: DeliveryMechanism;
+  readonly submitPullRequest: PullRequestChoice;
+  readonly stage: Stage;
+};
+
 type Variables = {
   readonly story?: unknown;
+  readonly familiarity?: unknown;
+  readonly technicalDepth?: unknown;
+  readonly deliveryMechanism?: unknown;
+  readonly presentationMode?: unknown;
+  readonly submitPullRequest?: unknown;
 };
 
 const storyRoot = 'scratch/story';
@@ -62,12 +143,15 @@ const designPaths = {
 } satisfies ArtifactPaths;
 
 const reviewDirectory = `${storyRoot}/walkthrough`;
-const reviewPaths = {
+const legacyReviewPaths = {
   currentStatePath: `${reviewDirectory}/current-state.html`,
   architecturePath: `${reviewDirectory}/architecture.html`,
   programDesignPath: `${reviewDirectory}/program-design.html`,
 } satisfies ArtifactPaths;
-const manifestPath = `${reviewDirectory}/.walkthrough/manifest.json`;
+const legacyManifestPath = `${reviewDirectory}/.walkthrough/manifest.json`;
+const curriculumPath = `${reviewDirectory}/.walkthrough/curriculum.json`;
+const deckPlanPath = `${reviewDirectory}/.walkthrough/deck-plan.json`;
+const presentationPath = `${reviewDirectory}/walkthrough.html`;
 
 const planDirectory = `${storyRoot}/implementation`;
 const entryPlanPath = `${planDirectory}/index.md`;
@@ -80,17 +164,67 @@ const implementationOptions = {
 export default defineWorkflow<State, Variables>({
   command: () => ({
     title: 'End-to-End Implementation',
-    description: 'Design, walk through, plan, and implement one story.',
-    inputs: [{ kind: 'text', key: 'story', label: 'Story or story URL' }],
+    description: 'Design, walk through, and implement one story, with optional pull-request submission.',
+    inputs: [
+      { kind: 'text', key: 'story', label: 'Story or story URL' },
+      {
+        kind: 'select',
+        key: 'familiarity',
+        label: 'Codebase familiarity',
+        options: [
+          { value: 'new', label: 'New to this codebase' },
+          { value: 'familiar', label: 'Familiar with this codebase' },
+        ],
+        default: 'new',
+      },
+      {
+        kind: 'select',
+        key: 'technicalDepth',
+        label: 'Technical depth',
+        options: [
+          { value: 'product', label: 'Product overview' },
+          { value: 'system-design', label: 'System design' },
+          { value: 'implementation', label: 'Implementation detail' },
+        ],
+        default: 'system-design',
+      },
+      {
+        kind: 'select',
+        key: 'deliveryMechanism',
+        label: 'Walkthrough delivery mechanism?',
+        options: [
+          { value: 'presentation', label: 'Presentation' },
+          { value: 'socratic-walkthrough', label: 'Socratic walkthrough' },
+        ],
+        default: 'presentation',
+      },
+      {
+        kind: 'select',
+        key: 'submitPullRequest',
+        label: 'Submit pull request?',
+        options: [
+          { value: 'yes', label: 'Yes' },
+          { value: 'no', label: 'No' },
+        ],
+        default: 'yes',
+      },
+    ],
   }),
   validate: (_launchCtx, variables) => {
-    parseStory(variables.story);
+    parseVariables(variables);
   },
-  init: (_launchCtx, variables): State => ({
-    stateVersion: 1,
-    story: parseStory(variables.story),
-    stage: { kind: 'start_design' },
-  }),
+  init: (_launchCtx, variables): State => {
+    const parsed = parseVariables(variables);
+    return {
+      stateVersion: 4,
+      story: parsed.story,
+      familiarity: parsed.familiarity,
+      technicalDepth: parsed.technicalDepth,
+      deliveryMechanism: parsed.deliveryMechanism,
+      submitPullRequest: parsed.submitPullRequest,
+      stage: { kind: 'start_design' },
+    };
+  },
   step: async (ctx, state, incoming) => {
     await ctx.log('debug', `End-to-end implementation stage=${state.stage.kind}.`);
 
@@ -113,17 +247,19 @@ export default defineWorkflow<State, Variables>({
 
       case 'start_walkthrough': {
         await ctx.setUiFeedback({ phase: 'Starting solution walkthrough' });
+        const controls = walkthroughControls(state);
         const runId = await ctx.startWorkflow('solution-walkthrough-story', {
           story: state.story,
           ...designPaths,
           reviewDirectory,
+          ...controls,
         });
         await ctx.log('info', `Started solution-walkthrough-story child workflow ${runId}.`);
         return suspend(withStage(state, { kind: 'await_walkthrough', design: state.stage.design, runId }), wait.workflow(runId));
       }
 
       case 'await_walkthrough': {
-        const result = readWalkthroughResult(incoming, state.stage.runId);
+        const result = readWalkthroughResult(incoming, state.stage.runId, walkthroughControls(state).deliveryMechanism, state.stateVersion === 1);
         if (!result.ok) return failWorkflow(ctx, 'Solution walkthrough failed', result.reason);
         return cont(withStage(state, {
           kind: 'start_implementation',
@@ -153,14 +289,59 @@ export default defineWorkflow<State, Variables>({
       case 'await_implementation': {
         const result = readImplementationResult(incoming, state.stage.runId, state.story);
         if (!result.ok) return failWorkflow(ctx, 'Story implementation failed', result.reason);
-        await ctx.setUiFeedback({ phase: 'End-to-end implementation complete', message: `Story artifacts are available under ${storyRoot}.` });
+        if (!shouldSubmitPullRequest(state)) {
+          await ctx.setUiFeedback({ phase: 'End-to-end implementation complete', message: 'Implementation is complete; pull-request submission was skipped.' });
+          await ctx.log('info', 'Completed end-to-end implementation without submitting a pull request.');
+          return done({
+            outcome: 'end-to-end-implementation-completed',
+            story: state.story,
+            storyRoot,
+            design: state.stage.design,
+            walkthrough: state.stage.walkthrough,
+            implementation: result.value,
+            pullRequest: null,
+          });
+        }
+        return cont(withStage(state, {
+          kind: 'start_pull_request',
+          design: state.stage.design,
+          walkthrough: state.stage.walkthrough,
+          implementation: result.value,
+        }));
+      }
+
+      case 'start_pull_request': {
+        await ctx.setUiFeedback({ phase: 'Submitting pull request', message: 'Preparing the description and targeting main.' });
+        const op = await ctx.runHeadlessAgent({
+          ...pullRequestAgent,
+          prompt: pullRequestPrompt({
+            worktreePath: ctx.worktreePath,
+            story: state.story,
+            ...designPaths,
+            entryPlanPath,
+          }),
+        });
+        await ctx.log('info', `Started pull-request submission operation ${op.opId} with ${pullRequestAgent.model}.`);
+        return suspend(withStage(state, { ...state.stage, kind: 'await_pull_request', opId: op.opId }), wait.headlessAgent(op));
+      }
+
+      case 'await_pull_request': {
+        let pullRequest: PullRequestResult;
+        try {
+          pullRequest = readPullRequestResult(incoming, state.stage.opId, state.story);
+        } catch (error) {
+          return failWorkflow(ctx, 'Pull-request submission failed', errorText(error));
+        }
+        await ctx.setUiFeedback({ phase: 'End-to-end implementation complete', message: `Pull request ${pullRequest.url} is ready against main.` });
+        await ctx.log('info', `Pull request #${pullRequest.number} submitted from ${pullRequest.headBranch} to main: ${pullRequest.url}.`);
         return done({
           outcome: 'end-to-end-implementation-completed',
           story: state.story,
           storyRoot,
           design: state.stage.design,
           walkthrough: state.stage.walkthrough,
-          implementation: result.value,
+          implementation: state.stage.implementation,
+          pullRequest,
         });
       }
 
@@ -193,25 +374,58 @@ function readDesignResult(incoming: unknown, runId: number, story: string): Read
   });
 }
 
-function readWalkthroughResult(incoming: unknown, runId: number): ReadResult<WalkthroughResult> {
+function readWalkthroughResult(incoming: unknown, runId: number, deliveryMechanism: DeliveryMechanism, allowLegacyResult: boolean): ReadResult<WalkthroughResult> {
   const child = readChildResult(incoming, runId, 'solution-walkthrough-story');
   if (!child.ok) return child;
   const record = objectRecord(child.value);
-  if (!record || record.outcome !== 'story-walkthrough-completed') return failure(`solution-walkthrough-story child workflow ${runId} returned an invalid outcome.`);
-  if (record.reviewDirectory !== reviewDirectory) return failure(`solution-walkthrough-story child workflow ${runId} returned an unexpected review directory.`);
-  if (record.manifestPath !== manifestPath) return failure(`solution-walkthrough-story child workflow ${runId} returned an unexpected manifest path.`);
-  if (!positiveInteger(record.completedTopicCount)) return failure(`solution-walkthrough-story child workflow ${runId} returned an invalid completed topic count.`);
-  if (!samePaths(record.artifacts, reviewPaths)) return failure(`solution-walkthrough-story child workflow ${runId} returned unexpected review artifact paths.`);
-  return success({
-    outcome: 'story-walkthrough-completed',
-    reviewDirectory,
-    manifestPath,
-    completedTopicCount: record.completedTopicCount as number,
-    artifacts: reviewPaths,
-  });
+  if (!record) return failure(`solution-walkthrough-story child workflow ${runId} returned an invalid result.`);
+  if (allowLegacyResult && record.outcome === 'story-walkthrough-completed') {
+    if (record.reviewDirectory !== reviewDirectory || record.manifestPath !== legacyManifestPath) return failure(`solution-walkthrough-story child workflow ${runId} returned unexpected legacy review paths.`);
+    if (!positiveInteger(record.completedTopicCount) || !samePaths(record.artifacts, legacyReviewPaths)) return failure(`solution-walkthrough-story child workflow ${runId} returned an invalid legacy walkthrough result.`);
+    return success({
+      outcome: 'story-walkthrough-completed',
+      reviewDirectory,
+      manifestPath: legacyManifestPath,
+      completedTopicCount: record.completedTopicCount as number,
+      artifacts: legacyReviewPaths,
+    });
+  }
+  if (record.curriculumPath !== curriculumPath) return failure(`solution-walkthrough-story child workflow ${runId} returned an unexpected curriculum path.`);
+  if (deliveryMechanism === 'socratic-walkthrough') {
+    if (record.outcome !== 'guided-tutorial-completed') return failure(`solution-walkthrough-story child workflow ${runId} returned an outcome that does not match guided mode.`);
+    if (!positiveInteger(record.chapterCount) || !positiveInteger(record.beatCount)) return failure(`solution-walkthrough-story child workflow ${runId} returned invalid guided tutorial counts.`);
+    return success({
+      outcome: 'guided-tutorial-completed',
+      curriculumPath,
+      chapterCount: record.chapterCount as number,
+      beatCount: record.beatCount as number,
+    });
+  }
+  if (record.outcome !== 'presentation-review-completed') return failure(`solution-walkthrough-story child workflow ${runId} returned an outcome that does not match presentation mode.`);
+  if (record.deckPlanPath !== deckPlanPath || record.presentationPath !== presentationPath) return failure(`solution-walkthrough-story child workflow ${runId} returned unexpected presentation paths.`);
+  if (positiveInteger(record.chapterCount) && positiveInteger(record.narrativeUnitCount)) {
+    return success({
+      outcome: 'presentation-review-completed',
+      curriculumPath,
+      deckPlanPath,
+      presentationPath,
+      chapterCount: record.chapterCount as number,
+      narrativeUnitCount: record.narrativeUnitCount as number,
+    });
+  }
+  if (positiveInteger(record.slideCount)) {
+    return success({
+      outcome: 'presentation-review-completed',
+      curriculumPath,
+      deckPlanPath,
+      presentationPath,
+      slideCount: record.slideCount as number,
+    });
+  }
+  return failure(`solution-walkthrough-story child workflow ${runId} returned invalid presentation counts.`);
 }
 
-function readImplementationResult(incoming: unknown, runId: number, story: string): ReadResult<Record<string, unknown>> {
+function readImplementationResult(incoming: unknown, runId: number, story: string): ReadResult<ImplementationResult> {
   const child = readChildResult(incoming, runId, 'implement-story');
   if (!child.ok) return child;
   const record = objectRecord(child.value);
@@ -248,9 +462,59 @@ function withStage(state: State, stage: Stage): State {
   return { ...state, stage } satisfies State;
 }
 
+function parseVariables(variables: Variables): { readonly story: string } & RunControls {
+  return {
+    story: parseStory(variables.story),
+    familiarity: parseEnum(variables.familiarity, 'familiarity', familiarityLevels, 'new'),
+    technicalDepth: parseEnum(variables.technicalDepth, 'technicalDepth', technicalDepthLevels, 'system-design'),
+    deliveryMechanism: parseDeliveryMechanism(variables.deliveryMechanism, variables.presentationMode),
+    submitPullRequest: parseEnum(variables.submitPullRequest, 'submitPullRequest', pullRequestChoices, 'yes'),
+  };
+}
+
+function walkthroughControls(state: State): WalkthroughControls {
+  if (state.stateVersion === 3 || state.stateVersion === 4) {
+    return {
+      familiarity: state.familiarity,
+      technicalDepth: state.technicalDepth,
+      deliveryMechanism: state.deliveryMechanism,
+    };
+  }
+  if (state.stateVersion === 2) {
+    return {
+      familiarity: state.familiarity,
+      technicalDepth: state.technicalDepth,
+      deliveryMechanism: state.presentationMode ? 'presentation' : 'socratic-walkthrough',
+    };
+  }
+  return { familiarity: 'new', technicalDepth: 'system-design', deliveryMechanism: 'presentation' };
+}
+
+function shouldSubmitPullRequest(state: State): boolean {
+  return state.stateVersion !== 4 || state.submitPullRequest === 'yes';
+}
+
 function parseStory(value: unknown): string {
   if (typeof value === 'string' && value.trim().length > 0) return value.trim();
   throw new Error('story must be non-empty text.');
+}
+
+function parseEnum<const T extends readonly string[]>(
+  value: unknown,
+  key: string,
+  options: T,
+  fallback: T[number],
+): T[number] {
+  const candidate = value === undefined ? fallback : value;
+  if (typeof candidate === 'string' && options.includes(candidate)) return candidate;
+  throw new Error(`${key} must be one of ${options.join(', ')}.`);
+}
+
+function parseDeliveryMechanism(value: unknown, legacyPresentationMode: unknown): DeliveryMechanism {
+  if (value !== undefined) return parseEnum(value, 'deliveryMechanism', deliveryMechanisms, 'presentation');
+  if (legacyPresentationMode === undefined) return 'presentation';
+  if (typeof legacyPresentationMode === 'boolean') return legacyPresentationMode ? 'presentation' : 'socratic-walkthrough';
+  throw new Error('presentationMode must be a boolean.');
 }
 
 function samePaths(value: unknown, expected: ArtifactPaths): boolean {

@@ -39,9 +39,19 @@ test('command captures audience and delivery controls and starts source analysis
       'reviewDirectory',
       'familiarity',
       'technicalDepth',
-      'deliveryMode',
+      'deliveryMechanism',
     ],
   );
+  assert.deepEqual((manifest.inputs ?? []).at(-1), {
+    kind: 'select',
+    key: 'deliveryMechanism',
+    label: 'Walkthrough delivery mechanism?',
+    options: [
+      { value: 'presentation', label: 'Presentation' },
+      { value: 'socratic-walkthrough', label: 'Socratic walkthrough' },
+    ],
+    default: 'presentation',
+  });
   await workflow.validate(launchCtx, variables);
   assert.deepEqual(await workflow.init(launchCtx, variables), {
     stateVersion: 2,
@@ -64,4 +74,16 @@ test('command defaults compose with the singular story pack', async () => {
   });
   assert.equal(state.stateVersion, 2);
   assert.equal(state.paths.reviewDirectory, 'scratch/story/walkthrough');
+});
+
+test('delivery mechanism selects the presentation or Socratic walkthrough branch', async () => {
+  const presentation = await workflow.init(launchCtx, { story: 'Story', deliveryMechanism: 'presentation' });
+  const socratic = await workflow.init(launchCtx, { story: 'Story', deliveryMechanism: 'socratic-walkthrough' });
+  const legacyGuidedBoolean = await workflow.init(launchCtx, { story: 'Story', presentationMode: false });
+  const legacyGuided = await workflow.init(launchCtx, { story: 'Story', deliveryMode: 'guided-tutorial' });
+  assert.equal(presentation.deliveryMode, 'presentation-first');
+  assert.equal(socratic.deliveryMode, 'guided-tutorial');
+  assert.equal(legacyGuidedBoolean.deliveryMode, 'guided-tutorial');
+  assert.equal(legacyGuided.deliveryMode, 'guided-tutorial');
+  await assert.rejects(async () => workflow.validate(launchCtx, { story: 'Story', deliveryMechanism: 'guided' }));
 });

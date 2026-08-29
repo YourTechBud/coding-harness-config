@@ -1423,6 +1423,7 @@ function assertNever(value) {
 }
 
 // src/index.ts
+var deliveryMechanisms = ["presentation", "socratic-walkthrough"];
 var index_default = r({
   command: () => ({
     title: "Solution Walkthrough Story",
@@ -1456,13 +1457,13 @@ var index_default = r({
       },
       {
         kind: "select",
-        key: "deliveryMode",
-        label: "Delivery mode",
+        key: "deliveryMechanism",
+        label: "Walkthrough delivery mechanism?",
         options: [
-          { value: "presentation-first", label: "Presentation first" },
-          { value: "guided-tutorial", label: "Guided tutorial" }
+          { value: "presentation", label: "Presentation" },
+          { value: "socratic-walkthrough", label: "Socratic walkthrough" }
         ],
-        default: "presentation-first"
+        default: "presentation"
       }
     ]
   }),
@@ -1501,7 +1502,7 @@ function parseVariables(variables) {
     reviewDirectory: parsePath(variables.reviewDirectory, "reviewDirectory", "scratch/story/walkthrough"),
     familiarity: parseEnum(variables.familiarity, "familiarity", familiarityLevels, "new"),
     technicalDepth: parseEnum(variables.technicalDepth, "technicalDepth", technicalDepthLevels, "system-design"),
-    deliveryMode: parseEnum(variables.deliveryMode, "deliveryMode", deliveryModes, "presentation-first")
+    deliveryMode: parseDeliveryMechanism(variables.deliveryMechanism, variables.presentationMode, variables.deliveryMode)
   };
 }
 function parseText(value, key) {
@@ -1516,6 +1517,17 @@ function parseEnum(value, key, options, fallback) {
   const candidate = value === void 0 ? fallback : value;
   if (typeof candidate === "string" && options.includes(candidate)) return candidate;
   throw new Error(`${key} must be one of ${options.join(", ")}.`);
+}
+function parseDeliveryMechanism(value, legacyPresentationMode, legacyDeliveryMode) {
+  if (value !== void 0) return deliveryModeFor(parseEnum(value, "deliveryMechanism", deliveryMechanisms, "presentation"));
+  if (legacyPresentationMode !== void 0) {
+    if (typeof legacyPresentationMode === "boolean") return legacyPresentationMode ? "presentation-first" : "guided-tutorial";
+    throw new Error("presentationMode must be a boolean.");
+  }
+  return parseEnum(legacyDeliveryMode, "deliveryMode", deliveryModes, "presentation-first");
+}
+function deliveryModeFor(deliveryMechanism) {
+  return deliveryMechanism === "presentation" ? "presentation-first" : "guided-tutorial";
 }
 export {
   index_default as default
