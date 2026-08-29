@@ -8,8 +8,8 @@ export type AgentProfile = {
 
 export const writer = {
   harness: 'claude',
-  model: 'fable',
-  effort: 'high',
+  model: 'opus',
+  effort: 'medium',
 } satisfies AgentProfile;
 
 export const reviewer = {

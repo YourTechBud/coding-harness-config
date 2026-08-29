@@ -93,8 +93,8 @@ function u(e) {
 // src/constants.ts
 var writer = {
   harness: "claude",
-  model: "fable",
-  effort: "high"
+  model: "opus",
+  effort: "medium"
 };
 var reviewer = {
   harness: "codex",

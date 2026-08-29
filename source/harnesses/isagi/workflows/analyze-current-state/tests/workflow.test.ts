@@ -48,7 +48,7 @@ test('command captures the story, artifact path, and repository path', async () 
   });
 });
 
-test('spawns the configured Fable writer with the skill and required footer', async () => {
+test('spawns the configured Opus writer with the skill and required footer', async () => {
   const harness = workflowHarness();
   const current = baseState({ kind: 'spawn_writer' });
   const result = await workflow.step(harness.ctx, current, null);

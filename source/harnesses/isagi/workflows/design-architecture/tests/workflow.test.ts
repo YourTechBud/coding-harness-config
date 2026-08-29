@@ -49,7 +49,7 @@ test('command captures the story, current-state path, architecture path, and rep
   });
 });
 
-test('spawns the configured Fable writer with the architecture skill and required footer', async () => {
+test('spawns the configured Opus writer with the architecture skill and required footer', async () => {
   const harness = workflowHarness();
   const current = baseState({ kind: 'spawn_writer' });
   const result = await workflow.step(harness.ctx, current, null);
