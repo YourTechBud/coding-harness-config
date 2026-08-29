@@ -6,6 +6,7 @@ import {
   suspend,
   wait,
   type WorkflowContext,
+  type WorkflowPromptInput,
   type WorkflowResult,
 } from '@yourtechbudstudio/isagi-workflow-sdk';
 
@@ -40,21 +41,28 @@ type Agent = {
 
 type WriterJudgmentMode = 'normal' | 'retry_recheck';
 
+type HarnessErrorRetryState = {
+  readonly harnessErrorRetries?: number;
+  readonly lastAgentInput?: WorkflowPromptInput;
+};
+
+const MAX_HARNESS_ERROR_RETRIES = 1;
+
 type Stage =
   | { readonly kind: 'spawn_writer' }
-  | { readonly kind: 'await_initial_writer'; readonly writer: Agent }
+  | ({ readonly kind: 'await_initial_writer'; readonly writer: Agent } & HarnessErrorRetryState)
   | {
       readonly kind: 'await_initial_writer_judgment';
       readonly writer: Agent;
       readonly writerResponse: string;
       readonly mode: WriterJudgmentMode;
     }
-  | {
+  | ({
       readonly kind: 'await_review';
       readonly writer: Agent;
       readonly reviewer: Agent;
       readonly reviewRound: number;
-    }
+    } & HarnessErrorRetryState)
   | {
       readonly kind: 'await_reviewer_judgment';
       readonly writer: Agent;
@@ -62,12 +70,12 @@ type Stage =
       readonly review: string;
       readonly reviewRound: number;
     }
-  | {
+  | ({
       readonly kind: 'await_revision';
       readonly writer: Agent;
       readonly reviewer: Agent;
       readonly reviewRound: number;
-    }
+    } & HarnessErrorRetryState)
   | {
       readonly kind: 'await_revision_judgment';
       readonly writer: Agent;
@@ -152,23 +160,38 @@ export default defineWorkflow<State, Variables>({
     switch (state.stage.kind) {
       case 'spawn_writer': {
         await ctx.setUiFeedback({ phase: 'Designing program' });
+        const agentInput = {
+          modifiers: [{ kind: 'skill', name: 'design-program' }],
+          prompt: initialWriterPrompt(state),
+        } satisfies WorkflowPromptInput;
         const spawned = await ctx.spawnAgentSession({
           harness: writer.harness,
           model: writer.model,
           effort: writer.effort,
-          modifiers: [{ kind: 'skill', name: 'design-program' }],
-          prompt: initialWriterPrompt(state),
+          ...agentInput,
         });
         const writerAgent = agentFromSpawn(spawned);
         await logSpawn(ctx, 'writer', writerAgent, writer);
         return suspend(
-          withStage(state, { kind: 'await_initial_writer', writer: writerAgent }),
+          withStage(state, {
+            kind: 'await_initial_writer',
+            writer: writerAgent,
+            harnessErrorRetries: 0,
+            lastAgentInput: agentInput,
+          }),
           wait.agentTurn(spawned),
         );
       }
 
       case 'await_initial_writer': {
-        const ended = await requireEndedTurn(ctx, incoming, 'Writer');
+        const ended = await requireEndedTurn(
+          ctx,
+          state,
+          state.stage,
+          state.stage.writer,
+          incoming,
+          'Writer',
+        );
         if (!ended.ok) return ended.result;
         const response = await latestTurnOrFail(ctx, state.stage.writer, 'writer');
         if (!response.ok) return response.result;
@@ -197,7 +220,14 @@ export default defineWorkflow<State, Variables>({
       }
 
       case 'await_review': {
-        const ended = await requireEndedTurn(ctx, incoming, 'Reviewer');
+        const ended = await requireEndedTurn(
+          ctx,
+          state,
+          state.stage,
+          state.stage.reviewer,
+          incoming,
+          'Reviewer',
+        );
         if (!ended.ok) return ended.result;
         const review = await latestTurnOrFail(ctx, state.stage.reviewer, 'reviewer');
         if (!review.ok) return review.result;
@@ -259,7 +289,14 @@ export default defineWorkflow<State, Variables>({
       }
 
       case 'await_revision': {
-        const ended = await requireEndedTurn(ctx, incoming, 'Writer');
+        const ended = await requireEndedTurn(
+          ctx,
+          state,
+          state.stage,
+          state.stage.writer,
+          incoming,
+          'Writer',
+        );
         if (!ended.ok) return ended.result;
         const response = await latestTurnOrFail(ctx, state.stage.writer, 'writer');
         if (!response.ok) return response.result;
@@ -287,9 +324,12 @@ export default defineWorkflow<State, Variables>({
           return failIncompleteWriter(ctx, state.stage.writer, state.stage.writerResponse);
         }
         await ctx.setUiFeedback({ phase: 'Re-reviewing program design' });
+        const agentInput = {
+          prompt: writerToReviewerPrompt(state.stage.writerResponse),
+        } satisfies WorkflowPromptInput;
         const sent = await ctx.sendAgentPrompt({
           agentSessionId: state.stage.reviewer.agentSessionId,
-          prompt: writerToReviewerPrompt(state.stage.writerResponse),
+          ...agentInput,
         });
         await ctx.log(
           'info',
@@ -301,6 +341,8 @@ export default defineWorkflow<State, Variables>({
             writer: state.stage.writer,
             reviewer: state.stage.reviewer,
             reviewRound: state.stage.reviewRound + 1,
+            harnessErrorRetries: 0,
+            lastAgentInput: agentInput,
           }),
           wait.agentTurn(sent),
         );
@@ -369,9 +411,10 @@ async function continueWriterAfterRetry(
   stage: WriterJudgmentStage,
 ): Promise<WorkflowResult> {
   await ctx.setUiFeedback({ phase: 'Recovering program-design writer' });
+  const agentInput = { prompt: retryWriterPrompt() } satisfies WorkflowPromptInput;
   const sent = await ctx.sendAgentPrompt({
     agentSessionId: stage.writer.agentSessionId,
-    prompt: retryWriterPrompt(),
+    ...agentInput,
   });
   await ctx.log(
     'info',
@@ -379,7 +422,12 @@ async function continueWriterAfterRetry(
   );
   if (stage.kind === 'await_initial_writer_judgment') {
     return suspend(
-      withStage(state, { kind: 'await_initial_writer', writer: stage.writer }),
+      withStage(state, {
+        kind: 'await_initial_writer',
+        writer: stage.writer,
+        harnessErrorRetries: 0,
+        lastAgentInput: agentInput,
+      }),
       wait.agentTurn(sent),
     );
   }
@@ -389,6 +437,8 @@ async function continueWriterAfterRetry(
       writer: stage.writer,
       reviewer: stage.reviewer,
       reviewRound: stage.reviewRound,
+      harnessErrorRetries: 0,
+      lastAgentInput: agentInput,
     }),
     wait.agentTurn(sent),
   );
@@ -480,12 +530,15 @@ async function spawnReviewer(
   writerAgent: Agent,
 ): Promise<WorkflowResult> {
   await ctx.setUiFeedback({ phase: 'Reviewing program design' });
+  const agentInput = {
+    modifiers: [{ kind: 'skill', name: 'design-program' }],
+    prompt: initialReviewerPrompt(state),
+  } satisfies WorkflowPromptInput;
   const spawned = await ctx.spawnAgentSession({
     harness: reviewer.harness,
     model: reviewer.model,
     effort: reviewer.effort,
-    modifiers: [{ kind: 'skill', name: 'design-program' }],
-    prompt: initialReviewerPrompt(state),
+    ...agentInput,
   });
   const reviewerAgent = agentFromSpawn(spawned);
   await logSpawn(ctx, 'reviewer', reviewerAgent, reviewer);
@@ -495,6 +548,8 @@ async function spawnReviewer(
       writer: writerAgent,
       reviewer: reviewerAgent,
       reviewRound: 1,
+      harnessErrorRetries: 0,
+      lastAgentInput: agentInput,
     }),
     wait.agentTurn(spawned),
   );
@@ -511,9 +566,12 @@ async function sendReviewToWriter(
   },
 ): Promise<WorkflowResult> {
   await ctx.setUiFeedback({ phase: 'Revising program design' });
+  const agentInput = {
+    prompt: reviewToWriterPrompt(input.review),
+  } satisfies WorkflowPromptInput;
   const sent = await ctx.sendAgentPrompt({
     agentSessionId: input.writer.agentSessionId,
-    prompt: reviewToWriterPrompt(input.review),
+    ...agentInput,
   });
   await ctx.log(
     'info',
@@ -525,6 +583,8 @@ async function sendReviewToWriter(
       writer: input.writer,
       reviewer: input.reviewer,
       reviewRound: input.reviewRound,
+      harnessErrorRetries: 0,
+      lastAgentInput: agentInput,
     }),
     wait.agentTurn(sent),
   );
@@ -562,11 +622,51 @@ async function finishWorkflow(
 
 async function requireEndedTurn(
   ctx: WorkflowContext,
+  state: State,
+  stage: AgentTurnStage,
+  agent: Agent,
   incoming: unknown,
   role: 'Writer' | 'Reviewer',
 ): Promise<{ readonly ok: true } | { readonly ok: false; readonly result: WorkflowResult }> {
   if (workflowEvent.isAgentTurnEnded(incoming)) return { ok: true };
   if (workflowEvent.isAgentTurnFailed(incoming)) {
+    const retryCount = stage.harnessErrorRetries ?? 0;
+    if (incoming.reason === 'harness_error' && retryCount < MAX_HARNESS_ERROR_RETRIES) {
+      const lastAgentInput =
+        stage.lastAgentInput ?? (await recoverLegacyAgentInput(ctx, state, stage, agent));
+      if (!lastAgentInput) {
+        return {
+          ok: false,
+          result: await failWorkflow(
+            ctx,
+            `${role} turn failed`,
+            `${role} turn failed with harness_error, but its previous message could not be recovered.`,
+          ),
+        };
+      }
+      await ctx.setUiFeedback({
+        kind: 'warning',
+        phase: `Retrying program-design ${role.toLowerCase()}`,
+        message: `The ${role.toLowerCase()} harness turn failed. Resubmitting its previous message once.`,
+      });
+      const sent = await ctx.sendAgentPrompt({
+        agentSessionId: agent.agentSessionId,
+        ...lastAgentInput,
+      });
+      await ctx.log(
+        'warning',
+        `Resubmitted the previous message after harness_error ${retryCount + 1}/${MAX_HARNESS_ERROR_RETRIES} to program-design ${role.toLowerCase()} session ${agent.agentSessionId}.`,
+      );
+      const nextStage = {
+        ...stage,
+        harnessErrorRetries: retryCount + 1,
+        lastAgentInput,
+      } satisfies AgentTurnStage;
+      return {
+        ok: false,
+        result: suspend(withStage(state, nextStage), wait.agentTurn(sent)),
+      };
+    }
     return {
       ok: false,
       result: await failWorkflow(
@@ -584,6 +684,50 @@ async function requireEndedTurn(
       `${role} turn wait resumed with an unexpected event.`,
     ),
   };
+}
+
+type AgentTurnStage = Extract<
+  Stage,
+  { readonly kind: 'await_initial_writer' | 'await_review' | 'await_revision' }
+>;
+
+async function recoverLegacyAgentInput(
+  ctx: WorkflowContext,
+  state: State,
+  stage: AgentTurnStage,
+  agent: Agent,
+): Promise<WorkflowPromptInput | null> {
+  if (stage.kind === 'await_initial_writer') {
+    return {
+      modifiers: [{ kind: 'skill', name: 'design-program' }],
+      prompt: initialWriterPrompt(state),
+    };
+  }
+  if (stage.kind === 'await_review' && stage.reviewRound === 1) {
+    return {
+      modifiers: [{ kind: 'skill', name: 'design-program' }],
+      prompt: initialReviewerPrompt(state),
+    };
+  }
+  const history = await ctx.getConversationHistory(agent.agentSessionId);
+  const prompt = latestCompleteUserMessageText(history);
+  return prompt ? { prompt } : null;
+}
+
+function latestCompleteUserMessageText(
+  history: Awaited<ReturnType<WorkflowContext['getConversationHistory']>>,
+): string | null {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index];
+    if (message?.role !== 'user') continue;
+    const text = message.parts
+      .filter((part) => part.type === 'text' && part.state !== 'streaming')
+      .map((part) => part.text)
+      .join('\n')
+      .trim();
+    if (text) return text;
+  }
+  return null;
 }
 
 async function latestTurnOrFail(

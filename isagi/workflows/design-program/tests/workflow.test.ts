@@ -65,6 +65,14 @@ test('spawns the configured Fable writer with the program design skill and requi
   assert.match(harness.spawned[0]?.prompt ?? '', /Architecture: scratch\/architecture/);
   assert.match(harness.spawned[0]?.prompt ?? '', /correct the affected predecessor artifact/);
   assert.equal(harness.spawned[0]?.prompt?.endsWith(PROMPT_FOOTER), true);
+  const waiting = suspendedState(result);
+  assert.deepEqual(
+    waiting.stage.kind === 'await_initial_writer' ? waiting.stage.lastAgentInput : undefined,
+    {
+      modifiers: [{ kind: 'skill', name: 'design-program' }],
+      prompt: initialWriterPrompt(current),
+    },
+  );
 });
 
 test('judges every writer turn and fails when the initial program design is incomplete', async () => {
@@ -378,6 +386,80 @@ test('review completion closes both workflow-created panes and returns the progr
   assert.deepEqual(harness.closedPanes, [21, 22]);
 });
 
+test('a writer harness error resubmits the previous input and a repeated harness error is terminal', async () => {
+  const harness = workflowHarness();
+  const current = baseState({ kind: 'await_initial_writer', writer: agent(11, 21) });
+  const retried = await workflow.step(
+    harness.ctx,
+    current,
+    failedTurn('harness_error'),
+  );
+
+  assert.equal(retried.type, 'suspend');
+  assert.deepEqual(harness.sent, [
+    {
+      agentSessionId: 11,
+      modifiers: [{ kind: 'skill', name: 'design-program' }],
+      prompt: initialWriterPrompt(current),
+    },
+  ]);
+  assert.equal(harness.feedback.at(-1)?.kind, 'warning');
+  assert.match(harness.logs.at(-1)?.message ?? '', /Resubmitted the previous message/);
+  const retryState = suspendedState(retried);
+  assert.equal(
+    retryState.stage.kind === 'await_initial_writer'
+      ? retryState.stage.harnessErrorRetries
+      : undefined,
+    1,
+  );
+
+  const failed = await workflow.step(harness.ctx, retryState, failedTurn('harness_error'));
+
+  assert.equal(failed.type, 'fail');
+  assert.equal(harness.sent.length, 1);
+  assert.equal(harness.feedback.at(-1)?.kind, 'error');
+});
+
+test('a reviewer harness error retries the reviewer session', async () => {
+  const harness = workflowHarness();
+  const lastAgentInput = { prompt: 'Re-review the corrected ownership decision.' };
+  const retried = await workflow.step(
+    harness.ctx,
+    baseState({
+      kind: 'await_review',
+      writer: agent(11, 21),
+      reviewer: agent(12, 22),
+      reviewRound: 1,
+      lastAgentInput,
+    }),
+    failedTurn('harness_error'),
+  );
+
+  assert.equal(retried.type, 'suspend');
+  assert.deepEqual(harness.sent, [{ agentSessionId: 12, ...lastAgentInput }]);
+  assert.equal(suspendedState(retried).stage.kind, 'await_review');
+});
+
+test('a legacy revision wait recovers its previous message from conversation history', async () => {
+  const lastMessage = 'Apply the review while preserving the evidence-backed pushback.';
+  const harness = workflowHarness({
+    histories: { 11: [message('user', lastMessage)] },
+  });
+  const retried = await workflow.step(
+    harness.ctx,
+    baseState({
+      kind: 'await_revision',
+      writer: agent(11, 21),
+      reviewer: agent(12, 22),
+      reviewRound: 2,
+    }),
+    failedTurn('harness_error'),
+  );
+
+  assert.equal(retried.type, 'suspend');
+  assert.deepEqual(harness.sent, [{ agentSessionId: 11, prompt: lastMessage }]);
+});
+
 test('a failed agent turn fails with visible feedback and diagnostics', async () => {
   const harness = workflowHarness();
   const result = await workflow.step(
@@ -508,6 +590,10 @@ function message(role: 'user' | 'assistant', text: string): WorkflowConversation
 
 function endedTurn() {
   return { outcome: 'ended', recordedAt: '2026-08-15T00:00:00.000Z' };
+}
+
+function failedTurn(reason: string) {
+  return { outcome: 'failed', recordedAt: '2026-08-15T00:00:00.000Z', reason };
 }
 
 function headlessResult(output: string) {
