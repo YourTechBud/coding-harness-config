@@ -183,6 +183,25 @@ test('fifth review routes remaining findings to the usual fixers', async () => {
   }
 });
 
+test('a final audit with remaining agent work pauses for a human decision', async () => {
+  const paths = walkthroughPaths(reviewDirectory);
+  const harness = workflowHarness('/workspace');
+  const result = await workflow.step(harness.ctx, state('/workspace', {
+    kind: 'await_review_routing',
+    curriculum: curriculum(),
+    plan: plan(paths.curriculumPath, paths.htmlPath),
+    review: 'Round six still finds repetition.',
+    architect: agent(31, 41),
+    builder: agent(32, 42),
+    verifier: agent(33, 43),
+    round: 6,
+  }), headlessResult('builder'));
+  assert.equal(result.type, 'suspend');
+  assert.equal(resultStage(result).kind, 'await_human_decision');
+  assert.equal(result.type === 'suspend' ? result.condition.kind : null, 'user_continue');
+  assert.match(harness.feedback.at(-1)?.message ?? '', /final audit/i);
+});
+
  test('verification still requires a review artifact to exist', async () => {
   const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-'));
   try {
@@ -226,7 +245,7 @@ test('builder response is handed to the next review directly from conversation h
   }
 });
 
-test('fifth-round builder fixes end the review loop without a sixth verification', async () => {
+test('fifth-round builder fixes receive a sixth and final verification', async () => {
   const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-'));
   try {
     const paths = walkthroughPaths(reviewDirectory);
@@ -240,8 +259,11 @@ test('fifth-round builder fixes end the review loop without a sixth verification
       kind: 'await_builder_revision', curriculum: curriculum(), plan: plan(paths.curriculumPath, paths.htmlPath), review, architect: agent(31, 41), builder: agent(32, 42), verifier: agent(33, 43), round: 5,
     }), ended());
     assert.equal(result.type, 'cont');
-    assert.equal(resultStage(result).kind, 'start_presentation_review');
-    assert.deepEqual(harness.closedPanes, [41, 42, 43]);
+    const nextStage = resultStage(result);
+    assert.equal(nextStage.kind, 'send_reverification');
+    if (nextStage.kind !== 'send_reverification') throw new Error('Expected final re-verification.');
+    assert.equal(nextStage.round, 6);
+    assert.deepEqual(harness.closedPanes, []);
     assert.equal(harness.sent.length, 0);
   } finally {
     rmSync(repositoryPath, { recursive: true, force: true });
@@ -320,7 +342,7 @@ function curriculum(): Curriculum {
     audienceContract: { assumedKnowledge: [], orientationPolicy: 'Orient first', technicalDetailPolicy: 'System boundaries', evidencePolicy: 'Ground claims', languagePolicy: 'Use plain and precise language.' },
     chapters: [chapter('current-state', 'cs-01'), chapter('architecture', 'ar-01'), chapter('program-design', 'pd-01')],
     omissions: [],
-  };
+  } as unknown as Curriculum;
 }
 
 function plan(curriculumPath: string, outputPath: string): DeckPlan {
@@ -361,7 +383,7 @@ function plan(curriculumPath: string, outputPath: string): DeckPlan {
     outputPath,
     story: { title: 'Story 42', openingPromise: 'Understand the change', throughline: 'Follow the system', endingResolution: 'Know how it works' },
     chapters: [chapter('current-state', 'cs-01'), chapter('architecture', 'ar-01'), chapter('program-design', 'pd-01')],
-  };
+  } as unknown as DeckPlan;
 }
 
 function workflowHarness(repositoryPath: string, histories: ReadonlyMap<number, readonly WorkflowConversationMessage[]> = new Map()) {
@@ -369,6 +391,7 @@ function workflowHarness(repositoryPath: string, histories: ReadonlyMap<number, 
   const sent: Array<Parameters<WorkflowContext['sendAgentPrompt']>[0]> = [];
   const headless: Array<{ readonly profile: { readonly harness?: string; readonly model?: string; readonly effort?: string }; readonly prompt: string }> = [];
   const closedPanes: number[] = [];
+  const feedback: Array<Parameters<WorkflowContext['setUiFeedback']>[0]> = [];
   const ctx: WorkflowContext = {
     worktreePath: repositoryPath,
     spawnAgentSession: async (input) => {
@@ -388,9 +411,9 @@ function workflowHarness(repositoryPath: string, histories: ReadonlyMap<number, 
     },
     startWorkflow: async () => { throw new Error('Unexpected child workflow.'); },
     log: async () => {},
-    setUiFeedback: async () => {},
+    setUiFeedback: async (input) => { feedback.push(input); },
   };
-  return { ctx, spawned, sent, headless, closedPanes };
+  return { ctx, spawned, sent, headless, closedPanes, feedback };
 }
 
 function agent(agentSessionId: number, paneId: number) {
