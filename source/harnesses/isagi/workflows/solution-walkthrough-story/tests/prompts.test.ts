@@ -135,6 +135,14 @@ test('revision prompts receive the review and agent handoff text verbatim withou
   assert.doesNotMatch(`${architect}\n${builder}`, /revision-response\.json/);
 });
 
+test('architect revisions preserve the exact deck-plan schema', () => {
+  const prompt = architectRevisionPrompt(input, 1, 'Merge repeated slides.');
+  assert.match(prompt, /validated against exact object key sets/);
+  assert.match(prompt, /keep schemaVersion, curriculumPath, and outputPath unchanged/);
+  assert.match(prompt, /do not add, remove, or rename object fields/);
+  assert.match(prompt, /changing field values or array items within that schema/);
+});
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

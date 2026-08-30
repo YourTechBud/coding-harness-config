@@ -1106,6 +1106,8 @@ ${review}
 
 Update the plan where findings require it. Preserve the curriculum, neighborhood order, exact contract coverage, one-time beat mapping, and architecture-to-program-design adjacency. Merge slides whose contributions overlap. Evaluate every finding and summarize changes, evidence-based declines, and genuine user decisions.
 
+The deck plan is validated against exact object key sets. Preserve its existing JSON schema: keep schemaVersion, curriculumPath, and outputPath unchanged; do not add, remove, or rename object fields; and express revisions by changing field values or array items within that schema.
+
 ${PLAIN_LANGUAGE_STANDARD}
 ${QUICK_GLANCE_STANDARD}
 
