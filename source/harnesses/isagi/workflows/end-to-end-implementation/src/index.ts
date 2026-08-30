@@ -1,3 +1,6 @@
+import { existsSync, rmSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import {
   cont,
   defineWorkflow,
@@ -23,15 +26,19 @@ type ArtifactPaths = {
   readonly programDesignPath: string;
 };
 
-type DesignResult = {
-  readonly outcome: 'story-designed';
-  readonly story: string;
+type DesignStepResult =
+  | { readonly outcome: 'created'; readonly reviewCount: number }
+  | { readonly outcome: 'reused' };
+
+type DesignSteps = {
+  readonly currentState: DesignStepResult;
+  readonly architecture: DesignStepResult;
+  readonly programDesign: DesignStepResult;
+};
+
+type DesignSummary = {
   readonly artifacts: ArtifactPaths;
-  readonly reviewCounts: {
-    readonly currentState: number;
-    readonly architecture: number;
-    readonly programDesign: number;
-  };
+  readonly steps: DesignSteps;
 };
 
 type GuidedWalkthroughResult = {
@@ -46,18 +53,36 @@ type PresentationWalkthroughResult = {
   readonly curriculumPath: string;
   readonly deckPlanPath: string;
   readonly presentationPath: string;
-} & ({ readonly chapterCount: number; readonly narrativeUnitCount: number } | { readonly slideCount: number });
-
-type LegacyWalkthroughResult = {
-  readonly outcome: 'story-walkthrough-completed';
-  readonly reviewDirectory: string;
-  readonly manifestPath: string;
-  readonly completedTopicCount: number;
-  readonly artifacts: ArtifactPaths;
+  readonly chapterCount: number;
+  readonly narrativeUnitCount: number;
 };
 
-type WalkthroughResult = GuidedWalkthroughResult | PresentationWalkthroughResult | LegacyWalkthroughResult;
-type ImplementationResult = Record<string, unknown>;
+type ReusedWalkthroughResult = {
+  readonly outcome: 'solution-walkthrough-reused';
+  readonly reviewDirectory: string;
+  readonly walkthroughDirectory: string;
+  readonly presentationPath: string;
+  readonly reusedArtifacts: readonly ('walkthrough-directory' | 'presentation')[];
+};
+
+type WalkthroughResult = GuidedWalkthroughResult | PresentationWalkthroughResult | ReusedWalkthroughResult;
+type ImplementationResult = {
+  readonly outcome: 'story-implemented';
+  readonly story: string;
+  readonly artifacts: ArtifactPaths;
+  readonly plan: {
+    readonly planDirectory: string;
+    readonly entryPlanPath: string;
+  };
+  readonly plannerAgentSessionId: number;
+  readonly plannerPaneId: number;
+  readonly implementation: {
+    readonly entryPlanPath: string;
+    readonly decisionLogPath: string;
+    readonly phaseCount: number;
+    readonly completedPhaseCount: number;
+  };
+};
 
 const familiarityLevels = ['new', 'familiar'] as const;
 type Familiarity = (typeof familiarityLevels)[number];
@@ -68,55 +93,33 @@ type TechnicalDepth = (typeof technicalDepthLevels)[number];
 const deliveryMechanisms = ['presentation', 'socratic-walkthrough'] as const;
 type DeliveryMechanism = (typeof deliveryMechanisms)[number];
 
-type WalkthroughControls = {
-  readonly familiarity: Familiarity;
-  readonly technicalDepth: TechnicalDepth;
-  readonly deliveryMechanism: DeliveryMechanism;
-};
-
 const pullRequestChoices = ['yes', 'no'] as const;
 type PullRequestChoice = (typeof pullRequestChoices)[number];
 
-type RunControls = WalkthroughControls & {
+type RunControls = {
+  readonly familiarity: Familiarity;
+  readonly technicalDepth: TechnicalDepth;
+  readonly deliveryMechanism: DeliveryMechanism;
   readonly submitPullRequest: PullRequestChoice;
 };
 
 type Stage =
-  | { readonly kind: 'start_design' }
-  | { readonly kind: 'await_design'; readonly runId: number }
-  | { readonly kind: 'start_walkthrough'; readonly design: DesignResult }
-  | { readonly kind: 'await_walkthrough'; readonly design: DesignResult; readonly runId: number }
-  | { readonly kind: 'start_implementation'; readonly design: DesignResult; readonly walkthrough: WalkthroughResult }
-  | { readonly kind: 'await_implementation'; readonly design: DesignResult; readonly walkthrough: WalkthroughResult; readonly runId: number }
-  | { readonly kind: 'start_pull_request'; readonly design: DesignResult; readonly walkthrough: WalkthroughResult; readonly implementation: ImplementationResult }
-  | { readonly kind: 'await_pull_request'; readonly design: DesignResult; readonly walkthrough: WalkthroughResult; readonly implementation: ImplementationResult; readonly opId: string };
+  | { readonly kind: 'start_current_state' }
+  | { readonly kind: 'await_current_state'; readonly runId: number }
+  | { readonly kind: 'start_architecture'; readonly designSteps: Pick<DesignSteps, 'currentState'> }
+  | { readonly kind: 'await_architecture'; readonly designSteps: Pick<DesignSteps, 'currentState'>; readonly runId: number }
+  | { readonly kind: 'start_program_design'; readonly designSteps: Pick<DesignSteps, 'currentState' | 'architecture'> }
+  | { readonly kind: 'await_program_design'; readonly designSteps: Pick<DesignSteps, 'currentState' | 'architecture'>; readonly runId: number }
+  | { readonly kind: 'start_walkthrough'; readonly design: DesignSummary }
+  | { readonly kind: 'await_walkthrough'; readonly design: DesignSummary; readonly runId: number }
+  | { readonly kind: 'reset_implementation_plan'; readonly design: DesignSummary; readonly walkthrough: WalkthroughResult }
+  | { readonly kind: 'start_implementation'; readonly design: DesignSummary; readonly walkthrough: WalkthroughResult }
+  | { readonly kind: 'await_implementation'; readonly design: DesignSummary; readonly walkthrough: WalkthroughResult; readonly runId: number }
+  | { readonly kind: 'start_pull_request'; readonly design: DesignSummary; readonly walkthrough: WalkthroughResult; readonly implementation: ImplementationResult }
+  | { readonly kind: 'await_pull_request'; readonly design: DesignSummary; readonly walkthrough: WalkthroughResult; readonly implementation: ImplementationResult; readonly opId: string };
 
-type LegacyState = {
+type State = {
   readonly stateVersion: 1;
-  readonly story: string;
-  readonly stage: Stage;
-};
-
-type VersionTwoState = {
-  readonly stateVersion: 2;
-  readonly story: string;
-  readonly familiarity: Familiarity;
-  readonly technicalDepth: TechnicalDepth;
-  readonly presentationMode: boolean;
-  readonly stage: Stage;
-};
-
-type VersionThreeState = {
-  readonly stateVersion: 3;
-  readonly story: string;
-  readonly familiarity: Familiarity;
-  readonly technicalDepth: TechnicalDepth;
-  readonly deliveryMechanism: DeliveryMechanism;
-  readonly stage: Stage;
-};
-
-type State = LegacyState | VersionTwoState | VersionThreeState | {
-  readonly stateVersion: 4;
   readonly story: string;
   readonly familiarity: Familiarity;
   readonly technicalDepth: TechnicalDepth;
@@ -130,7 +133,6 @@ type Variables = {
   readonly familiarity?: unknown;
   readonly technicalDepth?: unknown;
   readonly deliveryMechanism?: unknown;
-  readonly presentationMode?: unknown;
   readonly submitPullRequest?: unknown;
 };
 
@@ -143,12 +145,7 @@ const designPaths = {
 } satisfies ArtifactPaths;
 
 const reviewDirectory = `${storyRoot}/walkthrough`;
-const legacyReviewPaths = {
-  currentStatePath: `${reviewDirectory}/current-state.html`,
-  architecturePath: `${reviewDirectory}/architecture.html`,
-  programDesignPath: `${reviewDirectory}/program-design.html`,
-} satisfies ArtifactPaths;
-const legacyManifestPath = `${reviewDirectory}/.walkthrough/manifest.json`;
+const walkthroughDirectory = `${reviewDirectory}/.walkthrough`;
 const curriculumPath = `${reviewDirectory}/.walkthrough/curriculum.json`;
 const deckPlanPath = `${reviewDirectory}/.walkthrough/deck-plan.json`;
 const presentationPath = `${reviewDirectory}/walkthrough.html`;
@@ -216,55 +213,152 @@ export default defineWorkflow<State, Variables>({
   init: (_launchCtx, variables): State => {
     const parsed = parseVariables(variables);
     return {
-      stateVersion: 4,
+      stateVersion: 1,
       story: parsed.story,
       familiarity: parsed.familiarity,
       technicalDepth: parsed.technicalDepth,
       deliveryMechanism: parsed.deliveryMechanism,
       submitPullRequest: parsed.submitPullRequest,
-      stage: { kind: 'start_design' },
+      stage: { kind: 'start_current_state' },
     };
   },
   step: async (ctx, state, incoming) => {
     await ctx.log('debug', `End-to-end implementation stage=${state.stage.kind}.`);
 
     switch (state.stage.kind) {
-      case 'start_design': {
-        await ctx.setUiFeedback({ phase: 'Designing story solution' });
-        const runId = await ctx.startWorkflow('design-story', {
+      case 'start_current_state': {
+        if (artifactFileExists(ctx.worktreePath, designPaths.currentStatePath)) {
+          await ctx.setUiFeedback({ phase: 'Current-state analysis ready', message: `Reusing ${designPaths.currentStatePath}.` });
+          await ctx.log('info', `Skipped analyze-current-state because ${designPaths.currentStatePath} already exists.`);
+          return cont(withStage(state, { kind: 'start_architecture', designSteps: { currentState: { outcome: 'reused' } } }));
+        }
+        await ctx.setUiFeedback({ phase: 'Analyzing current state' });
+        const runId = await ctx.startWorkflow('analyze-current-state', {
           story: state.story,
-          ...designPaths,
+          artifactPath: designPaths.currentStatePath,
         });
-        await ctx.log('info', `Started design-story child workflow ${runId}.`);
-        return suspend(withStage(state, { kind: 'await_design', runId }), wait.workflow(runId));
+        await ctx.log('info', `Started analyze-current-state child workflow ${runId}.`);
+        return suspend(withStage(state, { kind: 'await_current_state', runId }), wait.workflow(runId));
       }
 
-      case 'await_design': {
-        const result = readDesignResult(incoming, state.stage.runId, state.story);
-        if (!result.ok) return failWorkflow(ctx, 'Story design failed', result.reason);
-        return cont(withStage(state, { kind: 'start_walkthrough', design: result.value }));
+      case 'await_current_state': {
+        const result = readArtifactResult(incoming, state.stage.runId, 'analyze-current-state', designPaths.currentStatePath);
+        if (!result.ok) return failWorkflow(ctx, 'Current-state analysis failed', result.reason);
+        return cont(withStage(state, {
+          kind: 'start_architecture',
+          designSteps: { currentState: { outcome: 'created', reviewCount: result.value } },
+        }));
+      }
+
+      case 'start_architecture': {
+        if (artifactFileExists(ctx.worktreePath, designPaths.architecturePath)) {
+          await ctx.setUiFeedback({ phase: 'Architecture ready', message: `Reusing ${designPaths.architecturePath}.` });
+          await ctx.log('info', `Skipped design-architecture because ${designPaths.architecturePath} already exists.`);
+          return cont(withStage(state, {
+            kind: 'start_program_design',
+            designSteps: { ...state.stage.designSteps, architecture: { outcome: 'reused' } },
+          }));
+        }
+        await ctx.setUiFeedback({ phase: 'Designing architecture' });
+        const runId = await ctx.startWorkflow('design-architecture', {
+          story: state.story,
+          currentStatePath: designPaths.currentStatePath,
+          artifactPath: designPaths.architecturePath,
+        });
+        await ctx.log('info', `Started design-architecture child workflow ${runId}.`);
+        return suspend(withStage(state, {
+          kind: 'await_architecture',
+          designSteps: state.stage.designSteps,
+          runId,
+        }), wait.workflow(runId));
+      }
+
+      case 'await_architecture': {
+        const result = readArtifactResult(incoming, state.stage.runId, 'design-architecture', designPaths.architecturePath);
+        if (!result.ok) return failWorkflow(ctx, 'Architecture design failed', result.reason);
+        return cont(withStage(state, {
+          kind: 'start_program_design',
+          designSteps: { ...state.stage.designSteps, architecture: { outcome: 'created', reviewCount: result.value } },
+        }));
+      }
+
+      case 'start_program_design': {
+        if (artifactFileExists(ctx.worktreePath, designPaths.programDesignPath)) {
+          await ctx.setUiFeedback({ phase: 'Program design ready', message: `Reusing ${designPaths.programDesignPath}.` });
+          await ctx.log('info', `Skipped design-program because ${designPaths.programDesignPath} already exists.`);
+          const designSteps = { ...state.stage.designSteps, programDesign: { outcome: 'reused' } } satisfies DesignSteps;
+          return cont(withStage(state, { kind: 'start_walkthrough', design: designSummary(designSteps) }));
+        }
+        await ctx.setUiFeedback({ phase: 'Designing program' });
+        const runId = await ctx.startWorkflow('design-program', {
+          story: state.story,
+          currentStatePath: designPaths.currentStatePath,
+          architecturePath: designPaths.architecturePath,
+          artifactPath: designPaths.programDesignPath,
+        });
+        await ctx.log('info', `Started design-program child workflow ${runId}.`);
+        return suspend(withStage(state, {
+          kind: 'await_program_design',
+          designSteps: state.stage.designSteps,
+          runId,
+        }), wait.workflow(runId));
+      }
+
+      case 'await_program_design': {
+        const result = readArtifactResult(incoming, state.stage.runId, 'design-program', designPaths.programDesignPath);
+        if (!result.ok) return failWorkflow(ctx, 'Program design failed', result.reason);
+        const designSteps = { ...state.stage.designSteps, programDesign: { outcome: 'created', reviewCount: result.value } } satisfies DesignSteps;
+        return cont(withStage(state, { kind: 'start_walkthrough', design: designSummary(designSteps) }));
       }
 
       case 'start_walkthrough': {
+        const reused = reusedWalkthrough(ctx.worktreePath);
+        if (reused) {
+          await ctx.setUiFeedback({ phase: 'Solution walkthrough ready', message: `Reusing walkthrough artifacts under ${reviewDirectory}.` });
+          await ctx.log('info', `Skipped solution-walkthrough-story because these walkthrough artifacts already exist: ${reused.reusedArtifacts.join(', ')}.`);
+          return cont(withStage(state, {
+            kind: 'reset_implementation_plan',
+            design: state.stage.design,
+            walkthrough: reused,
+          }));
+        }
         await ctx.setUiFeedback({ phase: 'Starting solution walkthrough' });
-        const controls = walkthroughControls(state);
         const runId = await ctx.startWorkflow('solution-walkthrough-story', {
           story: state.story,
           ...designPaths,
           reviewDirectory,
-          ...controls,
+          familiarity: state.familiarity,
+          technicalDepth: state.technicalDepth,
+          deliveryMechanism: state.deliveryMechanism,
         });
         await ctx.log('info', `Started solution-walkthrough-story child workflow ${runId}.`);
         return suspend(withStage(state, { kind: 'await_walkthrough', design: state.stage.design, runId }), wait.workflow(runId));
       }
 
       case 'await_walkthrough': {
-        const result = readWalkthroughResult(incoming, state.stage.runId, walkthroughControls(state).deliveryMechanism, state.stateVersion === 1);
+        const result = readWalkthroughResult(incoming, state.stage.runId, state.deliveryMechanism);
         if (!result.ok) return failWorkflow(ctx, 'Solution walkthrough failed', result.reason);
+        return cont(withStage(state, {
+          kind: 'reset_implementation_plan',
+          design: state.stage.design,
+          walkthrough: result.value,
+        }));
+      }
+
+      case 'reset_implementation_plan': {
+        await ctx.setUiFeedback({ phase: 'Preparing implementation plan' });
+        try {
+          const removed = removeImplementationPlan(ctx.worktreePath);
+          await ctx.log('info', removed
+            ? `Removed the existing implementation plan at ${planDirectory} so a new planner session can recreate it.`
+            : `No existing implementation plan was found at ${planDirectory}.`);
+        } catch (error) {
+          return failWorkflow(ctx, 'The existing implementation plan could not be removed', `Failed to remove ${planDirectory}: ${errorText(error)}`);
+        }
         return cont(withStage(state, {
           kind: 'start_implementation',
           design: state.stage.design,
-          walkthrough: result.value,
+          walkthrough: state.stage.walkthrough,
         }));
       }
 
@@ -289,7 +383,7 @@ export default defineWorkflow<State, Variables>({
       case 'await_implementation': {
         const result = readImplementationResult(incoming, state.stage.runId, state.story);
         if (!result.ok) return failWorkflow(ctx, 'Story implementation failed', result.reason);
-        if (!shouldSubmitPullRequest(state)) {
+        if (state.submitPullRequest === 'no') {
           await ctx.setUiFeedback({ phase: 'End-to-end implementation complete', message: 'Implementation is complete; pull-request submission was skipped.' });
           await ctx.log('info', 'Completed end-to-end implementation without submitting a pull request.');
           return done({
@@ -322,7 +416,13 @@ export default defineWorkflow<State, Variables>({
           }),
         });
         await ctx.log('info', `Started pull-request submission operation ${op.opId} with ${pullRequestAgent.model}.`);
-        return suspend(withStage(state, { ...state.stage, kind: 'await_pull_request', opId: op.opId }), wait.headlessAgent(op));
+        return suspend(withStage(state, {
+          kind: 'await_pull_request',
+          design: state.stage.design,
+          walkthrough: state.stage.walkthrough,
+          implementation: state.stage.implementation,
+          opId: op.opId,
+        }), wait.headlessAgent(op));
       }
 
       case 'await_pull_request': {
@@ -351,45 +451,28 @@ export default defineWorkflow<State, Variables>({
   },
 });
 
-function readDesignResult(incoming: unknown, runId: number, story: string): ReadResult<DesignResult> {
-  const child = readChildResult(incoming, runId, 'design-story');
+function readArtifactResult(incoming: unknown, runId: number, workflowKey: string, expectedPath: string): ReadResult<number> {
+  const child = readChildResult(incoming, runId, workflowKey);
   if (!child.ok) return child;
   const record = objectRecord(child.value);
-  if (!record || record.outcome !== 'story-designed') return failure(`design-story child workflow ${runId} returned an invalid outcome.`);
-  if (record.story !== story) return failure(`design-story child workflow ${runId} returned a different story.`);
-  if (!samePaths(record.artifacts, designPaths)) return failure(`design-story child workflow ${runId} returned unexpected artifact paths.`);
-  const reviewCounts = objectRecord(record.reviewCounts);
-  if (!reviewCounts || !positiveInteger(reviewCounts.currentState) || !positiveInteger(reviewCounts.architecture) || !positiveInteger(reviewCounts.programDesign)) {
-    return failure(`design-story child workflow ${runId} returned invalid review counts.`);
-  }
-  return success({
-    outcome: 'story-designed',
-    story,
-    artifacts: designPaths,
-    reviewCounts: {
-      currentState: reviewCounts.currentState as number,
-      architecture: reviewCounts.architecture as number,
-      programDesign: reviewCounts.programDesign as number,
-    },
-  });
+  if (!record || record.outcome !== 'artifact-reviewed') return failure(`${workflowKey} child workflow ${runId} returned an invalid outcome.`);
+  if (record.artifactPath !== expectedPath) return failure(`${workflowKey} child workflow ${runId} returned artifact path ${String(record.artifactPath)} instead of ${expectedPath}.`);
+  if (!positiveInteger(record.reviewCount)) return failure(`${workflowKey} child workflow ${runId} returned an invalid review count.`);
+  return success(record.reviewCount as number);
 }
 
-function readWalkthroughResult(incoming: unknown, runId: number, deliveryMechanism: DeliveryMechanism, allowLegacyResult: boolean): ReadResult<WalkthroughResult> {
+function designSummary(steps: DesignSteps): DesignSummary {
+  return {
+    artifacts: designPaths,
+    steps,
+  };
+}
+
+function readWalkthroughResult(incoming: unknown, runId: number, deliveryMechanism: DeliveryMechanism): ReadResult<WalkthroughResult> {
   const child = readChildResult(incoming, runId, 'solution-walkthrough-story');
   if (!child.ok) return child;
   const record = objectRecord(child.value);
   if (!record) return failure(`solution-walkthrough-story child workflow ${runId} returned an invalid result.`);
-  if (allowLegacyResult && record.outcome === 'story-walkthrough-completed') {
-    if (record.reviewDirectory !== reviewDirectory || record.manifestPath !== legacyManifestPath) return failure(`solution-walkthrough-story child workflow ${runId} returned unexpected legacy review paths.`);
-    if (!positiveInteger(record.completedTopicCount) || !samePaths(record.artifacts, legacyReviewPaths)) return failure(`solution-walkthrough-story child workflow ${runId} returned an invalid legacy walkthrough result.`);
-    return success({
-      outcome: 'story-walkthrough-completed',
-      reviewDirectory,
-      manifestPath: legacyManifestPath,
-      completedTopicCount: record.completedTopicCount as number,
-      artifacts: legacyReviewPaths,
-    });
-  }
   if (record.curriculumPath !== curriculumPath) return failure(`solution-walkthrough-story child workflow ${runId} returned an unexpected curriculum path.`);
   if (deliveryMechanism === 'socratic-walkthrough') {
     if (record.outcome !== 'guided-tutorial-completed') return failure(`solution-walkthrough-story child workflow ${runId} returned an outcome that does not match guided mode.`);
@@ -403,26 +486,15 @@ function readWalkthroughResult(incoming: unknown, runId: number, deliveryMechani
   }
   if (record.outcome !== 'presentation-review-completed') return failure(`solution-walkthrough-story child workflow ${runId} returned an outcome that does not match presentation mode.`);
   if (record.deckPlanPath !== deckPlanPath || record.presentationPath !== presentationPath) return failure(`solution-walkthrough-story child workflow ${runId} returned unexpected presentation paths.`);
-  if (positiveInteger(record.chapterCount) && positiveInteger(record.narrativeUnitCount)) {
-    return success({
-      outcome: 'presentation-review-completed',
-      curriculumPath,
-      deckPlanPath,
-      presentationPath,
-      chapterCount: record.chapterCount as number,
-      narrativeUnitCount: record.narrativeUnitCount as number,
-    });
-  }
-  if (positiveInteger(record.slideCount)) {
-    return success({
-      outcome: 'presentation-review-completed',
-      curriculumPath,
-      deckPlanPath,
-      presentationPath,
-      slideCount: record.slideCount as number,
-    });
-  }
-  return failure(`solution-walkthrough-story child workflow ${runId} returned invalid presentation counts.`);
+  if (!positiveInteger(record.chapterCount) || !positiveInteger(record.narrativeUnitCount)) return failure(`solution-walkthrough-story child workflow ${runId} returned invalid presentation counts.`);
+  return success({
+    outcome: 'presentation-review-completed',
+    curriculumPath,
+    deckPlanPath,
+    presentationPath,
+    chapterCount: record.chapterCount as number,
+    narrativeUnitCount: record.narrativeUnitCount as number,
+  });
 }
 
 function readImplementationResult(incoming: unknown, runId: number, story: string): ReadResult<ImplementationResult> {
@@ -436,10 +508,28 @@ function readImplementationResult(incoming: unknown, runId: number, story: strin
   if (!plan || plan.planDirectory !== planDirectory || plan.entryPlanPath !== entryPlanPath) return failure(`implement-story child workflow ${runId} returned unexpected plan paths.`);
   if (!positiveInteger(record.plannerAgentSessionId) || !positiveInteger(record.plannerPaneId)) return failure(`implement-story child workflow ${runId} returned invalid planner identifiers.`);
   const implementation = objectRecord(record.implementation);
-  if (!implementation || implementation.entryPlanPath !== entryPlanPath || !positiveInteger(implementation.completedPhaseCount)) {
+  const decisionLogPath = `${planDirectory}/decisions.md`;
+  if (!implementation
+    || implementation.entryPlanPath !== entryPlanPath
+    || implementation.decisionLogPath !== decisionLogPath
+    || !positiveInteger(implementation.phaseCount)
+    || implementation.completedPhaseCount !== implementation.phaseCount) {
     return failure(`implement-story child workflow ${runId} returned an invalid implementation result.`);
   }
-  return success(record);
+  return success({
+    outcome: 'story-implemented',
+    story,
+    artifacts: designPaths,
+    plan: { planDirectory, entryPlanPath },
+    plannerAgentSessionId: record.plannerAgentSessionId as number,
+    plannerPaneId: record.plannerPaneId as number,
+    implementation: {
+      entryPlanPath,
+      decisionLogPath,
+      phaseCount: implementation.phaseCount as number,
+      completedPhaseCount: implementation.completedPhaseCount as number,
+    },
+  });
 }
 
 function readChildResult(incoming: unknown, runId: number, workflowKey: string): ReadResult<unknown> {
@@ -467,31 +557,40 @@ function parseVariables(variables: Variables): { readonly story: string } & RunC
     story: parseStory(variables.story),
     familiarity: parseEnum(variables.familiarity, 'familiarity', familiarityLevels, 'new'),
     technicalDepth: parseEnum(variables.technicalDepth, 'technicalDepth', technicalDepthLevels, 'system-design'),
-    deliveryMechanism: parseDeliveryMechanism(variables.deliveryMechanism, variables.presentationMode),
+    deliveryMechanism: parseEnum(variables.deliveryMechanism, 'deliveryMechanism', deliveryMechanisms, 'presentation'),
     submitPullRequest: parseEnum(variables.submitPullRequest, 'submitPullRequest', pullRequestChoices, 'yes'),
   };
 }
 
-function walkthroughControls(state: State): WalkthroughControls {
-  if (state.stateVersion === 3 || state.stateVersion === 4) {
-    return {
-      familiarity: state.familiarity,
-      technicalDepth: state.technicalDepth,
-      deliveryMechanism: state.deliveryMechanism,
-    };
-  }
-  if (state.stateVersion === 2) {
-    return {
-      familiarity: state.familiarity,
-      technicalDepth: state.technicalDepth,
-      deliveryMechanism: state.presentationMode ? 'presentation' : 'socratic-walkthrough',
-    };
-  }
-  return { familiarity: 'new', technicalDepth: 'system-design', deliveryMechanism: 'presentation' };
+function reusedWalkthrough(repositoryPath: string): ReusedWalkthroughResult | null {
+  const reusedArtifacts: ('walkthrough-directory' | 'presentation')[] = [];
+  if (artifactDirectoryExists(repositoryPath, walkthroughDirectory)) reusedArtifacts.push('walkthrough-directory');
+  if (artifactFileExists(repositoryPath, presentationPath)) reusedArtifacts.push('presentation');
+  if (reusedArtifacts.length === 0) return null;
+  return {
+    outcome: 'solution-walkthrough-reused',
+    reviewDirectory,
+    walkthroughDirectory,
+    presentationPath,
+    reusedArtifacts,
+  };
 }
 
-function shouldSubmitPullRequest(state: State): boolean {
-  return state.stateVersion !== 4 || state.submitPullRequest === 'yes';
+function artifactFileExists(repositoryPath: string, artifactPath: string): boolean {
+  const absolutePath = resolve(repositoryPath, artifactPath);
+  return existsSync(absolutePath) && statSync(absolutePath).isFile();
+}
+
+function artifactDirectoryExists(repositoryPath: string, artifactPath: string): boolean {
+  const absolutePath = resolve(repositoryPath, artifactPath);
+  return existsSync(absolutePath) && statSync(absolutePath).isDirectory();
+}
+
+function removeImplementationPlan(repositoryPath: string): boolean {
+  const absolutePath = resolve(repositoryPath, planDirectory);
+  if (!existsSync(absolutePath)) return false;
+  rmSync(absolutePath, { recursive: true, force: true });
+  return true;
 }
 
 function parseStory(value: unknown): string {
@@ -508,13 +607,6 @@ function parseEnum<const T extends readonly string[]>(
   const candidate = value === undefined ? fallback : value;
   if (typeof candidate === 'string' && options.includes(candidate)) return candidate;
   throw new Error(`${key} must be one of ${options.join(', ')}.`);
-}
-
-function parseDeliveryMechanism(value: unknown, legacyPresentationMode: unknown): DeliveryMechanism {
-  if (value !== undefined) return parseEnum(value, 'deliveryMechanism', deliveryMechanisms, 'presentation');
-  if (legacyPresentationMode === undefined) return 'presentation';
-  if (typeof legacyPresentationMode === 'boolean') return legacyPresentationMode ? 'presentation' : 'socratic-walkthrough';
-  throw new Error('presentationMode must be a boolean.');
 }
 
 function samePaths(value: unknown, expected: ArtifactPaths): boolean {

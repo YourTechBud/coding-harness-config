@@ -4,6 +4,7 @@ import test from 'node:test';
 import { walkthroughPaths } from '../src/paths.js';
 import {
   PLAIN_LANGUAGE_STANDARD,
+  QUICK_GLANCE_STANDARD,
   architectRevisionPrompt,
   builderRevisionPrompt,
   curriculumPrompt,
@@ -28,12 +29,14 @@ const input: PromptInput = {
 };
 
 const plan: DeckPlan = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   curriculumPath: input.paths.curriculumPath,
   outputPath: input.paths.htmlPath,
   story: { title: 'Story 42', openingPromise: 'Understand the change', throughline: 'Follow the system', endingResolution: 'Know how it works' },
+  compactnessStrategy: 'Keep one slide per distinct contribution.',
   chapters: [{
-    id: 'architecture',
+    id: 'request-lifecycle',
+    kind: 'neighborhood',
     title: 'Architecture',
     storyRole: 'Explain the system relationships',
     openingContext: 'The current state is understood',
@@ -41,20 +44,25 @@ const plan: DeckPlan = {
     transitionToNext: 'Move into implementation',
     narrativeUnits: [{
       title: 'System flow',
+      facet: 'architecture',
       storyPurpose: 'Explain the system flow',
-      beatIds: ['ar-01'],
+      beatIds: ['request-lifecycle-01'],
       narrativeBridge: 'Follow the request through the system',
-      realizationPoints: ['The boundary owns the transition'],
-      requiredContent: ['Show the important boundary'],
-      supportingContent: [],
-      representationIntent: 'A data-flow view',
-      progressiveDisclosure: [],
-      sourceReferences: [{ heading: 'Architecture', locator: 'design/architecture.md' }],
+      slides: [{
+        id: 'boundary-ownership',
+        title: 'The boundary owns the transition',
+        uniqueContribution: 'Show which boundary owns the transition.',
+        requiredContent: ['Show the important boundary'],
+        contractIds: [],
+        representationIntent: 'A data-flow view',
+        progressiveDisclosure: [],
+        sourceReferences: [{ heading: 'Architecture', locator: 'design/architecture.md' }],
+      }],
     }],
   }],
 };
 
-test('the curriculum and every deck-writing turn share one plain-language standard', () => {
+test('the curriculum stays plain and every deck-writing turn uses the quick-glance standard', () => {
   const prompts = [
     curriculumPrompt(input),
     deckArchitecturePrompt(input),
@@ -65,10 +73,11 @@ test('the curriculum and every deck-writing turn share one plain-language standa
     verifierPrompt(input, 1),
   ];
   for (const prompt of prompts) assert.match(prompt, new RegExp(escapeRegExp(PLAIN_LANGUAGE_STANDARD)));
+  for (const prompt of prompts.slice(1)) assert.match(prompt, new RegExp(escapeRegExp(QUICK_GLANCE_STANDARD)));
+  assert.doesNotMatch(prompts[0]!, new RegExp(escapeRegExp(QUICK_GLANCE_STANDARD)));
   assert.match(prompts[0]!, /"languagePolicy"/);
-  assert.match(prompts[0]!, /smallest set of beats and required content/);
-  assert.match(prompts[6]!, /Technical depth never excuses difficult wording/);
-  assert.match(prompts[6]!, /factually complete and still require revision for unclear language/);
+  assert.match(prompts[0]!, /smallest curriculum/);
+  assert.match(prompts[6]!, /primary layer feels like forward motion rather than a study document/);
 });
 
 test('Show Me guidance follows the selected technical depth', () => {
@@ -78,18 +87,18 @@ test('Show Me guidance follows the selected technical depth', () => {
   for (const prompt of [product, system, implementation]) assert.match(prompt, /Use the Show Me skill/);
   assert.match(product, /user journey, before-and-after comparison, or tradeoff view/);
   assert.match(system, /boundary maps, ownership views, data or control flow/);
-  assert.match(implementation, /code-shape sketches, call trees, state transitions, diffs, algorithms, and failure paths/);
-  assert.match(narrativeUnitPrompt(input, plan, plan.chapters[0]!, plan.chapters[0]!.narrativeUnits[0]!, 0), /representations that reduce explanation rather than decorate it/);
+  assert.match(implementation, /exact code and contract shapes, call trees, state transitions, diffs, algorithms, and failure paths/);
+  assert.match(narrativeUnitPrompt(input, plan, plan.chapters[0]!, plan.chapters[0]!.narrativeUnits[0]!, 0), /focused representations/);
 });
 
-test('the deck brief owns the story while narrative-unit turns leave slide composition to the builder', () => {
+test('the deck architect owns compact slide allocation and the builder realizes it', () => {
   const architecture = deckArchitecturePrompt(input);
   const realization = narrativeUnitPrompt(input, plan, plan.chapters[0]!, plan.chapters[0]!.narrativeUnits[0]!, 0);
-  for (const field of ['openingPromise', 'throughline', 'endingResolution', 'storyRole', 'narrativeUnits', 'realizationPoints']) assert.match(architecture, new RegExp(field));
-  assert.match(architecture, /one focused construction turn and one coherent movement/);
-  assert.doesNotMatch(architecture, /slideIds|realizationUnits/);
-  assert.match(realization, /Decide how many slides it needs/);
-  assert.match(realization, /data-walkthrough-chapter="architecture"/);
+  for (const field of ['openingPromise', 'throughline', 'endingResolution', 'storyRole', 'compactnessStrategy', 'narrativeUnits', 'uniqueContribution', 'contractIds']) assert.match(architecture, new RegExp(field));
+  assert.match(architecture, /Plan the story and every content slide/);
+  assert.match(realization, /realize exactly the planned slides/i);
+  assert.match(realization, /data-walkthrough-chapter="request-lifecycle"/);
+  assert.match(realization, /data-walkthrough-facet="architecture"/);
 });
 
 test('each review round requests a complete standalone Markdown artifact', () => {
@@ -99,17 +108,18 @@ test('each review round requests a complete standalone Markdown artifact', () =>
     builderResponse: 'Builder changed the deck.',
   });
   for (const heading of ['Review scope', 'Prior finding verification', 'Findings', 'Human decision', 'Conclusion']) assert.match(prompt, new RegExp(`## ${heading}`));
-  for (const field of ['responsibility', 'affected area', 'evidence', 'consequence', 'required outcome', 'next review can verify']) assert.match(prompt, new RegExp(field, 'i'));
+  for (const field of ['responsibility', 'affected area', 'evidence', 'consequence', 'required outcome', 'verification']) assert.match(prompt, new RegExp(field, 'i'));
   for (const severity of ['Blocker', 'Concern', 'Suggestion']) assert.match(prompt, new RegExp(severity));
   for (const responsibility of ['Deck architecture', 'Deck implementation', 'Human decision']) assert.match(prompt, new RegExp(responsibility));
   assert.match(prompt, /round-02\.md/);
   assert.match(prompt, /Prior review evidence/);
   assert.match(prompt, /Architect changed the plan/);
   assert.match(prompt, /Builder changed the deck/);
-  assert.match(prompt, /Suggestions are optional and never require another revision round/);
-  assert.match(prompt, /stable ID across rounds/);
-  assert.match(prompt, /one or more of/);
-  assert.match(prompt, /Browser inspection is not required/);
+  assert.match(prompt, /Suggestions never require another round/);
+  assert.match(prompt, /stable ID/);
+  assert.match(prompt, /no slide-count target/);
+  assert.match(prompt, /must move directly from architecture to the program design/);
+  assert.match(prompt, /every materially changed contract/i);
   assert.doesNotMatch(prompt, /schemaVersion/);
 });
 
@@ -123,6 +133,14 @@ test('revision prompts receive the review and agent handoff text verbatim withou
   assert.match(architect, /Modify only review\/\.walkthrough\/deck-plan\.json/);
   assert.match(builder, /Modify only review\/walkthrough\.html/);
   assert.doesNotMatch(`${architect}\n${builder}`, /revision-response\.json/);
+});
+
+test('architect revisions preserve the exact deck-plan schema', () => {
+  const prompt = architectRevisionPrompt(input, 1, 'Merge repeated slides.');
+  assert.match(prompt, /validated against exact object key sets/);
+  assert.match(prompt, /keep schemaVersion, curriculumPath, and outputPath unchanged/);
+  assert.match(prompt, /do not add, remove, or rename object fields/);
+  assert.match(prompt, /changing field values or array items within that schema/);
 });
 
 function escapeRegExp(value: string): string {

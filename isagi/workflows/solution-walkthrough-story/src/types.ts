@@ -52,6 +52,32 @@ export type CandidateReference = {
   readonly candidateId: string;
 };
 
+export const contractKinds = [
+  'api',
+  'persistence',
+  'event',
+  'query',
+  'wire',
+  'configuration',
+  'cross-module',
+  'state-model',
+] as const;
+export type ContractKind = (typeof contractKinds)[number];
+
+export const contractChanges = ['add', 'modify', 'remove'] as const;
+export type ContractChange = (typeof contractChanges)[number];
+
+export type InventoryContract = {
+  readonly contractId: string;
+  readonly kind: ContractKind;
+  readonly name: string;
+  readonly change: ContractChange;
+  readonly exactShape: string;
+  readonly invariants: readonly string[];
+  readonly compatibilityAndMigration: string | null;
+  readonly sourceReferences: readonly SourceReference[];
+};
+
 export type InventoryCandidate = {
   readonly candidateId: string;
   readonly title: string;
@@ -65,16 +91,24 @@ export type InventoryCandidate = {
 };
 
 export type TopicInventory = {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly artifact: {
     readonly kind: ArtifactKind;
     readonly sourcePath: string;
   };
   readonly candidates: readonly InventoryCandidate[];
+  readonly contracts: readonly InventoryContract[];
 };
+
+export const chapterKinds = ['orientation', 'neighborhood', 'synthesis'] as const;
+export type ChapterKind = (typeof chapterKinds)[number];
+
+export const beatFacets = ['context', 'architecture', 'program-design', 'verification'] as const;
+export type BeatFacet = (typeof beatFacets)[number];
 
 export type CurriculumBeat = {
   readonly id: string;
+  readonly facet: BeatFacet;
   readonly title: string;
   readonly objective: string;
   readonly narrativeBridge: string;
@@ -90,7 +124,8 @@ export type CurriculumBeat = {
 };
 
 export type CurriculumChapter = {
-  readonly id: ArtifactKind;
+  readonly id: string;
+  readonly kind: ChapterKind;
   readonly title: string;
   readonly purpose: string;
   readonly openingContext: string;
@@ -99,7 +134,7 @@ export type CurriculumChapter = {
 };
 
 export type Curriculum = {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly story: {
     readonly reference: string;
     readonly title: string;
@@ -115,27 +150,41 @@ export type Curriculum = {
     readonly languagePolicy?: string | undefined;
   };
   readonly chapters: readonly CurriculumChapter[];
+  readonly contractCoverage: readonly {
+    readonly contractId: string;
+    readonly chapterId: string;
+    readonly beatId: string;
+    readonly presentationRequirement: string;
+  }[];
   readonly omissions: readonly {
     readonly candidate: CandidateReference;
     readonly reason: string;
   }[];
 };
 
-export type NarrativeUnit = {
+export type PlannedSlide = {
+  readonly id: string;
   readonly title: string;
-  readonly storyPurpose: string;
-  readonly beatIds: readonly string[];
-  readonly narrativeBridge: string;
-  readonly realizationPoints: readonly string[];
+  readonly uniqueContribution: string;
   readonly requiredContent: readonly string[];
-  readonly supportingContent: readonly string[];
+  readonly contractIds: readonly string[];
   readonly representationIntent: string | null;
   readonly progressiveDisclosure: readonly string[];
   readonly sourceReferences: readonly SourceReference[];
 };
 
+export type NarrativeUnit = {
+  readonly title: string;
+  readonly facet: BeatFacet;
+  readonly storyPurpose: string;
+  readonly beatIds: readonly string[];
+  readonly narrativeBridge: string;
+  readonly slides: readonly PlannedSlide[];
+};
+
 export type DeckChapter = {
-  readonly id: ArtifactKind;
+  readonly id: string;
+  readonly kind: ChapterKind;
   readonly title: string;
   readonly storyRole: string;
   readonly openingContext: string;
@@ -145,7 +194,7 @@ export type DeckChapter = {
 };
 
 export type DeckPlan = {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly curriculumPath: string;
   readonly outputPath: string;
   readonly story: {
@@ -154,6 +203,7 @@ export type DeckPlan = {
     readonly throughline: string;
     readonly endingResolution: string;
   };
+  readonly compactnessStrategy: string;
   readonly chapters: readonly DeckChapter[];
 };
 

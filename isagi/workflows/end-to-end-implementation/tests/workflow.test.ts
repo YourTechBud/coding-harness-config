@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, resolve } from 'node:path';
+import test, { type TestContext } from 'node:test';
 
 import type { WorkflowContext, WorkflowLaunchContext, WorkflowResult } from '@yourtechbudstudio/isagi-workflow-sdk';
 
@@ -58,7 +61,7 @@ test('command captures the story, walkthrough controls, and pull-request choice'
   });
 });
 
-test('initial state captures normalized walkthrough controls and starts design', async () => {
+test('initial state captures normalized walkthrough controls and starts resumable design', async () => {
   assert.deepEqual(await workflow.init(launchCtx, {
     story: `  ${story}  `,
     familiarity: 'familiar',
@@ -66,13 +69,13 @@ test('initial state captures normalized walkthrough controls and starts design',
     deliveryMechanism: 'socratic-walkthrough',
     submitPullRequest: 'no',
   }), {
-    stateVersion: 4,
+    stateVersion: 1,
     story,
     familiarity: 'familiar',
     technicalDepth: 'implementation',
     deliveryMechanism: 'socratic-walkthrough',
     submitPullRequest: 'no',
-    stage: { kind: 'start_design' },
+    stage: { kind: 'start_current_state' },
   });
   await assert.rejects(async () => workflow.validate(launchCtx, { story, familiarity: 'expert' }));
   await assert.rejects(async () => workflow.validate(launchCtx, { story, technicalDepth: 'deep' }));
@@ -80,15 +83,115 @@ test('initial state captures normalized walkthrough controls and starts design',
   await assert.rejects(async () => workflow.validate(launchCtx, { story, submitPullRequest: 'later' }));
 });
 
-test('starts Design Story with the complete scratch/story design convention', async () => {
+test('runs each missing design task directly with the complete scratch/story convention', async () => {
   const harness = workflowHarness();
-  const result = await workflow.step(harness.ctx, await state({ kind: 'start_design' }), null);
+  let result = await workflow.step(harness.ctx, await state({ kind: 'start_current_state' }), null);
   assert.equal(result.type, 'suspend');
   assert.deepEqual(harness.started[0], {
-    workflowKey: 'design-story',
-    variables: { story, ...designPaths },
+    workflowKey: 'analyze-current-state',
+    variables: { story, artifactPath: designPaths.currentStatePath },
     context: undefined,
   });
+
+  result = await workflow.step(harness.ctx, resultState(result), childEvent(101, artifactResult(designPaths.currentStatePath, 1)));
+  assert.deepEqual(resultState(result).stage, {
+    kind: 'start_architecture',
+    designSteps: { currentState: { outcome: 'created', reviewCount: 1 } },
+  });
+
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.deepEqual(harness.started.at(-1), {
+    workflowKey: 'design-architecture',
+    variables: { story, currentStatePath: designPaths.currentStatePath, artifactPath: designPaths.architecturePath },
+    context: undefined,
+  });
+
+  result = await workflow.step(harness.ctx, resultState(result), childEvent(101, artifactResult(designPaths.architecturePath, 2)));
+  assert.deepEqual(resultState(result).stage, {
+    kind: 'start_program_design',
+    designSteps: {
+      currentState: { outcome: 'created', reviewCount: 1 },
+      architecture: { outcome: 'created', reviewCount: 2 },
+    },
+  });
+
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.deepEqual(harness.started.at(-1), {
+    workflowKey: 'design-program',
+    variables: {
+      story,
+      currentStatePath: designPaths.currentStatePath,
+      architecturePath: designPaths.architecturePath,
+      artifactPath: designPaths.programDesignPath,
+    },
+    context: undefined,
+  });
+
+  result = await workflow.step(harness.ctx, resultState(result), childEvent(101, artifactResult(designPaths.programDesignPath, 3)));
+  assert.deepEqual(resultState(result).stage, {
+    kind: 'start_walkthrough',
+    design: {
+      artifacts: designPaths,
+      steps: {
+        currentState: { outcome: 'created', reviewCount: 1 },
+        architecture: { outcome: 'created', reviewCount: 2 },
+        programDesign: { outcome: 'created', reviewCount: 3 },
+      },
+    },
+  });
+});
+
+test('skips each design task whose Markdown artifact already exists', async (t) => {
+  const worktreePath = tempWorktree(t);
+  for (const artifactPath of Object.values(designPaths)) writeArtifact(worktreePath, artifactPath);
+  const harness = workflowHarness(worktreePath);
+
+  let result = await workflow.step(harness.ctx, await state({ kind: 'start_current_state' }), null);
+  assert.deepEqual(resultState(result).stage, { kind: 'start_architecture', designSteps: { currentState: { outcome: 'reused' } } });
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.deepEqual(resultState(result).stage, {
+    kind: 'start_program_design',
+    designSteps: { currentState: { outcome: 'reused' }, architecture: { outcome: 'reused' } },
+  });
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.deepEqual(resultState(result).stage, {
+    kind: 'start_walkthrough',
+    design: {
+      artifacts: designPaths,
+      steps: {
+        currentState: { outcome: 'reused' },
+        architecture: { outcome: 'reused' },
+        programDesign: { outcome: 'reused' },
+      },
+    },
+  });
+  assert.equal(harness.started.length, 0);
+});
+
+test('runs only the missing tasks in a partially completed design', async (t) => {
+  const worktreePath = tempWorktree(t);
+  writeArtifact(worktreePath, designPaths.currentStatePath);
+  writeArtifact(worktreePath, designPaths.programDesignPath);
+  const harness = workflowHarness(worktreePath);
+
+  let result = await workflow.step(harness.ctx, await state({ kind: 'start_current_state' }), null);
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.equal(harness.started.at(-1)?.workflowKey, 'design-architecture');
+  result = await workflow.step(harness.ctx, resultState(result), childEvent(101, artifactResult(designPaths.architecturePath, 2)));
+  result = await workflow.step(harness.ctx, resultState(result), null);
+
+  assert.deepEqual(resultState(result).stage, {
+    kind: 'start_walkthrough',
+    design: {
+      artifacts: designPaths,
+      steps: {
+        currentState: { outcome: 'reused' },
+        architecture: { outcome: 'created', reviewCount: 2 },
+        programDesign: { outcome: 'reused' },
+      },
+    },
+  });
+  assert.deepEqual(harness.started.map(({ workflowKey }) => workflowKey), ['design-architecture']);
 });
 
 test('runs walkthrough and implementation in order with explicit pack paths', async () => {
@@ -96,10 +199,7 @@ test('runs walkthrough and implementation in order with explicit pack paths', as
   const design = designResult();
   const walkthrough = walkthroughResult();
 
-  let result = await workflow.step(harness.ctx, await state({ kind: 'await_design', runId: 101 }), childEvent(101, design));
-  assert.deepEqual(resultState(result).stage, { kind: 'start_walkthrough', design });
-
-  result = await workflow.step(harness.ctx, resultState(result), null);
+  let result = await workflow.step(harness.ctx, await state({ kind: 'start_walkthrough', design }), null);
   assert.deepEqual(harness.started.at(-1), {
     workflowKey: 'solution-walkthrough-story',
     variables: {
@@ -114,14 +214,98 @@ test('runs walkthrough and implementation in order with explicit pack paths', as
   });
 
   result = await workflow.step(harness.ctx, resultState(result, { kind: 'await_walkthrough', design, runId: 101 }), childEvent(101, walkthrough));
-  assert.deepEqual(resultState(result).stage, { kind: 'start_implementation', design, walkthrough });
+  assert.deepEqual(resultState(result).stage, { kind: 'reset_implementation_plan', design, walkthrough });
 
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.deepEqual(resultState(result).stage, { kind: 'start_implementation', design, walkthrough });
   result = await workflow.step(harness.ctx, resultState(result), null);
   assert.deepEqual(harness.started.at(-1), {
     workflowKey: 'implement-story',
     variables: { story, ...designPaths, ...plan, ...implementationOptions },
     context: undefined,
   });
+});
+
+test('skips the walkthrough when walkthrough.html already exists', async (t) => {
+  const worktreePath = tempWorktree(t);
+  writeArtifact(worktreePath, `${reviewDirectory}/walkthrough.html`, '<html></html>');
+  const harness = workflowHarness(worktreePath);
+  const design = designResult();
+
+  const result = await workflow.step(harness.ctx, await state({ kind: 'start_walkthrough', design }), null);
+  assert.deepEqual(resultState(result).stage, {
+    kind: 'reset_implementation_plan',
+    design,
+    walkthrough: {
+      outcome: 'solution-walkthrough-reused',
+      reviewDirectory,
+      walkthroughDirectory: `${reviewDirectory}/.walkthrough`,
+      presentationPath: `${reviewDirectory}/walkthrough.html`,
+      reusedArtifacts: ['presentation'],
+    },
+  });
+  assert.deepEqual(harness.started, []);
+});
+
+test('skips the walkthrough when the .walkthrough directory already exists', async (t) => {
+  const worktreePath = tempWorktree(t);
+  mkdirSync(resolve(worktreePath, reviewDirectory, '.walkthrough'), { recursive: true });
+  const harness = workflowHarness(worktreePath);
+  const design = designResult();
+
+  const result = await workflow.step(harness.ctx, await state({ kind: 'start_walkthrough', design }), null);
+  assert.deepEqual(resultState(result).stage, {
+    kind: 'reset_implementation_plan',
+    design,
+    walkthrough: {
+      outcome: 'solution-walkthrough-reused',
+      reviewDirectory,
+      walkthroughDirectory: `${reviewDirectory}/.walkthrough`,
+      presentationPath: `${reviewDirectory}/walkthrough.html`,
+      reusedArtifacts: ['walkthrough-directory'],
+    },
+  });
+  assert.deepEqual(harness.started, []);
+});
+
+test('records both walkthrough reuse signals when both artifacts exist', async (t) => {
+  const worktreePath = tempWorktree(t);
+  mkdirSync(resolve(worktreePath, reviewDirectory, '.walkthrough'), { recursive: true });
+  writeArtifact(worktreePath, `${reviewDirectory}/walkthrough.html`, '<html></html>');
+  const harness = workflowHarness(worktreePath);
+  const design = designResult();
+
+  const result = await workflow.step(harness.ctx, await state({ kind: 'start_walkthrough', design }), null);
+  assert.deepEqual(resultState(result).stage, {
+    kind: 'reset_implementation_plan',
+    design,
+    walkthrough: {
+      outcome: 'solution-walkthrough-reused',
+      reviewDirectory,
+      walkthroughDirectory: `${reviewDirectory}/.walkthrough`,
+      presentationPath: `${reviewDirectory}/walkthrough.html`,
+      reusedArtifacts: ['walkthrough-directory', 'presentation'],
+    },
+  });
+  assert.deepEqual(harness.started, []);
+});
+
+test('removes an existing implementation plan before launching a fresh planner', async (t) => {
+  const worktreePath = tempWorktree(t);
+  writeArtifact(worktreePath, plan.entryPlanPath, '# stale plan');
+  writeArtifact(worktreePath, `${plan.planDirectory}/phase-01-stale.md`, '# stale phase');
+  const harness = workflowHarness(worktreePath);
+  const design = designResult();
+  const walkthrough = walkthroughResult();
+
+  let result = await workflow.step(harness.ctx, await state({ kind: 'reset_implementation_plan', design, walkthrough }), null);
+  assert.deepEqual(resultState(result).stage, { kind: 'start_implementation', design, walkthrough });
+  assert.equal(existsSync(resolve(worktreePath, plan.planDirectory)), false);
+  assert.equal(harness.started.length, 0);
+
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.equal(result.type, 'suspend');
+  assert.equal(harness.started.at(-1)?.workflowKey, 'implement-story');
 });
 
 test('guided walkthrough completion hands off to implementation', async () => {
@@ -148,41 +332,25 @@ test('guided walkthrough completion hands off to implementation', async () => {
     context: undefined,
   });
   result = await workflow.step(harness.ctx, resultState(result), childEvent(101, guided));
-  assert.deepEqual(resultState(result).stage, { kind: 'start_implementation', design, walkthrough: guided });
+  assert.deepEqual(resultState(result).stage, { kind: 'reset_implementation_plan', design, walkthrough: guided });
 });
 
-test('a version-one run can consume the walkthrough result it was launched against', async () => {
+test('rejects obsolete slide-count presentation results', async () => {
   const harness = workflowHarness();
   const design = designResult();
-  const legacy = legacyWalkthroughResult();
-  const result = await workflow.step(harness.ctx, {
-    stateVersion: 1,
-    story,
-    stage: { kind: 'await_walkthrough', design, runId: 101 },
-  }, childEvent(101, legacy));
-  assert.deepEqual(resultState(result).stage, { kind: 'start_implementation', design, walkthrough: legacy });
-});
-
-test('a version-two run keeps its boolean delivery choice when resumed', async () => {
-  const harness = workflowHarness();
-  const design = designResult();
-  const result = await workflow.step(harness.ctx, {
-    stateVersion: 2,
-    story,
-    familiarity: 'familiar',
-    technicalDepth: 'product',
-    presentationMode: false,
-    stage: { kind: 'start_walkthrough', design },
-  }, null);
-  assert.equal(result.type, 'suspend');
-  assert.deepEqual(harness.started.at(-1)?.variables, {
-    story,
-    ...designPaths,
-    reviewDirectory,
-    familiarity: 'familiar',
-    technicalDepth: 'product',
-    deliveryMechanism: 'socratic-walkthrough',
-  });
+  const result = await workflow.step(
+    harness.ctx,
+    await state({ kind: 'await_walkthrough', design, runId: 101 }),
+    childEvent(101, {
+      outcome: 'presentation-review-completed',
+      curriculumPath: `${reviewDirectory}/.walkthrough/curriculum.json`,
+      deckPlanPath: `${reviewDirectory}/.walkthrough/deck-plan.json`,
+      presentationPath: `${reviewDirectory}/walkthrough.html`,
+      slideCount: 9,
+    }),
+  );
+  assert.equal(result.type, 'fail');
+  assert.match(harness.logs.at(-1)?.message ?? '', /invalid presentation counts/);
 });
 
 test('implementation completion launches Luna to submit the pull request against main', async () => {
@@ -247,20 +415,23 @@ test('implementation completion skips pull-request submission when selected', as
   assert.deepEqual(harness.headless, []);
 });
 
-test('a version-three run retains the previous automatic PR-submission behavior', async () => {
+test('rejects incomplete or inconsistent implementation results', async () => {
   const harness = workflowHarness();
   const design = designResult();
   const walkthrough = walkthroughResult();
-  const implementation = implementationResult();
-  const result = await workflow.step(harness.ctx, {
-    stateVersion: 3,
-    story,
-    familiarity: 'new',
-    technicalDepth: 'system-design',
-    deliveryMechanism: 'presentation',
-    stage: { kind: 'await_implementation', design, walkthrough, runId: 101 },
-  }, childEvent(101, implementation));
-  assert.deepEqual(resultState(result).stage, { kind: 'start_pull_request', design, walkthrough, implementation });
+  const result = await workflow.step(
+    harness.ctx,
+    await state({ kind: 'await_implementation', design, walkthrough, runId: 101 }),
+    childEvent(101, {
+      ...implementationResult(),
+      implementation: {
+        ...implementationResult().implementation,
+        completedPhaseCount: 2,
+      },
+    }),
+  );
+  assert.equal(result.type, 'fail');
+  assert.match(harness.logs.at(-1)?.message ?? '', /invalid implementation result/);
 });
 
 test('a failed or malformed pull-request operation stops with diagnostics', async () => {
@@ -287,20 +458,20 @@ test('a failed or malformed child stops the wrapper with diagnostics', async () 
   const failedHarness = workflowHarness();
   const failed = await workflow.step(
     failedHarness.ctx,
-    await state({ kind: 'await_design', runId: 101 }),
-    { kind: 'workflow', results: [{ runId: 101, status: 'failed', error: 'designer failed' }] },
+    await state({ kind: 'await_current_state', runId: 101 }),
+    { kind: 'workflow', results: [{ runId: 101, status: 'failed', error: 'analyst failed' }] },
   );
   assert.equal(failed.type, 'fail');
-  assert.match(failedHarness.logs.at(-1)?.message ?? '', /designer failed/);
+  assert.match(failedHarness.logs.at(-1)?.message ?? '', /analyst failed/);
 
   const malformedHarness = workflowHarness();
   const malformed = await workflow.step(
     malformedHarness.ctx,
-    await state({ kind: 'await_design', runId: 101 }),
-    childEvent(101, { ...designResult(), artifacts: { ...designPaths, architecturePath: 'wrong.md' } }),
+    await state({ kind: 'await_current_state', runId: 101 }),
+    childEvent(101, artifactResult('wrong.md', 1)),
   );
   assert.equal(malformed.type, 'fail');
-  assert.match(malformedHarness.logs.at(-1)?.message ?? '', /unexpected artifact paths/);
+  assert.match(malformedHarness.logs.at(-1)?.message ?? '', /wrong.md/);
 });
 
 async function state(stage: Stage): Promise<State> {
@@ -315,11 +486,17 @@ function resultState(result: WorkflowResult, stage?: Stage): State {
 
 function designResult() {
   return {
-    outcome: 'story-designed' as const,
-    story,
     artifacts: designPaths,
-    reviewCounts: { currentState: 1, architecture: 2, programDesign: 1 },
+    steps: {
+      currentState: { outcome: 'created' as const, reviewCount: 1 },
+      architecture: { outcome: 'created' as const, reviewCount: 2 },
+      programDesign: { outcome: 'created' as const, reviewCount: 1 },
+    },
   };
+}
+
+function artifactResult(artifactPath: string, reviewCount: number) {
+  return { outcome: 'artifact-reviewed', artifactPath, reviewCount };
 }
 
 function walkthroughResult() {
@@ -342,23 +519,9 @@ function guidedWalkthroughResult() {
   };
 }
 
-function legacyWalkthroughResult() {
-  return {
-    outcome: 'story-walkthrough-completed' as const,
-    reviewDirectory,
-    manifestPath: `${reviewDirectory}/.walkthrough/manifest.json`,
-    completedTopicCount: 9,
-    artifacts: {
-      currentStatePath: `${reviewDirectory}/current-state.html`,
-      architecturePath: `${reviewDirectory}/architecture.html`,
-      programDesignPath: `${reviewDirectory}/program-design.html`,
-    },
-  };
-}
-
 function implementationResult() {
   return {
-    outcome: 'story-implemented',
+    outcome: 'story-implemented' as const,
     story,
     artifacts: designPaths,
     plan,
@@ -394,13 +557,13 @@ function headlessEvent(output: string) {
   return { kind: 'headless_agent', results: [{ opId: 'pr-1', status: 'completed', output }] };
 }
 
-function workflowHarness() {
+function workflowHarness(worktreePath = '/workspace') {
   const started: Array<{ readonly workflowKey: string; readonly variables: Record<string, unknown> | undefined; readonly context: unknown }> = [];
   const logs: Array<{ readonly level: string; readonly message: string }> = [];
   const closed: number[] = [];
   const headless: Array<Parameters<WorkflowContext['runHeadlessAgent']>[0]> = [];
   const ctx = {
-    worktreePath: '/workspace',
+    worktreePath,
     startWorkflow: async (workflowKey: string, variables?: Record<string, unknown>, context?: unknown) => {
       started.push({ workflowKey, variables, context });
       return 101;
@@ -423,4 +586,16 @@ function workflowHarness() {
     log: async (level: string, message: string) => { logs.push({ level, message }); },
   } as unknown as WorkflowContext;
   return { ctx, started, logs, closed, headless };
+}
+
+function tempWorktree(t: TestContext): string {
+  const worktreePath = mkdtempSync(resolve(tmpdir(), 'end-to-end-implementation-'));
+  t.after(() => rmSync(worktreePath, { recursive: true, force: true }));
+  return worktreePath;
+}
+
+function writeArtifact(worktreePath: string, artifactPath: string, contents = '# Existing artifact'): void {
+  const absolutePath = resolve(worktreePath, artifactPath);
+  mkdirSync(dirname(absolutePath), { recursive: true });
+  writeFileSync(absolutePath, contents);
 }

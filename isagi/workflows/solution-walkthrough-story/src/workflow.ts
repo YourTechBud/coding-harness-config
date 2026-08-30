@@ -306,6 +306,11 @@ export async function step(ctx: WorkflowContext, state: State, incoming: unknown
       } catch (error) {
         return failed(ctx, 'The deck review could not be routed. Presentation panes remain open.', errorText(error));
       }
+      if (state.stage.round > MAX_REVIEW_ROUNDS && route !== 'complete' && route !== 'human-decision') {
+        await ctx.log('info', `Final deck audit still found required work after ${MAX_REVIEW_ROUNDS} automatic revision rounds.`);
+        await ctx.setUiFeedback({ kind: 'warning', phase: 'Waiting for your decision', message: `The final audit in ${deckReviewPath(state.paths, state.stage.round)} still has required work. Resolve it with the verifier, then press Continue.` });
+        return suspend(withStage(state, { ...state.stage, kind: 'await_human_decision' }), wait.userContinue());
+      }
       switch (route) {
         case 'complete':
           await closeAll(ctx, [state.stage.architect, state.stage.builder, state.stage.verifier], 'deck architect, builder, and verifier');
@@ -357,11 +362,6 @@ export async function step(ctx: WorkflowContext, state: State, incoming: unknown
       try {
         const response = await latestCompleteTurn(ctx, state.stage.builder, 'builder');
         assertExpectedFile(state.repositoryPath, state.paths.htmlPath, 'walkthrough deck');
-        if (state.stage.round >= MAX_REVIEW_ROUNDS) {
-          await ctx.log('info', `Deck review loop stopped after the final fixes from round ${state.stage.round}.`);
-          await closeAll(ctx, [state.stage.architect, state.stage.builder, state.stage.verifier], 'deck architect, builder, and verifier');
-          return cont(withStage(state, { kind: 'start_presentation_review', curriculum: state.stage.curriculum, plan: state.stage.plan }));
-        }
         return cont(withStage(state, { kind: 'send_reverification', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, builder: state.stage.builder, verifier: state.stage.verifier, round: state.stage.round + 1, previousReview: state.stage.review, architectResponse: state.stage.architectResponse, builderResponse: response }));
       } catch (error) {
         return failed(ctx, 'The builder revision could not be handed off. Presentation panes remain open.', errorText(error));

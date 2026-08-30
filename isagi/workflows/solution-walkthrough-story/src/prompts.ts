@@ -30,7 +30,9 @@ export type PromptInput = {
   readonly audienceProfile: AudienceProfile;
 };
 
-export const PLAIN_LANGUAGE_STANDARD = `Use plain language at every technical depth. Technical depth controls which facts and representations belong, not how difficult the sentences sound. Lead with concrete behavior, consequence, or user impact, then introduce a technical term when it adds precision. Define unfamiliar repository terms in the same context before relying on them. Write with clear verbs and complete sentences. Replace noun stacks, compressed slogans, arrow-chain shorthand, and invented labels with direct explanations. Keep exact identifiers in code, diagrams, or supporting labels when the audience needs them. Prefer clarity over brevity, and omit detail that does not change the reader's understanding. When the material needs more room, split it across slides or use progressive disclosure instead of compressing the prose.`;
+export const PLAIN_LANGUAGE_STANDARD = `Use direct, plain language. Lead with behavior or consequence, define unfamiliar terms before use, and keep exact identifiers where they add precision. Omit or merge material that does not change understanding.`;
+
+export const QUICK_GLANCE_STANDARD = `Design for quick-glance forward motion. Each slide has a declarative takeaway, one dominant visual or example, and minimal supporting copy. A reader should grasp the point within seconds and choose whether to open accessible detail. Keep exact changed contracts reviewable, using progressive disclosure when their full shape would crowd the primary view.`;
 
 export function sourceInventoryPrompt(input: PromptInput, kind: ArtifactKind): string {
   const sourcePath = pathFor(input.sources, kind);
@@ -43,11 +45,11 @@ Artifact: ${kind}
 Source: ${sourcePath}
 Output: ${outputPath}
 
-Inventory the distinct mental models, factual points, prerequisite relationships, vocabulary, source evidence, and useful visual or code-shaped representations. This analysis is audience-neutral: capture what the source contains without choosing how much a particular reader should see.
+Create an audience-neutral inventory of distinct mental models, facts, prerequisites, terms, evidence, and useful representations. For program design, also capture every materially changed API, schema, event, query, wire, configuration, module, or state contract with enough exact shape, invariants, compatibility, and migration detail to review it. Contracts belong only in the program-design inventory.
 
 Write exactly one JSON object:
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "artifact": { "kind": "${kind}", "sourcePath": "${sourcePath}" },
   "candidates": [{
     "candidateId": "short-kebab-id",
@@ -59,10 +61,20 @@ Write exactly one JSON object:
     "keyPoints": ["Grounded fact or relationship"],
     "representationOpportunities": ["A useful diagram, code shape, or comparison"],
     "sourceReferences": [{ "heading": "Source heading", "locator": "Retrievable locator" }]
+  }],
+  "contracts": [{
+    "contractId": "short-kebab-id",
+    "kind": "persistence",
+    "name": "Exact contract name",
+    "change": "add",
+    "exactShape": "Reviewable signature, schema, fields, types, optionality, outputs, and errors",
+    "invariants": ["Behavior or constraint that must hold"],
+    "compatibilityAndMigration": null,
+    "sourceReferences": [{ "heading": "Source heading", "locator": "Retrievable locator" }]
   }]
 }
 
-Candidate IDs are unique within this artifact and prerequisites reference candidates in this file. Write only ${outputPath}.`);
+Candidate IDs and contract IDs are unique within this artifact and prerequisites reference candidates in this file. Contract kind is one of api, persistence, event, query, wire, configuration, cross-module, or state-model. Contract change is add, modify, or remove. For ${kind}, ${kind === 'program-design' ? 'contracts contains every materially changed contract; use an empty array only when the source truly defines no changed contracts' : 'contracts must be an empty array'}. Write only ${outputPath}.`);
 }
 
 export function curriculumPrompt(input: PromptInput): string {
@@ -77,18 +89,20 @@ Inventories:
 ${inventories}
 Output: ${input.paths.curriculumPath}
 
-Apply the audience profile here and only here. For familiarity=new, establish concepts from first principles; for familiarity=familiar, use compact refreshers and emphasize deltas and consequences. Product depth prioritizes user value, behavior, and tradeoffs; system-design depth prioritizes boundaries, data flow, responsibilities, and tradeoffs; implementation depth includes exact mechanics, symbols, failure modes, and verification evidence.
+Apply the audience profile here. New audiences need first-principles orientation; familiar audiences need compact refreshers and deltas. Product depth emphasizes behavior and tradeoffs, system-design depth emphasizes boundaries and flows, and implementation depth adds mechanics and failure evidence.
 
 Language policy:
 ${PLAIN_LANGUAGE_STANDARD}
 
-Select the smallest set of beats and required content that preserves the audience's needed mental models. Move useful evidence that does not change the central understanding into supportingMaterial, and omit inventory candidates whose detail is unnecessary for this audience with a specific reason.
+Select the smallest curriculum that preserves the needed mental models. Move secondary evidence to supportingMaterial and explain omissions. Changed contracts remain required at every depth; depth changes their framing, not their availability.
 
-Build a coherent narrative through current state, architecture, and program design. A beat is a meaningful teaching movement, not a predetermined slide or turn. Preserve every selected candidate exactly once or explain its omission. Introduce prerequisites before dependents and introduce each term once. realizationPoint is the insight that presentation content must highlight or guided questioning should help the reader reach; use null when no distinct realization is needed.
+Use one compact orientation, one or more conceptual neighborhoods, and an optional synthesis only when it adds a distinct conclusion. Within each neighborhood, local context leads to contiguous architecture beats immediately followed by contiguous program-design beats, then optional verification. Program design realizes architecture through contracts and mechanics instead of restating it.
+
+Account for each candidate exactly once through a beat or omission, order prerequisites, and introduce terms once. Map every changed contract exactly once to a program-design beat through contractCoverage. A beat is a teaching movement with a context, architecture, program-design, or verification facet; realizationPoint is its optional key insight.
 
 Write exactly one JSON object with this shape:
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "story": { "reference": ${JSON.stringify(input.story)}, "title": "Title", "throughline": "Narrative throughline" },
   "sources": ${JSON.stringify(input.sources)},
   "audienceProfile": ${JSON.stringify(input.audienceProfile)},
@@ -100,13 +114,15 @@ Write exactly one JSON object with this shape:
     "languagePolicy": "How every delivery mode keeps the selected material plain and precise"
   },
   "chapters": [{
-    "id": "current-state",
+    "id": "orientation",
+    "kind": "orientation",
     "title": "Chapter title",
     "purpose": "Why this chapter exists",
     "openingContext": "Standalone briefing",
     "synthesisObjective": "What the reader should connect after its beats",
     "beats": [{
-      "id": "cs-01",
+      "id": "orientation-01",
+      "facet": "context",
       "title": "Beat title",
       "objective": "Learner outcome",
       "narrativeBridge": "How this follows and leads onward",
@@ -121,10 +137,16 @@ Write exactly one JSON object with this shape:
       "sourceReferences": [{ "heading": "Heading", "locator": "Locator" }]
     }]
   }],
+  "contractCoverage": [{
+    "contractId": "contract-id-from-program-design-inventory",
+    "chapterId": "neighborhood-id",
+    "beatId": "neighborhood-id-02",
+    "presentationRequirement": "How the exact shape and its consequence stay reviewable at the selected depth"
+  }],
   "omissions": [{ "candidate": { "artifact": "architecture", "candidateId": "candidate-id" }, "reason": "Audience-specific reason" }]
 }
 
-Create exactly three chapters in this order with IDs current-state, architecture, program-design. Use sequential cs-NN, ar-NN, and pd-NN beat IDs. Write only ${input.paths.curriculumPath}.`);
+Use unique kebab-case chapter IDs and sequential <chapter-id>-NN beat IDs. Chapter kind is orientation, neighborhood, or synthesis. Beat facet is context, architecture, program-design, or verification. The orientation is first, at least one neighborhood follows, and an optional synthesis is last. The orientation and synthesis use context or verification facets as appropriate. Write only ${input.paths.curriculumPath}.`);
 }
 
 export function deckArchitecturePrompt(input: PromptInput): string {
@@ -135,18 +157,16 @@ Curriculum: ${input.paths.curriculumPath}
 Output deck: ${input.paths.htmlPath}
 Output plan: ${input.paths.deckPlanPath}
 
-Own the storytelling before construction begins. Define the opening promise, the throughline, the ending resolution, each chapter's role and transitions, and the ordered narrative units that carry the audience from one understanding to the next. Preserve the curriculum's narrative and content obligations. A narrative unit is one focused construction turn and one coherent movement in the story, not a predetermined slide. The builder may realize it with one or several slides.
+Plan the story and every content slide before construction. Preserve the curriculum's neighborhoods and obligations. Within each neighborhood, architecture is immediately followed by program design; current-state evidence appears only as brief orientation or local context.
 
-Writing standard:
 ${PLAIN_LANGUAGE_STANDARD}
+${QUICK_GLANCE_STANDARD}
 
-Use the Show Me skill to choose representations that carry real explanatory work. ${representationGuidance(input.audienceProfile.technicalDepth)} Keep each representation focused on the narrative unit's realization points and place it beside the short explanation it supports. When prose is clearer than a visual, use prose.
-
-Give every narrative unit enough detail that building it is the act of making the presentation rather than discovering the story. Its realizationPoints are the ordered insights the audience should reach together. Keep insights in one unit when they form one coherent chain; separate them when they require different narrative movements. Let the number of narrative units follow the story rather than a quota.
+Use the Show Me skill for representations that carry the explanation. ${representationGuidance(input.audienceProfile.technicalDepth)} Carry an architecture visual into the adjacent program-design unit when it can reveal the realization without repeating setup. Give every slide one unique contribution, merge repeated motivations and summaries, and explain the reduction choices in compactnessStrategy. Let slide count follow distinct substance rather than a quota.
 
 Write exactly one JSON object:
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "curriculumPath": ${JSON.stringify(input.paths.curriculumPath)},
   "outputPath": ${JSON.stringify(input.paths.htmlPath)},
   "story": {
@@ -155,8 +175,10 @@ Write exactly one JSON object:
     "throughline": "The idea connecting the complete presentation",
     "endingResolution": "What the audience should understand when the story closes"
   },
+  "compactnessStrategy": "What is merged, omitted, recalled briefly, or moved into progressive disclosure to avoid repetition",
   "chapters": [{
-    "id": "current-state",
+    "id": "orientation",
+    "kind": "orientation",
     "title": "Chapter title",
     "storyRole": "What this chapter contributes to the whole story",
     "openingContext": "Where the audience is when the chapter begins",
@@ -164,20 +186,25 @@ Write exactly one JSON object:
     "transitionToNext": "How this understanding leads into the next chapter or ending",
     "narrativeUnits": [{
       "title": "Working title for this narrative movement",
+      "facet": "context",
       "storyPurpose": "Why this movement exists in the story",
-      "beatIds": ["cs-01"],
+      "beatIds": ["orientation-01"],
       "narrativeBridge": "How it follows the previous movement and prepares the next",
-      "realizationPoints": ["The insight the audience should reach"],
-      "requiredContent": ["Content that must be conveyed"],
-      "supportingContent": ["Useful secondary detail"],
-      "representationIntent": "Optional visual relationship",
-      "progressiveDisclosure": [],
-      "sourceReferences": [{ "heading": "Source heading", "locator": "Retrievable locator" }]
+      "slides": [{
+        "id": "unique-slide-id",
+        "title": "Claim made by this slide",
+        "uniqueContribution": "The distinct understanding this slide adds",
+        "requiredContent": ["Only content needed for that contribution"],
+        "contractIds": [],
+        "representationIntent": "Optional visual relationship",
+        "progressiveDisclosure": ["Supporting detail available without another slide"],
+        "sourceReferences": [{ "heading": "Source heading", "locator": "Retrievable locator" }]
+      }]
     }]
   }]
 }
 
-Create exactly three chapters in curriculum order. Every beat must map to at least one narrative unit in its chapter, and the units must follow curriculum order. Write only ${input.paths.deckPlanPath}.`);
+Chapter kind is orientation, neighborhood, or synthesis. Narrative-unit facet is context, architecture, program-design, or verification. Create exactly the curriculum chapters in order with matching IDs and kinds. Map every beat exactly once, in order, to a same-facet narrative unit. Map every changed contract exactly once to a planned slide in the program-design unit for its covered beat. Write only ${input.paths.deckPlanPath}.`);
 }
 
 export function deckShellPrompt(input: PromptInput): string {
@@ -187,7 +214,7 @@ Curriculum: ${input.paths.curriculumPath}
 Deck plan: ${input.paths.deckPlanPath}
 Output: ${input.paths.htmlPath}
 
-Create one self-contained HTML file with embedded CSS and JavaScript. Establish a polished, responsive, viewport-based slide experience with keyboard and visible previous/next navigation, progress, accessible semantics, and printable fallback. Include the literal markers data-walkthrough-deck, data-slide-viewport, and data-slide-navigation. Do not realize planned content slides yet; leave a clear insertion area for later turns. This is a presentation, not a vertically scrolling document.
+Create one self-contained HTML file with embedded CSS and JavaScript. Establish a spacious, quick-glance, viewport-based slide experience with keyboard and visible navigation, progress, accessible semantics, responsive layout, and printable fallback. Include data-walkthrough-deck, data-slide-viewport, and data-slide-navigation. Leave a clear insertion area; content slides come later.
 
 Write only ${input.paths.htmlPath}.`);
 }
@@ -209,12 +236,12 @@ Chapter: ${JSON.stringify({ id: chapter.id, title: chapter.title, storyRole: cha
 Narrative unit ${unitIndex + 1} of ${chapter.narrativeUnits.length}:
 ${JSON.stringify(unit, null, 2)}
 
-Continue the established presentation and realize only this narrative movement. Decide how many slides it needs and how they should be composed. Each added slide is a section carrying data-walkthrough-slide, a unique id, and data-walkthrough-chapter="${chapter.id}". Fulfill the unit's story purpose, realization points, required content, and narrative bridge. Supply enough briefing prose and source-grounded context for the deck to stand alone. Use focused diagrams, code shapes, comparisons, or sequences when the representation intent warrants them. Keep slides scannable and place genuine secondary detail behind accessible progressive disclosure. Preserve the shell and every previously built slide.
+Realize exactly the planned slides. Add data-walkthrough-slide, the planned id, data-walkthrough-chapter="${chapter.id}", and data-walkthrough-facet="${unit.facet}" to each section. Preserve the shell and prior slides.
 
-Writing standard:
 ${PLAIN_LANGUAGE_STANDARD}
+${QUICK_GLANCE_STANDARD}
 
-Use the Show Me skill to realize focused representations that reduce explanation rather than decorate it. ${representationGuidance(input.audienceProfile.technicalDepth)} Make labels and relationships understandable without requiring the reader to decode internal shorthand.
+Use established context and brief callbacks. Program design realizes the architecture just shown. Use the Show Me skill for focused representations. ${representationGuidance(input.audienceProfile.technicalDepth)} Fulfill each planned contribution and keep every covered contract exact: schemas expose relevant fields, types, optionality, constraints, indexes, and migration; APIs expose relevant calls, inputs, outputs, and errors; other contracts expose equivalent shape, invariants, and compatibility behavior.
 
 Modify only ${input.paths.htmlPath}.`);
 }
@@ -226,11 +253,12 @@ Curriculum: ${input.paths.curriculumPath}
 Deck plan: ${input.paths.deckPlanPath}
 Deck: ${input.paths.htmlPath}
 
-All narrative units are present. Integrate the opening promise, chapter transitions, ending resolution, navigation state, progress behavior, responsive layout, accessibility, and visual consistency so the file reads as one presentation. Preserve the completed narrative order and content while using your judgment to add structural slides where they improve the story. Run a deck-wide editorial pass using this writing standard:
+Polish the deck into one quick-glance presentation with coherent opening, neighborhood transitions, ending, navigation, responsive layout, accessibility, and visual consistency.
 
 ${PLAIN_LANGUAGE_STANDARD}
+${QUICK_GLANCE_STANDARD}
 
-Remove repeated explanations, keep terminology consistent, and make transitions re-establish enough context for a reader moving at their own pace. Confirm every curriculum obligation is represented, the prose makes sense in isolation, controls work, and the default experience does not become a scrolling page.
+Merge or remove repeated slides and update navigation. Add a structural slide only for a distinct transition the adjacent slides cannot carry. Preserve curriculum and contract coverage, architecture-to-program-design adjacency, working controls, and a viewport-based rather than scrolling experience.
 
 Modify only ${input.paths.htmlPath}.`);
 }
@@ -272,12 +300,14 @@ Deck: ${input.paths.htmlPath}
 Output: ${output}
 ${previousContext}
 
-Review the curriculum, detailed deck brief, and HTML as source artifacts. Prioritize standalone comprehension, curriculum coverage, narrative continuity, factual grounding, preservation of the planned narrative units, navigation semantics, progressive disclosure, accessibility, and obvious content-density or legibility problems. Browser inspection is not required.
+Review the curriculum, plan, and HTML. Judge the deck agentically; there is no slide-count target.
 
-Review the visible copy as an editor using this standard:
 ${PLAIN_LANGUAGE_STANDARD}
+${QUICK_GLANCE_STANDARD}
 
-Technical depth never excuses difficult wording. Verify that titles communicate concrete claims, unfamiliar terms are defined before use, sentences remain direct, representations reduce prose, and required detail is distributed without turning slides into compressed documents. Treat readability metrics only as diagnostic signals; base findings on specific copy and the intended audience. A deck can be factually complete and still require revision for unclear language.
+Check that each slide earns its place and reads at a glance, repeated ideas are merged, and the primary layer feels like forward motion rather than a study document. Also verify factual grounding, coverage, navigation, accessibility, legibility, and progressive disclosure.
+
+In the actual HTML, each neighborhood must move directly from architecture to the program design that realizes it. Every materially changed contract must remain exact and reviewable at every depth, including relevant schema fields, types, constraints and migration; API calls, inputs, outputs and errors; and equivalent shapes and invariants for other contract kinds.
 
 This is read-only review: do not edit the curriculum, plan, or deck.
 
@@ -286,19 +316,19 @@ Write a complete standalone Markdown review for this round with these sections:
 # Deck Review — Round ${round}
 
 ## Review scope
-State what you inspected, the viewport and interaction checks you performed, and anything you could not verify.
+State what you inspected and anything you could not verify.
 
 ## Prior finding verification
-For round one, state that this is the initial review. On later rounds, account for every prior blocker and concern with a status of Verified, Incomplete, Not addressed, or Withdrawn, followed by current evidence and any remaining required outcome. Verify the files and browser behavior yourself rather than trusting agent summaries.
+For round one, state that this is the initial review. Later, account for every prior blocker and concern as Verified, Incomplete, Not addressed, or Withdrawn, with current evidence.
 
 ## Findings
-Report every current finding under a heading in the form "### F-NN — [Severity] Short title", where severity is Blocker, Concern, or Suggestion. Keep a finding's stable ID across rounds while it remains relevant. For each finding, include responsibility, affected area, evidence, consequence, required outcome, and how the next review can verify it. Responsibility names one or more of: Deck architecture when the curriculum or detailed brief must change, including the storyline, narrative-unit purpose, ordering, content responsibility, or realization points; Deck implementation when the current brief can be realized with clearer slides, copy, or representations; or Human decision when only the user can choose the product, narrative, scope, or tradeoff direction. Use "No findings" when there are none. Suggestions are optional and never require another revision round.
+Use "### F-NN — [Severity] Short title" with a stable ID and severity Blocker, Concern, or Suggestion. Include responsibility, affected area, evidence, consequence, required outcome, and verification. Responsibility is Deck architecture for plan changes, Deck implementation for realization changes, or Human decision for choices only the user can make. Use "No findings" when empty. Suggestions never require another round.
 
 ## Human decision
-Write "No human decision required" unless a genuine user decision is necessary. When one is necessary, state the decision, why agents cannot decide it safely, the available options, and their material tradeoffs.
+Write "No human decision required" unless a genuine user choice is necessary; then state the decision, options, and tradeoffs.
 
 ## Conclusion
-State plainly whether required work remains and whether it belongs to deck architecture, deck implementation, both, or the user. A review with no blockers or concerns is complete even when it contains suggestions.
+State whether required work remains and who owns it. No blockers or concerns means complete.
 
 The Markdown must carry the full review evidence; do not emit a JSON verdict or machine-routing fields. Write only ${output}.`);
 }
@@ -314,10 +344,12 @@ Review: ${deckReviewPath(input.paths, round)}
 ${review}
 </deck_review>
 
-Update the detailed deck brief where the review requires architectural changes while preserving the curriculum contract, chapter order, narrative-unit coherence, and beat coverage. Evaluate every finding on its evidence. In your response, summarize what changed, explain any finding you declined with evidence, and clearly identify any genuine decision that only the user can make.
+Update the plan where findings require it. Preserve the curriculum, neighborhood order, exact contract coverage, one-time beat mapping, and architecture-to-program-design adjacency. Merge slides whose contributions overlap. Evaluate every finding and summarize changes, evidence-based declines, and genuine user decisions.
 
-Keep every revised title, purpose, and content responsibility aligned with this writing standard:
+The deck plan is validated against exact object key sets. Preserve its existing JSON schema: keep schemaVersion, curriculumPath, and outputPath unchanged; do not add, remove, or rename object fields; and express revisions by changing field values or array items within that schema.
+
 ${PLAIN_LANGUAGE_STANDARD}
+${QUICK_GLANCE_STANDARD}
 
 Modify only ${input.paths.deckPlanPath}.`);
 }
@@ -342,10 +374,10 @@ ${architectureContext}
 ${review}
 </deck_review>
 
-Apply the deck-implementation findings and realize the current plan, including any architect changes. Evaluate every finding on its evidence and preserve correct content while making the complete presentation conform. In your response, summarize what changed, explain any finding you declined with evidence, and clearly identify any genuine decision that only the user can make.
+Apply implementation findings and the current plan. Merge repetition, preserve navigation, neighborhood adjacency, and exact contract access. Evaluate every finding and summarize changes, evidence-based declines, and genuine user decisions.
 
-Apply this writing standard to revised copy and any nearby copy affected by the change:
 ${PLAIN_LANGUAGE_STANDARD}
+${QUICK_GLANCE_STANDARD}
 
 Modify only ${input.paths.htmlPath}.`);
 }
@@ -405,10 +437,10 @@ Use the Show Me skill when a focused visual or code-shape explanation helps. If 
 function representationGuidance(depth: AudienceProfile['technicalDepth']): string {
   switch (depth) {
     case 'product':
-      return 'Use a user journey, before-and-after comparison, or tradeoff view when it explains the product consequence more clearly than prose.';
+      return 'Use a user journey, before-and-after comparison, or tradeoff view when it explains the product consequence more clearly than prose. Keep exact changed contracts available with annotations that connect their shape to product and operational consequences.';
     case 'system-design':
-      return 'Prefer boundary maps, ownership views, data or control flow, sequences, and state transitions that make system relationships visible.';
+      return 'Prefer boundary maps, ownership views, data or control flow, sequences, and state transitions that make system relationships visible. Follow them with exact changed contract shapes that make each boundary executable.';
     case 'implementation':
-      return 'Prefer code-shape sketches, call trees, state transitions, diffs, algorithms, and failure paths that keep exact mechanics connected to their purpose.';
+      return 'Prefer exact code and contract shapes, call trees, state transitions, diffs, algorithms, and failure paths that keep mechanics connected to their architectural purpose.';
   }
 }
