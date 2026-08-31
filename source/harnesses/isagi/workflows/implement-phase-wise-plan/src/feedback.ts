@@ -49,7 +49,7 @@ export function renderWorkflowStatus(status: WorkflowStatus): WorkflowUiFeedback
           : `Phase ${status.nextPhase} of ${status.phaseCount}`;
       return {
         kind: 'info',
-        phase: 'plan-confirmation',
+        phase: 'plan-ready',
         message: [
           `Plan: ${status.entryPlanPath}`,
           `Decision log: ${status.decisionLogPath}`,

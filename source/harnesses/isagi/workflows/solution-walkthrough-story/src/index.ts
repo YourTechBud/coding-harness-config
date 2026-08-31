@@ -2,11 +2,11 @@ import { defineWorkflow } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import { walkthroughPaths } from './paths.js';
 import {
-  deliveryModes,
+  deliveryMechanisms,
   familiarityLevels,
   technicalDepthLevels,
   type ArtifactPaths,
-  type DeliveryMode,
+  type DeliveryMechanism,
   type Familiarity,
   type TechnicalDepth,
 } from './types.js';
@@ -21,17 +21,12 @@ type Variables = {
   readonly familiarity?: unknown;
   readonly technicalDepth?: unknown;
   readonly deliveryMechanism?: unknown;
-  readonly presentationMode?: unknown;
-  readonly deliveryMode?: unknown;
 };
-
-const deliveryMechanisms = ['presentation', 'socratic-walkthrough'] as const;
-type DeliveryMechanism = (typeof deliveryMechanisms)[number];
 
 export default defineWorkflow<State, Variables>({
   command: () => ({
     title: 'Solution Walkthrough Story',
-    description: 'Prepare and interactively guide the user through a designed story solution.',
+    description: 'Reuse or create the curriculum and deck plan, then build a presentation or start a Socratic walkthrough.',
     inputs: [
       { kind: 'text', key: 'story', label: 'Story or story URL' },
       { kind: 'text', key: 'currentStatePath', label: 'Current-state source path', default: 'scratch/story/design/current-state.md' },
@@ -62,10 +57,10 @@ export default defineWorkflow<State, Variables>({
       {
         kind: 'select',
         key: 'deliveryMechanism',
-        label: 'Walkthrough delivery mechanism?',
+        label: 'How should this walkthrough be delivered?',
         options: [
-          { value: 'presentation', label: 'Presentation' },
-          { value: 'socratic-walkthrough', label: 'Socratic walkthrough' },
+          { value: 'presentation', label: 'Presentation', hint: 'Reuse approved planning artifacts when present and rebuild the standalone deck.' },
+          { value: 'socratic-walkthrough', label: 'Socratic walkthrough', hint: 'Explore the approved curriculum through an interactive guide.' },
         ],
         default: 'presentation',
       },
@@ -77,7 +72,7 @@ export default defineWorkflow<State, Variables>({
   init: (launchCtx, variables): State => {
     const parsed = parseVariables(variables);
     return {
-      stateVersion: 2,
+      stateVersion: 1,
       repositoryPath: launchCtx.worktreePath,
       story: parsed.story,
       sources: parsed.sources,
@@ -86,12 +81,12 @@ export default defineWorkflow<State, Variables>({
         familiarity: parsed.familiarity,
         technicalDepth: parsed.technicalDepth,
       },
-      deliveryMode: parsed.deliveryMode,
-      stage: { kind: 'start_source_analysis' },
+      deliveryMechanism: parsed.deliveryMechanism,
+      stage: { kind: 'start_curriculum_workflow' },
     };
   },
   step: async (ctx, state, incoming) => {
-    await ctx.log('debug', `Walk through story stage=${state.stage.kind}.`);
+    await ctx.log('debug', `Solution walkthrough stage=${state.stage.kind}.`);
     return step(ctx, state, incoming);
   },
 });
@@ -102,7 +97,7 @@ function parseVariables(variables: Variables): {
   readonly reviewDirectory: string;
   readonly familiarity: Familiarity;
   readonly technicalDepth: TechnicalDepth;
-  readonly deliveryMode: DeliveryMode;
+  readonly deliveryMechanism: DeliveryMechanism;
 } {
   return {
     story: parseText(variables.story, 'story'),
@@ -114,12 +109,12 @@ function parseVariables(variables: Variables): {
     reviewDirectory: parsePath(variables.reviewDirectory, 'reviewDirectory', 'scratch/story/walkthrough'),
     familiarity: parseEnum(variables.familiarity, 'familiarity', familiarityLevels, 'new'),
     technicalDepth: parseEnum(variables.technicalDepth, 'technicalDepth', technicalDepthLevels, 'system-design'),
-    deliveryMode: parseDeliveryMechanism(variables.deliveryMechanism, variables.presentationMode, variables.deliveryMode),
+    deliveryMechanism: parseEnum(variables.deliveryMechanism, 'deliveryMechanism', deliveryMechanisms, 'presentation'),
   };
 }
 
 function parseText(value: unknown, key: string): string {
-  if (typeof value === 'string' && value.trim().length > 0) return value;
+  if (typeof value === 'string' && value.trim().length > 0) return value.trim();
   throw new Error(`${key} must be non-empty text.`);
 }
 
@@ -137,17 +132,4 @@ function parseEnum<const T extends readonly string[]>(
   const candidate = value === undefined ? fallback : value;
   if (typeof candidate === 'string' && options.includes(candidate)) return candidate;
   throw new Error(`${key} must be one of ${options.join(', ')}.`);
-}
-
-function parseDeliveryMechanism(value: unknown, legacyPresentationMode: unknown, legacyDeliveryMode: unknown): DeliveryMode {
-  if (value !== undefined) return deliveryModeFor(parseEnum(value, 'deliveryMechanism', deliveryMechanisms, 'presentation'));
-  if (legacyPresentationMode !== undefined) {
-    if (typeof legacyPresentationMode === 'boolean') return legacyPresentationMode ? 'presentation-first' : 'guided-tutorial';
-    throw new Error('presentationMode must be a boolean.');
-  }
-  return parseEnum(legacyDeliveryMode, 'deliveryMode', deliveryModes, 'presentation-first');
-}
-
-function deliveryModeFor(deliveryMechanism: DeliveryMechanism): DeliveryMode {
-  return deliveryMechanism === 'presentation' ? 'presentation-first' : 'guided-tutorial';
 }

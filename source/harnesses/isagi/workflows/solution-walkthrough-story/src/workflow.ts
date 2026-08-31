@@ -1,6 +1,3 @@
-import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import {
   cont,
   done,
@@ -12,399 +9,282 @@ import {
   type WorkflowResult,
 } from '@yourtechbudstudio/isagi-workflow-sdk';
 
-import { deckArchitect, deckBuilder, deckReviewRouting, deckVerifier, guide, preparer } from './constants.js';
+import { deckArchitect, deckBuilder, guide } from './constants.js';
 import {
-  assertExpectedFile,
-  readArtifactText,
-  readCurriculum,
-  readDeckPlan,
-  readTopicInventories,
-} from './contracts.js';
-import { deckReviewPath } from './paths.js';
+  deckPlanExists,
+  inspectPlanningArtifacts,
+  readArchitectedDeckPlan,
+  readGenericCurriculumBundle,
+  removePlanningArtifacts,
+  type ArchitectedDeckPlan,
+} from './curriculum-v3.js';
+import { assertExpectedFile, validatePresentation } from './contracts.js';
 import {
-  completedSingleHeadlessResult,
-  deckReviewRoutingPrompt,
-  latestAssistantTurnText,
-  parseDeckReviewRoute,
-  type DeckReviewRoute,
-} from './judgments.js';
-import {
-  architectRevisionPrompt,
-  builderRevisionPrompt,
-  curriculumPrompt,
-  deckArchitecturePrompt,
-  deckShellPrompt,
-  finalAssemblyPrompt,
-  guidedBeatPrompt,
-  guidedChapterReviewPrompt,
-  narrativeUnitPrompt,
-  presentationGuidePrompt,
-  sourceInventoryPrompt,
-  verifierPrompt,
+  genericDeckArchitecturePrompt,
+  genericDeckAssemblyPrompt,
+  genericDeckNeighborhoodPrompt,
+  genericDeckShellPrompt,
+  genericSocraticPrompt,
   type PromptInput,
 } from './prompts.js';
-import {
-  artifactDescriptors,
-  type ArtifactPaths,
-  type AudienceProfile,
-  type Curriculum,
-  type DeckPlan,
-  type DeliveryMode,
-  type Guide,
-  type VisibleAgent,
-  type WalkthroughPaths,
+import type {
+  ArtifactPaths,
+  AudienceProfile,
+  DeliveryMechanism,
+  VisibleAgent,
+  WalkthroughPaths,
 } from './types.js';
 
-const MAX_REVIEW_ROUNDS = 5;
 const SHOW_ME_MODIFIER = [{ kind: 'skill', name: 'show-me' }] as const;
 
 export type Stage =
-  | { readonly kind: 'start_source_analysis' }
-  | { readonly kind: 'await_source_analysis'; readonly agents: readonly VisibleAgent[]; readonly agentIndex: number }
-  | { readonly kind: 'start_curriculum_integration' }
-  | { readonly kind: 'await_curriculum_integration'; readonly agent: VisibleAgent }
-  | { readonly kind: 'start_guided_tutorial'; readonly curriculum: Curriculum }
-  | { readonly kind: 'await_guided_beat'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly beatIndex: number; readonly guide: Guide }
-  | { readonly kind: 'await_guided_continue'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly beatIndex: number; readonly guide: Guide }
-  | { readonly kind: 'send_guided_beat'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly beatIndex: number; readonly guide: Guide }
-  | { readonly kind: 'send_chapter_review'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly guide: Guide }
-  | { readonly kind: 'await_chapter_review'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly guide: Guide }
-  | { readonly kind: 'await_chapter_continue'; readonly curriculum: Curriculum; readonly chapterIndex: number; readonly guide: Guide }
-  | { readonly kind: 'start_deck_architecture'; readonly curriculum: Curriculum }
-  | { readonly kind: 'await_deck_architecture'; readonly curriculum: Curriculum; readonly architect: VisibleAgent }
-  | { readonly kind: 'start_deck_shell'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent }
-  | { readonly kind: 'await_deck_shell'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
-  | { readonly kind: 'start_chapter_build'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly chapterIndex: number }
-  | { readonly kind: 'send_narrative_unit'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly chapterIndex: number; readonly unitIndex: number }
-  | { readonly kind: 'await_narrative_unit'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly chapterIndex: number; readonly unitIndex: number }
-  | { readonly kind: 'start_final_assembly'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent }
-  | { readonly kind: 'await_final_assembly'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent }
-  | { readonly kind: 'start_verification'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly round: number }
-  | { readonly kind: 'await_verification'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
-  | { readonly kind: 'await_review_routing'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
-  | { readonly kind: 'await_human_decision'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
-  | { readonly kind: 'send_architect_revision'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
-  | { readonly kind: 'await_architect_revision'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
-  | { readonly kind: 'send_builder_revision'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architectResponse?: string | undefined; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
-  | { readonly kind: 'await_builder_revision'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly review: string; readonly architectResponse?: string | undefined; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number }
-  | { readonly kind: 'send_reverification'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly architect: VisibleAgent; readonly builder: VisibleAgent; readonly verifier: VisibleAgent; readonly round: number; readonly previousReview?: string | undefined; readonly architectResponse?: string | undefined; readonly builderResponse?: string | undefined }
-  | { readonly kind: 'start_presentation_review'; readonly curriculum: Curriculum; readonly plan: DeckPlan }
-  | { readonly kind: 'await_presentation_guide'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly guide: Guide }
-  | { readonly kind: 'await_presentation_continue'; readonly curriculum: Curriculum; readonly plan: DeckPlan; readonly guide: Guide };
+  | { readonly kind: 'start_curriculum_workflow' }
+  | { readonly kind: 'await_curriculum_workflow'; readonly runId: number }
+  | { readonly kind: 'start_presentation' }
+  | { readonly kind: 'start_deck_architecture' }
+  | { readonly kind: 'await_deck_architecture'; readonly architect: VisibleAgent }
+  | { readonly kind: 'start_deck_shell'; readonly plan: ArchitectedDeckPlan }
+  | { readonly kind: 'await_deck_shell'; readonly plan: ArchitectedDeckPlan; readonly builder: VisibleAgent }
+  | { readonly kind: 'start_neighborhood'; readonly plan: ArchitectedDeckPlan; readonly neighborhoodIndex: number }
+  | { readonly kind: 'await_neighborhood'; readonly plan: ArchitectedDeckPlan; readonly neighborhoodIndex: number; readonly builder: VisibleAgent }
+  | { readonly kind: 'start_presentation_assembly'; readonly plan: ArchitectedDeckPlan }
+  | { readonly kind: 'await_presentation_assembly'; readonly plan: ArchitectedDeckPlan; readonly builder: VisibleAgent }
+  | { readonly kind: 'start_socratic_walkthrough' }
+  | { readonly kind: 'await_socratic_walkthrough'; readonly guide: VisibleAgent }
+  | { readonly kind: 'await_socratic_completion'; readonly guide: VisibleAgent };
 
 export type State = {
-  readonly stateVersion: 2;
+  readonly stateVersion: 1;
   readonly repositoryPath: string;
   readonly story: string;
   readonly sources: ArtifactPaths;
   readonly paths: WalkthroughPaths;
   readonly audienceProfile: AudienceProfile;
-  readonly deliveryMode: DeliveryMode;
+  readonly deliveryMechanism: DeliveryMechanism;
   readonly stage: Stage;
 };
 
 export async function step(ctx: WorkflowContext, state: State, incoming: unknown): Promise<WorkflowResult> {
   const input = promptInput(state);
   switch (state.stage.kind) {
-    case 'start_source_analysis': {
-      ensureDirectories(state);
-      await ctx.setUiFeedback({ phase: 'Analyzing walkthrough sources' });
-      const agents: VisibleAgent[] = [];
-      for (const { kind } of artifactDescriptors) {
-        agents.push(visible(await ctx.spawnAgentSession({ ...preparer, prompt: sourceInventoryPrompt(input, kind) })));
-      }
-      await ctx.log('info', `Started three visible source analysts in panes ${agents.map(({ paneId }) => paneId).join(', ')}.`);
-      return suspend(withStage(state, { kind: 'await_source_analysis', agents, agentIndex: 0 }), wait.agentTurn(at(agents, 0)));
-    }
-    case 'await_source_analysis': {
-      const error = turnError(incoming, 'Source analysis', at(state.stage.agents, state.stage.agentIndex));
-      if (error) return failed(ctx, 'Source analysis failed. Analyst panes remain open.', error);
-      const next = state.stage.agentIndex + 1;
-      if (next < state.stage.agents.length) return suspend(withStage(state, { ...state.stage, agentIndex: next }), wait.agentTurn(at(state.stage.agents, next)));
+    case 'start_curriculum_workflow': {
+      let reusableArtifacts;
       try {
-        readTopicInventories(state.repositoryPath, state.sources, state.paths);
-        await closeAll(ctx, state.stage.agents, 'source analysts');
-        return cont(withStage(state, { kind: 'start_curriculum_integration' }));
+        reusableArtifacts = inspectPlanningArtifacts(state.repositoryPath, state.paths);
       } catch (error) {
-        return failed(ctx, 'Source inventories are invalid. Analyst panes remain open.', errorText(error));
+        try {
+          const removed = removePlanningArtifacts(state.repositoryPath, state.paths);
+          await ctx.log('warning', `Reset walkthrough planning artifacts after deterministic validation failed: ${errorText(error)} Removed: ${removed.join(', ') || 'none'}.`);
+          reusableArtifacts = { curriculum: false, deckPlan: false };
+        } catch (removalError) {
+          return failed(ctx, 'Invalid walkthrough planning artifacts could not be reset.', errorText(removalError));
+        }
       }
+
+      if (reusableArtifacts.curriculum) {
+        const deckMessage = state.deliveryMechanism === 'presentation'
+          ? reusableArtifacts.deckPlan ? 'The approved deck plan will also be reused.' : 'A new deck plan will be created.'
+          : 'Continuing directly to Socratic learning.';
+        await ctx.log('info', `Reusing existing curriculum ${state.paths.curriculumPath}; curriculum design is skipped.`);
+        await ctx.setUiFeedback({ phase: 'Reusing the approved curriculum', message: deckMessage });
+        return cont(withStage(state, nextDeliveryStage(state.deliveryMechanism)));
+      }
+
+      await ctx.setUiFeedback({ phase: 'Designing the walkthrough curriculum', message: 'Creating the analysis and curriculum before continuing to the selected delivery mode.' });
+      const runId = await ctx.startWorkflow('design-curriculum', {
+        sources: [
+          { id: 'current-state', path: state.sources.currentStatePath, description: 'The current-state map and evidence the proposal changes.' },
+          { id: 'architecture', path: state.sources.architecturePath, description: 'The proposed architecture and its consequential decisions.' },
+          { id: 'program-design', path: state.sources.programDesignPath, description: 'The proposed program design and exact changed contracts.' },
+        ],
+        learningGoal: 'Understand the current-state map, proposed architecture, and program design well enough to approve or reject the proposed solution.',
+        audienceFamiliarity: curriculumFamiliarity(state.audienceProfile),
+        audienceDepth: curriculumDepth(state.audienceProfile),
+        teachingBrief: 'Establish enough of the current-state map to evaluate the proposal. Connect architecture and program realization wherever teaching them together preserves context. Keep exact changed contracts available as reference material needed for approval. Choose the final storyline from the actual sources when a different grouping is clearer.',
+        outputDirectory: state.paths.walkthroughDirectory,
+      });
+      await ctx.log('info', `Started design-curriculum child workflow ${runId}.`);
+      return suspend(withStage(state, { kind: 'await_curriculum_workflow', runId }), wait.workflow(runId));
     }
-    case 'start_curriculum_integration': {
-      await ctx.setUiFeedback({ phase: 'Shaping the audience curriculum' });
-      const agent = visible(await ctx.spawnAgentSession({ ...preparer, prompt: curriculumPrompt(input) }));
-      return suspend(withStage(state, { kind: 'await_curriculum_integration', agent }), wait.agentTurn(agent));
-    }
-    case 'await_curriculum_integration': {
-      const error = turnError(incoming, 'Curriculum integration', state.stage.agent);
-      if (error) return failed(ctx, 'Curriculum integration failed. Its pane remains open.', error);
+
+    case 'await_curriculum_workflow': {
       try {
-        const inventories = readTopicInventories(state.repositoryPath, state.sources, state.paths);
-        const curriculum = readCurriculum(state.repositoryPath, state.story, state.sources, state.audienceProfile, state.paths, inventories);
-        await closeAll(ctx, [state.stage.agent], 'curriculum integrator');
-        return cont(withStage(state, state.deliveryMode === 'guided-tutorial' ? { kind: 'start_guided_tutorial', curriculum } : { kind: 'start_deck_architecture', curriculum }));
+        completedCurriculumResult(incoming, state.stage.runId, state.paths);
+        readGenericCurriculumBundle(state.repositoryPath, state.paths);
+        return cont(withStage(state, nextDeliveryStage(state.deliveryMechanism)));
       } catch (error) {
-        return failed(ctx, 'The audience curriculum is invalid. Its pane remains open.', errorText(error));
+        return failed(ctx, 'The curriculum workflow did not complete successfully.', errorText(error));
       }
     }
-    case 'start_guided_tutorial': {
-      const chapterIndex = 0;
-      const beatIndex = 0;
-      const chapter = chapterAt(state.stage.curriculum, chapterIndex);
-      const beat = beatAt(chapter, beatIndex);
-      await ctx.setUiFeedback({ phase: `Guided tutorial: ${chapter.title}`, message: beat.title });
-      const spawned = await ctx.spawnAgentSession({ ...guide, prompt: guidedBeatPrompt(input, state.stage.curriculum, chapter, beat) });
-      const guideSession = visible(spawned);
-      return suspend(withStage(state, { kind: 'await_guided_beat', curriculum: state.stage.curriculum, chapterIndex, beatIndex, guide: guideSession }), wait.agentTurn(spawned));
+
+    case 'start_presentation': {
+      let bundle;
+      try {
+        bundle = readGenericCurriculumBundle(state.repositoryPath, state.paths);
+      } catch (error) {
+        return failed(ctx, 'Presentation creation cannot start because the curriculum is invalid.', errorText(error));
+      }
+
+      if (!deckPlanExists(state.repositoryPath, state.paths)) {
+        return cont(withStage(state, { kind: 'start_deck_architecture' }));
+      }
+
+      try {
+        const plan = readArchitectedDeckPlan(state.repositoryPath, state.paths, bundle);
+        await ctx.log('info', `Reusing existing deck plan ${state.paths.deckPlanPath}; deck architecture is skipped.`);
+        await ctx.setUiFeedback({ phase: 'Reusing the approved deck plan', message: `Rebuilding ${state.paths.htmlPath} neighborhood by neighborhood.` });
+        return cont(withStage(state, { kind: 'start_deck_shell', plan }));
+      } catch (error) {
+        return failed(ctx, 'The existing deck plan cannot be reused.', errorText(error));
+      }
     }
-    case 'send_guided_beat': {
-      const chapter = chapterAt(state.stage.curriculum, state.stage.chapterIndex);
-      const beat = beatAt(chapter, state.stage.beatIndex);
-      await ctx.setUiFeedback({ phase: `Guided tutorial: ${chapter.title}`, message: beat.title });
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.guide.agentSessionId, prompt: guidedBeatPrompt(input, state.stage.curriculum, chapter, beat) });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_guided_beat' }), wait.agentTurn(sent));
-    }
-    case 'await_guided_beat': {
-      const error = guideError(incoming, 'Guided tutorial');
-      if (error) return failed(ctx, 'The tutorial guide failed.', error);
-      const chapter = chapterAt(state.stage.curriculum, state.stage.chapterIndex);
-      const beat = beatAt(chapter, state.stage.beatIndex);
-      await ctx.setUiFeedback({ phase: `Guided tutorial: ${chapter.title}`, message: `${beat.title}. Press Continue when this checkpoint is complete.` });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_guided_continue' }), wait.userContinue());
-    }
-    case 'await_guided_continue': {
-      if (!workflowEvent.isUserContinue(incoming)) return failed(ctx, 'The tutorial could not advance.', 'Expected user Continue.');
-      const chapter = chapterAt(state.stage.curriculum, state.stage.chapterIndex);
-      if (state.stage.beatIndex + 1 < chapter.beats.length) return cont(withStage(state, { ...state.stage, kind: 'send_guided_beat', beatIndex: state.stage.beatIndex + 1 }));
-      return cont(withStage(state, { kind: 'send_chapter_review', curriculum: state.stage.curriculum, chapterIndex: state.stage.chapterIndex, guide: state.stage.guide }));
-    }
-    case 'send_chapter_review': {
-      const chapter = chapterAt(state.stage.curriculum, state.stage.chapterIndex);
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.guide.agentSessionId, prompt: guidedChapterReviewPrompt(state.stage.curriculum, chapter) });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_chapter_review' }), wait.agentTurn(sent));
-    }
-    case 'await_chapter_review': {
-      const error = guideError(incoming, 'Chapter review');
-      if (error) return failed(ctx, 'The tutorial guide failed.', error);
-      const chapter = chapterAt(state.stage.curriculum, state.stage.chapterIndex);
-      await ctx.setUiFeedback({ phase: `Reviewing ${chapter.title}`, message: 'Press Continue when you understand this chapter.' });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_chapter_continue' }), wait.userContinue());
-    }
-    case 'await_chapter_continue': {
-      if (!workflowEvent.isUserContinue(incoming)) return failed(ctx, 'The tutorial could not advance.', 'Expected user Continue.');
-      if (state.stage.chapterIndex + 1 < state.stage.curriculum.chapters.length) return cont(withStage(state, { kind: 'send_guided_beat', curriculum: state.stage.curriculum, chapterIndex: state.stage.chapterIndex + 1, beatIndex: 0, guide: state.stage.guide }));
-      await ctx.closePane(state.stage.guide.paneId);
-      return done({ outcome: 'guided-tutorial-completed', curriculumPath: state.paths.curriculumPath, chapterCount: state.stage.curriculum.chapters.length, beatCount: beatCount(state.stage.curriculum) });
-    }
+
     case 'start_deck_architecture': {
-      await ctx.setUiFeedback({ phase: 'Architecting the walkthrough deck' });
-      const architect = visible(await ctx.spawnAgentSession({ ...deckArchitect, modifiers: SHOW_ME_MODIFIER, prompt: deckArchitecturePrompt(input) }));
-      return suspend(withStage(state, { kind: 'await_deck_architecture', curriculum: state.stage.curriculum, architect }), wait.agentTurn(architect));
+      try {
+        readGenericCurriculumBundle(state.repositoryPath, state.paths);
+      } catch (error) {
+        return failed(ctx, 'Deck architecture cannot start because the curriculum is invalid.', errorText(error));
+      }
+
+      await ctx.setUiFeedback({ phase: 'Architecting the presentation', message: 'Planning the narrative, audience conclusions, and complete coverage before visual construction.' });
+      const architect = visible(await ctx.spawnAgentSession({ ...deckArchitect, prompt: genericDeckArchitecturePrompt(input) }));
+      return suspend(withStage(state, { kind: 'await_deck_architecture', architect }), wait.agentTurn(architect));
     }
+
     case 'await_deck_architecture': {
-      const error = turnError(incoming, 'Deck architecture', state.stage.architect);
-      if (error) return failed(ctx, 'Deck architecture failed. Its pane remains open.', error);
+      const turnFailure = turnError(incoming, 'Deck architecture', state.stage.architect);
+      if (turnFailure) return failed(ctx, 'Deck architecture failed. Its pane remains open.', turnFailure);
       try {
-        const plan = readDeckPlan(state.repositoryPath, state.paths, state.stage.curriculum);
-        return cont(withStage(state, { kind: 'start_deck_shell', curriculum: state.stage.curriculum, plan, architect: state.stage.architect }));
+        const bundle = readGenericCurriculumBundle(state.repositoryPath, state.paths);
+        const plan = readArchitectedDeckPlan(state.repositoryPath, state.paths, bundle);
+        await ctx.closePane(state.stage.architect.paneId);
+        return cont(withStage(state, { kind: 'start_deck_shell', plan }));
       } catch (error) {
-        return failed(ctx, 'The deck plan is invalid. Its pane remains open.', errorText(error));
+        return failed(ctx, 'The deck architecture plan is invalid. Its pane remains open.', errorText(error));
       }
     }
+
     case 'start_deck_shell': {
-      await ctx.setUiFeedback({ phase: 'Building the deck shell' });
-      const builder = visible(await ctx.spawnAgentSession({ ...deckBuilder, prompt: deckShellPrompt(input) }));
-      return suspend(withStage(state, { kind: 'await_deck_shell', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, builder }), wait.agentTurn(builder));
+      await ctx.setUiFeedback({ phase: 'Establishing the presentation design', message: 'Creating the shared presentation environment and opening slide.' });
+      const builder = visible(await ctx.spawnAgentSession({ ...deckBuilder, prompt: genericDeckShellPrompt(input) }));
+      return suspend(withStage(state, { kind: 'await_deck_shell', plan: state.stage.plan, builder }), wait.agentTurn(builder));
     }
+
     case 'await_deck_shell': {
-      const error = turnError(incoming, 'Deck shell', state.stage.builder);
-      if (error) return failed(ctx, 'Deck shell creation failed. Build panes remain open.', error);
+      const turnFailure = turnError(incoming, 'Deck shell creation', state.stage.builder);
+      if (turnFailure) return failed(ctx, 'Deck shell creation failed. Its pane remains open.', turnFailure);
+      try {
+        assertExpectedFile(state.repositoryPath, state.paths.htmlPath, 'walkthrough deck shell');
+        await ctx.closePane(state.stage.builder.paneId);
+        return cont(withStage(state, { kind: 'start_neighborhood', plan: state.stage.plan, neighborhoodIndex: 0 }));
+      } catch (error) {
+        return failed(ctx, 'The deck shell is missing. Its pane remains open.', errorText(error));
+      }
+    }
+
+    case 'start_neighborhood': {
+      const neighborhood = neighborhoodAt(state.stage.plan, state.stage.neighborhoodIndex);
+      await ctx.setUiFeedback({ phase: `Creating ${neighborhood.title}`, message: `Neighborhood ${state.stage.neighborhoodIndex + 1} of ${state.stage.plan.neighborhoods.length} in a fresh Show Me session.` });
+      const builder = visible(await ctx.spawnAgentSession({
+        ...deckBuilder,
+        modifiers: SHOW_ME_MODIFIER,
+        prompt: genericDeckNeighborhoodPrompt(input, state.stage.plan, neighborhood, state.stage.neighborhoodIndex),
+      }));
+      return suspend(withStage(state, { ...state.stage, kind: 'await_neighborhood', builder }), wait.agentTurn(builder));
+    }
+
+    case 'await_neighborhood': {
+      const turnFailure = turnError(incoming, 'Neighborhood construction', state.stage.builder);
+      if (turnFailure) return failed(ctx, 'Neighborhood construction failed. Its pane remains open.', turnFailure);
       try {
         assertExpectedFile(state.repositoryPath, state.paths.htmlPath, 'walkthrough deck');
         await ctx.closePane(state.stage.builder.paneId);
-        return cont(withStage(state, { kind: 'start_chapter_build', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, chapterIndex: 0 }));
+        if (state.stage.neighborhoodIndex + 1 < state.stage.plan.neighborhoods.length) {
+          return cont(withStage(state, {
+            kind: 'start_neighborhood',
+            plan: state.stage.plan,
+            neighborhoodIndex: state.stage.neighborhoodIndex + 1,
+          }));
+        }
+        return cont(withStage(state, { kind: 'start_presentation_assembly', plan: state.stage.plan }));
       } catch (error) {
-        return failed(ctx, 'The deck shell is missing. Build panes remain open.', errorText(error));
+        return failed(ctx, 'The walkthrough deck is missing after neighborhood construction. Its pane remains open.', errorText(error));
       }
     }
-    case 'start_chapter_build': {
-      const chapter = deckChapterAt(state.stage.plan, state.stage.chapterIndex);
-      const unitIndex = 0;
-      const unit = narrativeUnitAt(chapter, unitIndex);
-      await ctx.setUiFeedback({ phase: `Building ${chapter.title}`, message: `Narrative unit 1 of ${chapter.narrativeUnits.length}: ${unit.title}.` });
-      const builder = visible(await ctx.spawnAgentSession({ ...deckBuilder, modifiers: SHOW_ME_MODIFIER, prompt: narrativeUnitPrompt(input, state.stage.plan, chapter, unit, unitIndex) }));
-      return suspend(withStage(state, { ...state.stage, kind: 'await_narrative_unit', builder, unitIndex }), wait.agentTurn(builder));
+
+    case 'start_presentation_assembly': {
+      await ctx.setUiFeedback({ phase: 'Assembling the walkthrough presentation', message: 'Making the neighborhood work feel like one polished presentation.' });
+      const builder = visible(await ctx.spawnAgentSession({ ...deckBuilder, modifiers: SHOW_ME_MODIFIER, prompt: genericDeckAssemblyPrompt(input) }));
+      return suspend(withStage(state, { kind: 'await_presentation_assembly', plan: state.stage.plan, builder }), wait.agentTurn(builder));
     }
-    case 'send_narrative_unit': {
-      const chapter = deckChapterAt(state.stage.plan, state.stage.chapterIndex);
-      const unit = narrativeUnitAt(chapter, state.stage.unitIndex);
-      await ctx.setUiFeedback({ phase: `Building ${chapter.title}`, message: `Narrative unit ${state.stage.unitIndex + 1} of ${chapter.narrativeUnits.length}: ${unit.title}.` });
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, modifiers: SHOW_ME_MODIFIER, prompt: narrativeUnitPrompt(input, state.stage.plan, chapter, unit, state.stage.unitIndex) });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_narrative_unit' }), wait.agentTurn(sent));
-    }
-    case 'await_narrative_unit': {
-      const error = turnError(incoming, 'Narrative-unit construction', state.stage.builder);
-      if (error) return failed(ctx, 'Narrative-unit construction failed. Build panes remain open.', error);
+
+    case 'await_presentation_assembly': {
+      const turnFailure = turnError(incoming, 'Final deck assembly', state.stage.builder);
+      if (turnFailure) return failed(ctx, 'Final deck assembly failed. Its pane remains open.', turnFailure);
       try {
-        assertExpectedFile(state.repositoryPath, state.paths.htmlPath, 'walkthrough deck');
-        const chapter = deckChapterAt(state.stage.plan, state.stage.chapterIndex);
-        if (state.stage.unitIndex + 1 < chapter.narrativeUnits.length) {
-          return cont(withStage(state, { ...state.stage, kind: 'send_narrative_unit', unitIndex: state.stage.unitIndex + 1 }));
-        }
+        const metrics = validatePresentation(state.repositoryPath, state.paths.htmlPath, state.stage.plan);
         await ctx.closePane(state.stage.builder.paneId);
-        if (state.stage.chapterIndex + 1 < state.stage.plan.chapters.length) {
-          return cont(withStage(state, { kind: 'start_chapter_build', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, chapterIndex: state.stage.chapterIndex + 1 }));
-        }
-        return cont(withStage(state, { kind: 'start_final_assembly', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect }));
+        await ctx.setUiFeedback({ phase: 'Walkthrough presentation created', message: `Open ${state.paths.htmlPath}.` });
+        return done({
+          outcome: 'presentation-created',
+          curriculumPath: state.paths.curriculumPath,
+          deckPlanPath: state.paths.deckPlanPath,
+          presentationPath: state.paths.htmlPath,
+          ...metrics,
+        });
       } catch (error) {
-        return failed(ctx, 'The walkthrough deck is missing after narrative-unit construction. Build panes remain open.', errorText(error));
+        return failed(ctx, 'The assembled walkthrough deck does not satisfy the presentation contract. Its pane remains open.', errorText(error));
       }
     }
-    case 'start_final_assembly': {
-      await ctx.setUiFeedback({ phase: 'Assembling the unified walkthrough deck' });
-      const builder = visible(await ctx.spawnAgentSession({ ...deckBuilder, prompt: finalAssemblyPrompt(input) }));
-      return suspend(withStage(state, { ...state.stage, kind: 'await_final_assembly', builder }), wait.agentTurn(builder));
-    }
-    case 'await_final_assembly': {
-      const error = turnError(incoming, 'Final deck assembly', state.stage.builder);
-      if (error) return failed(ctx, 'Final deck assembly failed. Build panes remain open.', error);
+
+    case 'start_socratic_walkthrough': {
       try {
-        assertExpectedFile(state.repositoryPath, state.paths.htmlPath, 'walkthrough deck');
-        return cont(withStage(state, { kind: 'start_verification', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, builder: state.stage.builder, round: 1 }));
+        readGenericCurriculumBundle(state.repositoryPath, state.paths);
       } catch (error) {
-        return failed(ctx, 'The assembled deck is missing. Build panes remain open.', errorText(error));
+        return failed(ctx, 'Socratic learning cannot start because the curriculum is invalid.', errorText(error));
       }
+
+      await ctx.setUiFeedback({ phase: 'Starting the Socratic walkthrough', message: 'The guide will use the approved curriculum and grounded coverage analysis.' });
+      const spawned = visible(await ctx.spawnAgentSession({ ...guide, modifiers: SHOW_ME_MODIFIER, prompt: genericSocraticPrompt(input) }));
+      return suspend(withStage(state, { kind: 'await_socratic_walkthrough', guide: spawned }), wait.agentTurn(spawned));
     }
-    case 'start_verification': {
-      await ctx.setUiFeedback({ phase: 'Verifying the walkthrough deck', message: `Review round ${state.stage.round}.` });
-      const verifier = visible(await ctx.spawnAgentSession({ ...deckVerifier, prompt: verifierPrompt(input, state.stage.round) }));
-      return suspend(withStage(state, { ...state.stage, kind: 'await_verification', verifier }), wait.agentTurn(verifier));
+
+    case 'await_socratic_walkthrough': {
+      const turnFailure = turnError(incoming, 'Socratic walkthrough', state.stage.guide);
+      if (turnFailure) return failed(ctx, 'The Socratic guide failed.', turnFailure);
+      await ctx.setUiFeedback({ phase: 'Socratic walkthrough in progress', message: 'Continue the discussion in the guide pane. Press workflow Continue when you are finished.' });
+      return suspend(withStage(state, { kind: 'await_socratic_completion', guide: state.stage.guide }), wait.userContinue());
     }
-    case 'send_reverification': {
-      await ctx.setUiFeedback({ phase: 'Re-verifying the walkthrough deck', message: `Review round ${state.stage.round}.` });
-      const previous = state.stage.previousReview && state.stage.builderResponse
-        ? { review: state.stage.previousReview, architectResponse: state.stage.architectResponse, builderResponse: state.stage.builderResponse }
-        : undefined;
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.verifier.agentSessionId, prompt: verifierPrompt(input, state.stage.round, previous) });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_verification' }), wait.agentTurn(sent));
-    }
-    case 'await_verification': {
-      const error = turnError(incoming, 'Deck verification', state.stage.verifier);
-      if (error) return failed(ctx, 'Deck verification failed. Presentation panes remain open.', error);
-      try {
-        const review = readDeckReview(state.repositoryPath, state.paths, state.stage.round);
-        return startDeckReviewRouting(ctx, state, { ...state.stage, kind: 'await_review_routing', review });
-      } catch (error) {
-        return failed(ctx, 'The deck review file is missing. Presentation panes remain open.', errorText(error));
+
+    case 'await_socratic_completion': {
+      if (!workflowEvent.isUserContinue(incoming)) {
+        return failed(ctx, 'The Socratic walkthrough could not finish.', 'Expected user Continue.');
       }
-    }
-    case 'await_review_routing': {
-      let route: DeckReviewRoute;
-      try {
-        const result = completedSingleHeadlessResult(incoming);
-        route = parseDeckReviewRoute(result.output ?? '');
-        await ctx.log('info', `Deck review round ${state.stage.round} routing outcome=${route}.`);
-      } catch (error) {
-        return failed(ctx, 'The deck review could not be routed. Presentation panes remain open.', errorText(error));
-      }
-      if (state.stage.round > MAX_REVIEW_ROUNDS && route !== 'complete' && route !== 'human-decision') {
-        await ctx.log('info', `Final deck audit still found required work after ${MAX_REVIEW_ROUNDS} automatic revision rounds.`);
-        await ctx.setUiFeedback({ kind: 'warning', phase: 'Waiting for your decision', message: `The final audit in ${deckReviewPath(state.paths, state.stage.round)} still has required work. Resolve it with the verifier, then press Continue.` });
-        return suspend(withStage(state, { ...state.stage, kind: 'await_human_decision' }), wait.userContinue());
-      }
-      switch (route) {
-        case 'complete':
-          await closeAll(ctx, [state.stage.architect, state.stage.builder, state.stage.verifier], 'deck architect, builder, and verifier');
-          return cont(withStage(state, { kind: 'start_presentation_review', curriculum: state.stage.curriculum, plan: state.stage.plan }));
-        case 'human-decision':
-          await ctx.setUiFeedback({ kind: 'warning', phase: 'Waiting for your decision', message: `Review ${deckReviewPath(state.paths, state.stage.round)}, resolve the decision with the verifier, then press Continue.` });
-          return suspend(withStage(state, { ...state.stage, kind: 'await_human_decision' }), wait.userContinue());
-        case 'builder':
-        case 'architect-and-builder': {
-          const common = { curriculum: state.stage.curriculum, plan: state.stage.plan, review: state.stage.review, architect: state.stage.architect, builder: state.stage.builder, verifier: state.stage.verifier, round: state.stage.round };
-          return cont(withStage(state, route === 'architect-and-builder' ? { kind: 'send_architect_revision', ...common } : { kind: 'send_builder_revision', ...common }));
-        }
-        default:
-          return assertNever(route);
-      }
-    }
-    case 'await_human_decision': {
-      if (!workflowEvent.isUserContinue(incoming)) return failed(ctx, 'The deck review decision could not be resumed.', 'Expected user Continue after a deck review decision.');
-      try {
-        const resolution = await latestCompleteTurn(ctx, state.stage.verifier, 'verifier');
-        const review = `${state.stage.review}\n\n## Human decision follow-up\n\n${resolution}`;
-        return startDeckReviewRouting(ctx, state, { ...state.stage, kind: 'await_review_routing', review });
-      } catch (error) {
-        return failed(ctx, 'No completed decision response was found. Presentation panes remain open.', errorText(error));
-      }
-    }
-    case 'send_architect_revision': {
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.architect.agentSessionId, modifiers: SHOW_ME_MODIFIER, prompt: architectRevisionPrompt(input, state.stage.round, state.stage.review) });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_architect_revision' }), wait.agentTurn(sent));
-    }
-    case 'await_architect_revision': {
-      const error = turnError(incoming, 'Architect revision', state.stage.architect);
-      if (error) return failed(ctx, 'Deck architecture revision failed. Presentation panes remain open.', error);
-      try {
-        const response = await latestCompleteTurn(ctx, state.stage.architect, 'architect');
-        const plan = readDeckPlan(state.repositoryPath, state.paths, state.stage.curriculum);
-        return cont(withStage(state, { ...state.stage, kind: 'send_builder_revision', plan, architectResponse: response }));
-      } catch (error) {
-        return failed(ctx, 'The architect revision could not be handed off. Presentation panes remain open.', errorText(error));
-      }
-    }
-    case 'send_builder_revision': {
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.builder.agentSessionId, modifiers: SHOW_ME_MODIFIER, prompt: builderRevisionPrompt(input, state.stage.round, state.stage.review, state.stage.architectResponse) });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_builder_revision' }), wait.agentTurn(sent));
-    }
-    case 'await_builder_revision': {
-      const error = turnError(incoming, 'Builder revision', state.stage.builder);
-      if (error) return failed(ctx, 'Deck build revision failed. Presentation panes remain open.', error);
-      try {
-        const response = await latestCompleteTurn(ctx, state.stage.builder, 'builder');
-        assertExpectedFile(state.repositoryPath, state.paths.htmlPath, 'walkthrough deck');
-        return cont(withStage(state, { kind: 'send_reverification', curriculum: state.stage.curriculum, plan: state.stage.plan, architect: state.stage.architect, builder: state.stage.builder, verifier: state.stage.verifier, round: state.stage.round + 1, previousReview: state.stage.review, architectResponse: state.stage.architectResponse, builderResponse: response }));
-      } catch (error) {
-        return failed(ctx, 'The builder revision could not be handed off. Presentation panes remain open.', errorText(error));
-      }
-    }
-    case 'start_presentation_review': {
-      await ctx.setUiFeedback({ phase: 'Reviewing the walkthrough presentation', message: `Open ${state.paths.htmlPath}. Continue ends the walkthrough review.` });
-      const spawned = await ctx.spawnAgentSession({ ...guide, prompt: presentationGuidePrompt(input, state.stage.curriculum) });
-      const guideSession = visible(spawned);
-      return suspend(withStage(state, { kind: 'await_presentation_guide', curriculum: state.stage.curriculum, plan: state.stage.plan, guide: guideSession }), wait.agentTurn(spawned));
-    }
-    case 'await_presentation_guide': {
-      const error = guideError(incoming, 'Presentation guide');
-      if (error) return failed(ctx, 'The presentation guide failed.', error);
-      await ctx.setUiFeedback({ phase: 'Reviewing the walkthrough presentation', message: `Review ${state.paths.htmlPath} at your own pace. Ask the guide questions, or press Continue when finished.` });
-      return suspend(withStage(state, { ...state.stage, kind: 'await_presentation_continue' }), wait.userContinue());
-    }
-    case 'await_presentation_continue': {
-      if (!workflowEvent.isUserContinue(incoming)) return failed(ctx, 'Presentation review could not finish.', 'Expected user Continue.');
       await ctx.closePane(state.stage.guide.paneId);
-      return done({ outcome: 'presentation-review-completed', curriculumPath: state.paths.curriculumPath, deckPlanPath: state.paths.deckPlanPath, presentationPath: state.paths.htmlPath, ...deckPlanMetrics(state.stage.plan) });
+      return done({ outcome: 'socratic-walkthrough-completed', curriculumPath: state.paths.curriculumPath });
     }
+
     default:
       return assertNever(state.stage);
   }
 }
 
-function promptInput(state: State): PromptInput {
-  return { repositoryPath: state.repositoryPath, story: state.story, sources: state.sources, paths: state.paths, audienceProfile: state.audienceProfile };
+function nextDeliveryStage(deliveryMechanism: DeliveryMechanism): Stage {
+  return deliveryMechanism === 'presentation' ? { kind: 'start_presentation' } : { kind: 'start_socratic_walkthrough' };
 }
 
-function ensureDirectories(state: State): void {
-  for (const path of [state.paths.reviewDirectory, `${state.paths.reviewDirectory}/.walkthrough/inventories`, state.paths.reviewsDirectory]) mkdirSync(resolve(state.repositoryPath, path), { recursive: true });
+function promptInput(state: State): PromptInput {
+  return {
+    repositoryPath: state.repositoryPath,
+    story: state.story,
+    sources: state.sources,
+    paths: state.paths,
+    audienceProfile: state.audienceProfile,
+  };
 }
 
 function visible(input: VisibleAgent): VisibleAgent {
-  return { agentSessionId: input.agentSessionId, paneId: input.paneId, sentAt: input.sentAt };
-}
-
-function at(agents: readonly VisibleAgent[], index: number): VisibleAgent {
-  const agent = agents[index];
-  if (!agent) throw new Error(`No visible agent at index ${index}.`);
-  return agent;
+  return input;
 }
 
 function turnError(incoming: unknown, label: string, agent: VisibleAgent): string | null {
@@ -413,90 +293,76 @@ function turnError(incoming: unknown, label: string, agent: VisibleAgent): strin
   return null;
 }
 
-function guideError(incoming: unknown, label: string): string | null {
-  if (workflowEvent.isAgentTurnFailed(incoming)) return `${label} failed: ${incoming.reason}`;
-  if (!workflowEvent.isAgentTurnEnded(incoming)) return `${label} resumed with an unexpected event.`;
-  return null;
+function neighborhoodAt(plan: ArchitectedDeckPlan, index: number): ArchitectedDeckPlan['neighborhoods'][number] {
+  const neighborhood = plan.neighborhoods[index];
+  if (!neighborhood) throw new Error(`No deck neighborhood exists at index ${index}.`);
+  return neighborhood;
 }
 
-async function startDeckReviewRouting(
-  ctx: WorkflowContext,
-  state: State,
-  stage: Extract<Stage, { readonly kind: 'await_review_routing' }>,
-): Promise<WorkflowResult> {
-  await ctx.setUiFeedback({ phase: 'Routing deck review', message: `Review round ${stage.round}.` });
-  const op = await ctx.runHeadlessAgent({ ...deckReviewRouting, prompt: deckReviewRoutingPrompt(stage.review) });
-  await ctx.log('info', `Started deck review routing judgment ${op.opId} for round ${stage.round}.`);
-  return suspend(withStage(state, stage), wait.headlessAgent(op));
+function curriculumFamiliarity(profile: AudienceProfile): string {
+  return profile.familiarity === 'new'
+    ? 'The audience is new to this codebase and needs the essential context required to evaluate the proposal.'
+    : 'The audience is familiar with this codebase; emphasize consequential changes and include context only when it changes evaluation of the proposal.';
 }
 
-function readDeckReview(repositoryPath: string, paths: WalkthroughPaths, round: number): string {
-  return readArtifactText(repositoryPath, deckReviewPath(paths, round));
+function curriculumDepth(profile: AudienceProfile): string {
+  switch (profile.technicalDepth) {
+    case 'product':
+      return 'Explain behavior, user and operational consequences, and tradeoffs while keeping exact technical evidence available for inspection.';
+    case 'system-design':
+      return 'Explain system boundaries, ownership, flows, state changes, tradeoffs, and the consequential contracts needed to evaluate the design.';
+    case 'implementation':
+      return 'Explain system intent together with implementation mechanics, exact changed contracts, failure behavior, and migration consequences.';
+  }
 }
 
-async function latestCompleteTurn(ctx: WorkflowContext, agent: VisibleAgent, label: string): Promise<string> {
-  const history = await ctx.getConversationHistory(agent.agentSessionId);
-  const text = latestAssistantTurnText(history);
-  if (!text) throw new Error(`${label} session ${agent.agentSessionId} has no complete assistant turn to hand off.`);
-  return text;
-}
-
-async function closeAll(ctx: WorkflowContext, agents: readonly VisibleAgent[], label: string): Promise<void> {
-  for (const agent of agents) await ctx.closePane(agent.paneId);
-  await ctx.log('info', `Closed ${label} panes ${agents.map(({ paneId }) => paneId).join(', ')}.`);
+function completedCurriculumResult(incoming: unknown, runId: number, paths: WalkthroughPaths): void {
+  const results = workflowEvent.getWorkflowResults(incoming);
+  if (!results || results.length !== 1 || results[0]?.runId !== runId) {
+    throw new Error(`Expected completion result for design-curriculum workflow run ${runId}.`);
+  }
+  const joined = results[0];
+  if (joined.status !== 'done') throw new Error(`Design-curriculum workflow run ${runId} failed: ${errorText(joined.error)}`);
+  if (!joined.result || typeof joined.result !== 'object' || Array.isArray(joined.result)) {
+    throw new Error(`Design-curriculum workflow run ${runId} returned no result object.`);
+  }
+  const result = joined.result as Record<string, unknown>;
+  if (
+    result.outcome !== 'curriculum-created'
+    || result.analysisPath !== paths.curriculumAnalysisPath
+    || result.curriculumPath !== paths.curriculumPath
+  ) {
+    throw new Error(`Design-curriculum workflow run ${runId} returned an invalid result.`);
+  }
 }
 
 async function failed(ctx: WorkflowContext, message: string, diagnostic: string): Promise<WorkflowResult> {
-  await ctx.setUiFeedback({ kind: 'error', phase: 'Story walkthrough failed', message });
+  await ctx.setUiFeedback({ kind: 'error', phase: 'Solution walkthrough failed', message });
   await ctx.log('error', diagnostic);
   return fail(diagnostic);
 }
 
-function chapterAt(curriculum: Curriculum, index: number) {
-  const chapter = curriculum.chapters[index];
-  if (!chapter) throw new Error(`No curriculum chapter at index ${index}.`);
-  return chapter;
-}
-
-function beatAt(chapter: Curriculum['chapters'][number], index: number) {
-  const beat = chapter.beats[index];
-  if (!beat) throw new Error(`No curriculum beat at index ${index} in ${chapter.id}.`);
-  return beat;
-}
-
-function deckChapterAt(plan: DeckPlan, index: number) {
-  const chapter = plan.chapters[index];
-  if (!chapter) throw new Error(`No deck chapter at index ${index}.`);
-  return chapter;
-}
-
-function narrativeUnitAt(chapter: DeckPlan['chapters'][number], index: number) {
-  const unit = chapter.narrativeUnits[index];
-  if (!unit) throw new Error(`No narrative unit at index ${index} in ${chapter.id}.`);
-  return unit;
-}
-
-function deckPlanMetrics(plan: DeckPlan): Record<string, number> {
-  const legacy = plan as unknown as { readonly slides?: readonly unknown[] };
-  if (legacy.slides) return { slideCount: legacy.slides.length };
-  return {
-    chapterCount: plan.chapters.length,
-    narrativeUnitCount: plan.chapters.reduce((count, chapter) => count + chapter.narrativeUnits.length, 0),
-  };
-}
-
-function beatCount(curriculum: Curriculum): number {
-  return curriculum.chapters.reduce((count, chapter) => count + chapter.beats.length, 0);
-}
-
 function withStage(state: State, stage: Stage): State {
-  return { ...state, stage };
+  return { ...state, stage } satisfies State;
 }
 
 function errorText(value: unknown): string {
-  return value instanceof Error ? value.message : String(value);
+  if (value instanceof Error) return value.message;
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (record.reason !== undefined) return errorText(record.reason);
+    if (record.message !== undefined) return errorText(record.message);
+    if (record.error !== undefined) return errorText(record.error);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
 }
 
 function assertNever(value: never): never {
-  throw new Error(`Unsupported workflow stage: ${String(value)}`);
+  throw new Error(`Unsupported workflow stage: ${JSON.stringify(value)}`);
 }

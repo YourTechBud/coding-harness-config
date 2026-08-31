@@ -3,6 +3,30 @@ import test from 'node:test';
 
 import { renderWorkflowStatus } from '../src/feedback.js';
 
+test('a discovered plan is informational rather than a confirmation checkpoint', () => {
+  assert.deepEqual(
+    renderWorkflowStatus({
+      kind: 'plan-ready',
+      entryPlanPath: 'scratch/plans/current-plan/index.md',
+      decisionLogPath: 'scratch/plans/current-plan/decisions.md',
+      phaseCount: 4,
+      completedPhaseCount: 1,
+      nextPhase: 2,
+    }),
+    {
+      kind: 'info',
+      phase: 'plan-ready',
+      message: [
+        'Plan: scratch/plans/current-plan/index.md',
+        'Decision log: scratch/plans/current-plan/decisions.md',
+        'Phases: 4',
+        'Completed: 1',
+        'Next: Phase 2 of 4',
+      ].join('\n\n'),
+    },
+  );
+});
+
 test('severe flag feedback is an actionable warning', () => {
   assert.deepEqual(renderWorkflowStatus({ kind: 'severe-flag', phase: 2 }), {
     kind: 'warning',

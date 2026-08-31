@@ -74,7 +74,6 @@ type Implementer = {
 type ImplementerActivity = "alignment" | "implementation";
 
 type ActiveStage =
-  | { readonly kind: "confirm-plan" }
   | { readonly kind: "select-implementer" }
   | { readonly kind: "await-implementer-selection" }
   | {
@@ -278,19 +277,7 @@ export default defineWorkflow<State, Variables>({
           "info",
           `Plan found at ${activeState.plan.entryPlanPath} with ${activeState.plan.phases.length} phases. Decision log: ${activeState.plan.decisionLogPath}. Completed phases: ${activeState.plan.currentPhaseIndex}. Next phase: ${nextPhase?.number ?? "none"}.`,
         );
-        return suspend(activeState, wait.userContinue());
-      }
-
-      case "confirm-plan": {
-        const activeState = requireActiveState(state);
-        if (!workflowEvent.isUserContinue(event)) {
-          return failWorkflow(
-            ctx,
-            "Plan confirmation could not be resumed",
-            "Plan confirmation resumed with an unexpected event.",
-          );
-        }
-        if (!currentPhase(activeState)) {
+        if (!nextPhase) {
           await setWorkflowStatus(ctx, { kind: "complete" });
           await ctx.log(
             "info",
@@ -298,11 +285,7 @@ export default defineWorkflow<State, Variables>({
           );
           return cont(withStage(activeState, { kind: "done" }) satisfies State);
         }
-        return cont(
-          withStage(activeState, {
-            kind: "select-implementer",
-          }) satisfies State,
-        );
+        return cont(withStage(activeState, { kind: "select-implementer" }) satisfies State);
       }
 
       case "select-implementer": {
@@ -754,7 +737,7 @@ function activatePlan(
       phases: discovered.phases,
       currentPhaseIndex: discovered.currentPhaseIndex,
     },
-    stage: { kind: "confirm-plan" },
+    stage: { kind: "select-implementer" },
   };
 }
 

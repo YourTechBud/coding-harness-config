@@ -1,27 +1,6 @@
-import {
-  artifactDescriptors,
-  pathFor,
-  type AudienceProfile,
-  type ArtifactKind,
-  type ArtifactPaths,
-  type Curriculum,
-  type CurriculumBeat,
-  type CurriculumChapter,
-  type DeckChapter,
-  type DeckPlan,
-  type NarrativeUnit,
-  type WalkthroughPaths,
-} from "./types.js";
-import { deckReviewPath } from "./paths.js";
+import type { ArchitectedDeckPlan } from './curriculum-v3.js';
+import type { ArtifactPaths, AudienceProfile, WalkthroughPaths } from './types.js';
 
-export const PREPARATION_FOOTER =
-  "Work unattended and finish the requested file in this turn. Do not run tasks or shell commands in the background, but you may run them in the foreground.";
-
-function withPreparationFooter(body: string): string {
-  return `${body}\n\n${PREPARATION_FOOTER}`;
-}
-
-// Workflow prompts
 export type PromptInput = {
   readonly repositoryPath: string;
   readonly story: string;
@@ -30,417 +9,156 @@ export type PromptInput = {
   readonly audienceProfile: AudienceProfile;
 };
 
-export const PLAIN_LANGUAGE_STANDARD = `Use direct, plain language. Lead with behavior or consequence, define unfamiliar terms before use, and keep exact identifiers where they add precision. Omit or merge material that does not change understanding.`;
+const PREPARATION_FOOTER = 'Work unattended and finish the requested file in this turn. Do not run tasks or shell commands in the background, but you may run them in the foreground.';
 
-export const QUICK_GLANCE_STANDARD = `Design for quick-glance forward motion. Each slide has a declarative takeaway, one dominant visual or example, and minimal supporting copy. A reader should grasp the point within seconds and choose whether to open accessible detail. Keep exact changed contracts reviewable, using progressive disclosure when their full shape would crowd the primary view.`;
+const PLAIN_LANGUAGE_STANDARD = 'Use direct, plain language. Lead with behavior or consequence, define unfamiliar terms before use, and keep exact identifiers where they add precision. Omit or merge material that does not change understanding.';
 
-export function sourceInventoryPrompt(input: PromptInput, kind: ArtifactKind): string {
-  const sourcePath = pathFor(input.sources, kind);
-  const outputPath = pathFor(input.paths.inventoryPaths, kind);
-  return withPreparationFooter(`Analyze one canonical source for reusable walkthrough material.
+const DECK_EXPERIENCE = `Create a self-paced presentation whose main narrative is understandable at a glance. Each slide should feel like a composed presentation canvas rather than a document section. Show all primary content immediately; Next and Back move between slides and never reveal fragments within a slide. Keep exact contracts available without crowding the main narrative, using accessible details or dependable scrolling for optional evidence. Choose typography, composition, visual language, and representations that suit the material. Keep the result readable, responsive, non-overlapping, accessible, and coherent.`;
 
-Story: ${input.story}
-Repository: ${input.repositoryPath}
-Artifact: ${kind}
-Source: ${sourcePath}
-Output: ${outputPath}
+const VISUAL_STORYTELLING_STANDARD = `Use diagrams as the primary explanation when the material is fundamentally relational, sequential, or stateful. Sequence, state, flow, dependency, and data-model diagrams are especially useful. Mermaid is available when it produces the cleanest result; render diagrams in the finished deck rather than showing their source. Reuse or evolve a diagram across adjacent slides when that preserves context. Do not substitute a grid of prose cards for a relationship that one clear diagram can show directly.`;
 
-Create an audience-neutral inventory of distinct mental models, facts, prerequisites, terms, evidence, and useful representations. For program design, also capture every materially changed API, schema, event, query, wire, configuration, module, or state contract with enough exact shape, invariants, compatibility, and migration detail to review it. Contracts belong only in the program-design inventory.
-
-Write exactly one JSON object:
-{
-  "schemaVersion": 3,
-  "artifact": { "kind": "${kind}", "sourcePath": "${sourcePath}" },
-  "candidates": [{
-    "candidateId": "short-kebab-id",
-    "title": "Concept title",
-    "learningObjective": "What can be understood",
-    "whyRequired": "Why it matters",
-    "prerequisiteCandidateIds": [],
-    "terms": [{ "term": "Term", "meaning": "Plain meaning" }],
-    "keyPoints": ["Grounded fact or relationship"],
-    "representationOpportunities": ["A useful diagram, code shape, or comparison"],
-    "sourceReferences": [{ "heading": "Source heading", "locator": "Retrievable locator" }]
-  }],
-  "contracts": [{
-    "contractId": "short-kebab-id",
-    "kind": "persistence",
-    "name": "Exact contract name",
-    "change": "add",
-    "exactShape": "Reviewable signature, schema, fields, types, optionality, outputs, and errors",
-    "invariants": ["Behavior or constraint that must hold"],
-    "compatibilityAndMigration": null,
-    "sourceReferences": [{ "heading": "Source heading", "locator": "Retrievable locator" }]
-  }]
+function unattended(body: string): string {
+  return `${body}\n\n${PREPARATION_FOOTER}`;
 }
 
-Candidate IDs and contract IDs are unique within this artifact and prerequisites reference candidates in this file. Contract kind is one of api, persistence, event, query, wire, configuration, cross-module, or state-model. Contract change is add, modify, or remove. For ${kind}, ${kind === 'program-design' ? 'contracts contains every materially changed contract; use an empty array only when the source truly defines no changed contracts' : 'contracts must be an empty array'}. Write only ${outputPath}.`);
-}
-
-export function curriculumPrompt(input: PromptInput): string {
-  const inventories = artifactDescriptors.map(({ kind }) => `${kind}: ${pathFor(input.paths.inventoryPaths, kind)}`).join('\n');
-  return withPreparationFooter(`Create the delivery-neutral curriculum for a solution walkthrough.
-
-Story: ${input.story}
-Repository: ${input.repositoryPath}
-Audience familiarity: ${input.audienceProfile.familiarity}
-Technical depth: ${input.audienceProfile.technicalDepth}
-Inventories:
-${inventories}
-Output: ${input.paths.curriculumPath}
-
-Apply the audience profile here. New audiences need first-principles orientation; familiar audiences need compact refreshers and deltas. Product depth emphasizes behavior and tradeoffs, system-design depth emphasizes boundaries and flows, and implementation depth adds mechanics and failure evidence.
-
-Language policy:
-${PLAIN_LANGUAGE_STANDARD}
-
-Select the smallest curriculum that preserves the needed mental models. Move secondary evidence to supportingMaterial and explain omissions. Changed contracts remain required at every depth; depth changes their framing, not their availability.
-
-Use one compact orientation, one or more conceptual neighborhoods, and an optional synthesis only when it adds a distinct conclusion. Within each neighborhood, local context leads to contiguous architecture beats immediately followed by contiguous program-design beats, then optional verification. Program design realizes architecture through contracts and mechanics instead of restating it.
-
-Account for each candidate exactly once through a beat or omission, order prerequisites, and introduce terms once. Map every changed contract exactly once to a program-design beat through contractCoverage. A beat is a teaching movement with a context, architecture, program-design, or verification facet; realizationPoint is its optional key insight.
-
-Write exactly one JSON object with this shape:
-{
-  "schemaVersion": 3,
-  "story": { "reference": ${JSON.stringify(input.story)}, "title": "Title", "throughline": "Narrative throughline" },
-  "sources": ${JSON.stringify(input.sources)},
-  "audienceProfile": ${JSON.stringify(input.audienceProfile)},
-  "audienceContract": {
-    "assumedKnowledge": [],
-    "orientationPolicy": "How context is established",
-    "technicalDetailPolicy": "How detail is selected",
-    "evidencePolicy": "What evidence is retained",
-    "languagePolicy": "How every delivery mode keeps the selected material plain and precise"
-  },
-  "chapters": [{
-    "id": "orientation",
-    "kind": "orientation",
-    "title": "Chapter title",
-    "purpose": "Why this chapter exists",
-    "openingContext": "Standalone briefing",
-    "synthesisObjective": "What the reader should connect after its beats",
-    "beats": [{
-      "id": "orientation-01",
-      "facet": "context",
-      "title": "Beat title",
-      "objective": "Learner outcome",
-      "narrativeBridge": "How this follows and leads onward",
-      "candidateReferences": [{ "artifact": "current-state", "candidateId": "candidate-id" }],
-      "prerequisiteBeatIds": [],
-      "requiredContent": ["Audience-selected point"],
-      "supportingMaterial": [],
-      "termsToIntroduce": [{ "term": "Term", "meaning": "Meaning" }],
-      "realizationPoint": "Optional key insight",
-      "comprehensionObjective": "Optional Socratic objective",
-      "representationOpportunities": [],
-      "sourceReferences": [{ "heading": "Heading", "locator": "Locator" }]
-    }]
-  }],
-  "contractCoverage": [{
-    "contractId": "contract-id-from-program-design-inventory",
-    "chapterId": "neighborhood-id",
-    "beatId": "neighborhood-id-02",
-    "presentationRequirement": "How the exact shape and its consequence stay reviewable at the selected depth"
-  }],
-  "omissions": [{ "candidate": { "artifact": "architecture", "candidateId": "candidate-id" }, "reason": "Audience-specific reason" }]
-}
-
-Use unique kebab-case chapter IDs and sequential <chapter-id>-NN beat IDs. Chapter kind is orientation, neighborhood, or synthesis. Beat facet is context, architecture, program-design, or verification. The orientation is first, at least one neighborhood follows, and an optional synthesis is last. The orientation and synthesis use context or verification facets as appropriate. Write only ${input.paths.curriculumPath}.`);
-}
-
-export function deckArchitecturePrompt(input: PromptInput): string {
-  return withPreparationFooter(`Create the detailed narrative brief for one standalone slide presentation from the finalized curriculum.
+export function genericDeckArchitecturePrompt(input: PromptInput): string {
+  return unattended(`Turn the approved curriculum into a concise narrative and coverage brief for a presentation.
 
 Story: ${input.story}
 Curriculum: ${input.paths.curriculumPath}
-Output deck: ${input.paths.htmlPath}
+Curriculum analysis: ${input.paths.curriculumAnalysisPath}
+Future deck: ${input.paths.htmlPath}
 Output plan: ${input.paths.deckPlanPath}
 
-Plan the story and every content slide before construction. Preserve the curriculum's neighborhoods and obligations. Within each neighborhood, architecture is immediately followed by program design; current-state evidence appears only as brief orientation or local context.
+Read both curriculum files. The curriculum decides what the audience must understand and the analysis is the authority for grounded facts, details, and source references. Preserve the curriculum's storyline, neighborhood order, outcomes, coverage roles, visibility choices, and omissions.
+
+This is narrative architecture, not slide allocation, copywriting, visual design, or HTML construction. Identify the sequence of conclusions the audience needs to reach and map every retained coverage item to that sequence. A content moment is one teaching move, not an eventual slide or a compressed summary of its evidence. State its audienceConclusion as one short, direct sentence. The coverage IDs carry the supporting facts and exact contracts, so do not repeat those details in the conclusion. Combine related outcomes when they support the same teaching move.
 
 ${PLAIN_LANGUAGE_STANDARD}
-${QUICK_GLANCE_STANDARD}
 
-Use the Show Me skill for representations that carry the explanation. ${representationGuidance(input.audienceProfile.technicalDepth)} Carry an architecture visual into the adjacent program-design unit when it can reveal the realization without repeating setup. Give every slide one unique contribution, merge repeated motivations and summaries, and explain the reduction choices in compactnessStrategy. Let slide count follow distinct substance rather than a quota.
+Create the smallest useful sequence of content moments without dropping load-bearing context or exact contracts such as schemas, APIs, events, state machines, security boundaries, and other reviewable system or implementation contracts. The deck creator will decide how many slides to use and how to represent the material. Describe the grouping logic in compactnessRationale without asserting a content-moment or slide count that could drift from the arrays.
 
-Write exactly one JSON object:
+Write exactly this JSON shape:
 {
-  "schemaVersion": 3,
+  "schemaVersion": 7,
   "curriculumPath": ${JSON.stringify(input.paths.curriculumPath)},
+  "analysisPath": ${JSON.stringify(input.paths.curriculumAnalysisPath)},
   "outputPath": ${JSON.stringify(input.paths.htmlPath)},
   "story": {
     "title": "Presentation title",
-    "openingPromise": "What the audience is about to understand",
-    "throughline": "The idea connecting the complete presentation",
-    "endingResolution": "What the audience should understand when the story closes"
+    "openingPromise": "What the audience will be able to decide",
+    "throughline": "The idea connecting the presentation",
+    "endingResolution": "The approval-ready conclusion"
   },
-  "compactnessStrategy": "What is merged, omitted, recalled briefly, or moved into progressive disclosure to avoid repetition",
-  "chapters": [{
-    "id": "orientation",
-    "kind": "orientation",
-    "title": "Chapter title",
-    "storyRole": "What this chapter contributes to the whole story",
-    "openingContext": "Where the audience is when the chapter begins",
-    "closingSynthesis": "What should be established when the chapter ends",
-    "transitionToNext": "How this understanding leads into the next chapter or ending",
-    "narrativeUnits": [{
-      "title": "Working title for this narrative movement",
-      "facet": "context",
-      "storyPurpose": "Why this movement exists in the story",
-      "beatIds": ["orientation-01"],
-      "narrativeBridge": "How it follows the previous movement and prepares the next",
-      "slides": [{
-        "id": "unique-slide-id",
-        "title": "Claim made by this slide",
-        "uniqueContribution": "The distinct understanding this slide adds",
-        "requiredContent": ["Only content needed for that contribution"],
-        "contractIds": [],
-        "representationIntent": "Optional visual relationship",
-        "progressiveDisclosure": ["Supporting detail available without another slide"],
-        "sourceReferences": [{ "heading": "Source heading", "locator": "Retrievable locator" }]
-      }]
+  "presentationStrategy": {
+    "audienceExperience": "How the presentation should feel and be consumed",
+    "compactnessRationale": "Why this is the smallest useful sequence of audience conclusions"
+  },
+  "openingSlide": {
+    "id": "opening",
+    "titleIntent": "What the opening title should establish",
+    "decisionPromise": "What the audience will be ready to decide"
+  },
+  "neighborhoods": [{
+    "id": "presentation-neighborhood-id",
+    "curriculumNeighborhoodId": "curriculum-neighborhood-id",
+    "title": "Neighborhood title",
+    "purpose": "What this movement establishes",
+    "transition": "How it connects to the next movement",
+    "contentMoments": [{
+      "id": "unique-content-moment-id",
+      "audienceConclusion": "The distinct conclusion the audience needs to reach",
+      "outcomeIds": ["curriculum-outcome-id"],
+      "coverageItemIds": ["curriculum-coverage-item-id"]
     }]
   }]
 }
 
-Chapter kind is orientation, neighborhood, or synthesis. Narrative-unit facet is context, architecture, program-design, or verification. Create exactly the curriculum chapters in order with matching IDs and kinds. Map every beat exactly once, in order, to a same-facet narrative unit. Map every changed contract exactly once to a planned slide in the program-design unit for its covered beat. Write only ${input.paths.deckPlanPath}.`);
+Create exactly the curriculum neighborhoods in order. Represent every curriculum outcome and map every retained coverage item exactly once within its neighborhood. The opening slide stays minimal and does not absorb curriculum outcomes or coverage. Do not prescribe slide boundaries, representations, layouts, typography, interactions, or overflow behavior. Write only ${input.paths.deckPlanPath}.`);
 }
 
-export function deckShellPrompt(input: PromptInput): string {
-  return withPreparationFooter(`Create the reusable shell for the planned standalone slide deck.
+export function genericDeckShellPrompt(input: PromptInput): string {
+  return unattended(`Create the opening slide and lightweight working shell for the approved standalone presentation.
 
+Story: ${input.story}
 Curriculum: ${input.paths.curriculumPath}
 Deck plan: ${input.paths.deckPlanPath}
 Output: ${input.paths.htmlPath}
 
-Create one self-contained HTML file with embedded CSS and JavaScript. Establish a spacious, quick-glance, viewport-based slide experience with keyboard and visible navigation, progress, accessible semantics, responsive layout, and printable fallback. Include data-walkthrough-deck, data-slide-viewport, and data-slide-navigation. Leave a clear insertion area; content slides come later.
+Read the deck plan and create one self-contained HTML file with embedded CSS and JavaScript. The presentation should use the full available browser viewport so diagrams and composed layouts have room to breathe. Constrain prose where that improves reading, but do not constrain the slide canvas or visual field. Make overflow and scrolling dependable wherever a slide needs more vertical space.
 
-Write only ${input.paths.htmlPath}.`);
+Create the minimal opening slide from openingSlide and establish an initial visual tone without imposing a rigid component system on later neighborhoods. Provide coherent navigation, progress, responsive and print behavior, accessibility, and focus behavior. Set up Mermaid so later creators can use it when it is the clearest way to express a sequence, state, flow, dependency, or data model.
+
+The workflow integration contract is small: place data-walkthrough-deck on the root, data-slide-viewport on the slide viewport, data-walkthrough-slide and the planned opening id on the opening section, and data-slide-navigation on the navigation. Leave <!-- walkthrough-content-end --> inside the slide viewport as the insertion point for neighborhoods. Derive displayed numbers, totals, and progress from the rendered slides.
+
+${PLAIN_LANGUAGE_STANDARD}
+${DECK_EXPERIENCE}
+
+Write ${input.paths.htmlPath}. This turn creates the opening and shared presentation environment, not any neighborhood content.`);
 }
 
-export function narrativeUnitPrompt(
+export function genericDeckNeighborhoodPrompt(
   input: PromptInput,
-  plan: DeckPlan,
-  chapter: DeckChapter,
-  unit: NarrativeUnit,
-  unitIndex: number,
+  plan: ArchitectedDeckPlan,
+  neighborhood: ArchitectedDeckPlan['neighborhoods'][number],
+  neighborhoodIndex: number,
 ): string {
-  return withPreparationFooter(`Realize one narrative unit in the existing standalone deck.
+  return unattended(`Create one complete neighborhood of the standalone presentation.
+
+Story: ${input.story}
+Curriculum: ${input.paths.curriculumPath}
+Curriculum analysis: ${input.paths.curriculumAnalysisPath}
+Deck plan: ${input.paths.deckPlanPath}
+Canonical sources: ${JSON.stringify(input.sources)}
+Deck: ${input.paths.htmlPath}
+Neighborhood ${neighborhoodIndex + 1} of ${plan.neighborhoods.length}:
+${JSON.stringify(neighborhood, null, 2)}
+
+Use the Show Me skill to turn this neighborhood into a compelling visual explanation. The content moments define the conclusions and coverage that must survive; they are not prescribed slides. Decide the number and order of slides, their titles, representations, layouts, and visual rhythm. Use the smallest sequence that communicates the neighborhood clearly.
+
+Treat each content moment as one visual teaching movement by default. A slide may carry adjacent moments when one representation explains them together. Split a moment only when its primary understanding genuinely requires distinct steps; an exact contract is not by itself a reason for another slide.
+
+Resolve coverage item IDs through the curriculum and analysis. Preserve exact schemas, APIs, events, state transitions, security boundaries, and other contracts needed for approval. Consult the canonical Markdown only when an exact detail remains ambiguous. Do not turn source references or the plan into audience-facing prose.
+
+Inspect the opening and earlier neighborhoods. Preserve their content and mechanics while extending the visual language when this material calls for it. Add this neighborhood's sections immediately before <!-- walkthrough-content-end --> in story order. Give every section data-walkthrough-slide, a unique id, and data-walkthrough-neighborhood="${neighborhood.id}". Record the content moments realized by each slide as space-separated IDs in data-content-moments. Every content moment in this neighborhood must appear on at least one slide.
+
+${PLAIN_LANGUAGE_STANDARD}
+${DECK_EXPERIENCE}
+${VISUAL_STORYTELLING_STANDARD}
+
+Modify only ${input.paths.htmlPath}. Complete the entire neighborhood in this turn and leave deck-wide assembly for the final turn.`);
+}
+
+export function genericDeckAssemblyPrompt(input: PromptInput): string {
+  return unattended(`Complete the assembled neighborhoods as one polished standalone presentation.
 
 Curriculum: ${input.paths.curriculumPath}
+Curriculum analysis: ${input.paths.curriculumAnalysisPath}
 Deck plan: ${input.paths.deckPlanPath}
 Deck: ${input.paths.htmlPath}
-Story: ${JSON.stringify(plan.story)}
-Chapter: ${JSON.stringify({ id: chapter.id, title: chapter.title, storyRole: chapter.storyRole, openingContext: chapter.openingContext, closingSynthesis: chapter.closingSynthesis, transitionToNext: chapter.transitionToNext })}
-Narrative unit ${unitIndex + 1} of ${chapter.narrativeUnits.length}:
-${JSON.stringify(unit, null, 2)}
 
-Realize exactly the planned slides. Add data-walkthrough-slide, the planned id, data-walkthrough-chapter="${chapter.id}", and data-walkthrough-facet="${unit.facet}" to each section. Preserve the shell and prior slides.
+Inspect the complete deck and make the editorial and visual decisions needed for it to feel like one intentional presentation. Begin with a compression pass: compare the substantive slide count with the content moments in the plan and challenge every expansion. Merge adjacent slides that realize the same moment, let one strong visual carry adjacent moments when appropriate, and fold reference-only slides into inspectable detail. A large expansion is a diagnostic signal, not a hard quota. Split or redesign slides only when clarity genuinely requires it.
+
+Preserve the opening promise, neighborhood order, every content moment, every retained coverage item, and the exact contracts needed for approval. Preserve and correct data-content-moments mappings as slides are merged or redesigned. Remove the insertion marker and finish neighborhood transitions, the ending, navigation, progress, focus behavior, accessibility, responsive behavior, scrolling, and print behavior.
 
 ${PLAIN_LANGUAGE_STANDARD}
-${QUICK_GLANCE_STANDARD}
+${DECK_EXPERIENCE}
+${VISUAL_STORYTELLING_STANDARD}
 
-Use established context and brief callbacks. Program design realizes the architecture just shown. Use the Show Me skill for focused representations. ${representationGuidance(input.audienceProfile.technicalDepth)} Fulfill each planned contribution and keep every covered contract exact: schemas expose relevant fields, types, optionality, constraints, indexes, and migration; APIs expose relevant calls, inputs, outputs, and errors; other contracts expose equivalent shape, invariants, and compatibility behavior.
-
-Modify only ${input.paths.htmlPath}.`);
+No model reviewer follows this assembly. Render and inspect the completed deck at 1440×900, 1280×720, and 1024×768. Exercise navigation and optional-detail controls, then correct overlap, clipping, unreadable content, broken scrolling, stale numbering, hidden primary content, and visible stacking between slides. Modify only ${input.paths.htmlPath}.`);
 }
 
-export function finalAssemblyPrompt(input: PromptInput): string {
-  return withPreparationFooter(`Complete and polish the assembled standalone presentation.
+export function genericSocraticPrompt(input: PromptInput): string {
+  return `Guide a self-paced Socratic walkthrough from the approved curriculum.
 
+Story: ${input.story}
 Curriculum: ${input.paths.curriculumPath}
-Deck plan: ${input.paths.deckPlanPath}
-Deck: ${input.paths.htmlPath}
-
-Polish the deck into one quick-glance presentation with coherent opening, neighborhood transitions, ending, navigation, responsive layout, accessibility, and visual consistency.
-
-${PLAIN_LANGUAGE_STANDARD}
-${QUICK_GLANCE_STANDARD}
-
-Merge or remove repeated slides and update navigation. Add a structural slide only for a distinct transition the adjacent slides cannot carry. Preserve curriculum and contract coverage, architecture-to-program-design adjacency, working controls, and a viewport-based rather than scrolling experience.
-
-Modify only ${input.paths.htmlPath}.`);
-}
-
-export function verifierPrompt(
-  input: PromptInput,
-  round: number,
-  previous?: {
-    readonly review: string;
-    readonly architectResponse?: string | undefined;
-    readonly builderResponse: string;
-  },
-): string {
-  const output = deckReviewPath(input.paths, round);
-  const previousContext = previous
-    ? `
-Previous review:
-<previous_review>
-${previous.review}
-</previous_review>
-
-Architect response:
-<architect_response>
-${previous.architectResponse ?? 'No architect turn was required.'}
-</architect_response>
-
-Builder response:
-<builder_response>
-${previous.builderResponse}
-</builder_response>
-`
-    : '';
-  return withPreparationFooter(`Verify the built walkthrough deck against its authoritative inputs.
-
-Round: ${round}
-Curriculum: ${input.paths.curriculumPath}
-Deck plan: ${input.paths.deckPlanPath}
-Deck: ${input.paths.htmlPath}
-Output: ${output}
-${previousContext}
-
-Review the curriculum, plan, and HTML. Judge the deck agentically; there is no slide-count target.
-
-${PLAIN_LANGUAGE_STANDARD}
-${QUICK_GLANCE_STANDARD}
-
-Check that each slide earns its place and reads at a glance, repeated ideas are merged, and the primary layer feels like forward motion rather than a study document. Also verify factual grounding, coverage, navigation, accessibility, legibility, and progressive disclosure.
-
-In the actual HTML, each neighborhood must move directly from architecture to the program design that realizes it. Every materially changed contract must remain exact and reviewable at every depth, including relevant schema fields, types, constraints and migration; API calls, inputs, outputs and errors; and equivalent shapes and invariants for other contract kinds.
-
-This is read-only review: do not edit the curriculum, plan, or deck.
-
-Write a complete standalone Markdown review for this round with these sections:
-
-# Deck Review — Round ${round}
-
-## Review scope
-State what you inspected and anything you could not verify.
-
-## Prior finding verification
-For round one, state that this is the initial review. Later, account for every prior blocker and concern as Verified, Incomplete, Not addressed, or Withdrawn, with current evidence.
-
-## Findings
-Use "### F-NN — [Severity] Short title" with a stable ID and severity Blocker, Concern, or Suggestion. Include responsibility, affected area, evidence, consequence, required outcome, and verification. Responsibility is Deck architecture for plan changes, Deck implementation for realization changes, or Human decision for choices only the user can make. Use "No findings" when empty. Suggestions never require another round.
-
-## Human decision
-Write "No human decision required" unless a genuine user choice is necessary; then state the decision, options, and tradeoffs.
-
-## Conclusion
-State whether required work remains and who owns it. No blockers or concerns means complete.
-
-The Markdown must carry the full review evidence; do not emit a JSON verdict or machine-routing fields. Write only ${output}.`);
-}
-
-export function architectRevisionPrompt(input: PromptInput, round: number, review: string): string {
-  return withPreparationFooter(`Resolve the deck-architecture findings from review round ${round}.
-
-Curriculum: ${input.paths.curriculumPath}
-Deck plan: ${input.paths.deckPlanPath}
-Review: ${deckReviewPath(input.paths, round)}
-
-<deck_review>
-${review}
-</deck_review>
-
-Update the plan where findings require it. Preserve the curriculum, neighborhood order, exact contract coverage, one-time beat mapping, and architecture-to-program-design adjacency. Merge slides whose contributions overlap. Evaluate every finding and summarize changes, evidence-based declines, and genuine user decisions.
-
-The deck plan is validated against exact object key sets. Preserve its existing JSON schema: keep schemaVersion, curriculumPath, and outputPath unchanged; do not add, remove, or rename object fields; and express revisions by changing field values or array items within that schema.
-
-${PLAIN_LANGUAGE_STANDARD}
-${QUICK_GLANCE_STANDARD}
-
-Modify only ${input.paths.deckPlanPath}.`);
-}
-
-export function builderRevisionPrompt(input: PromptInput, round: number, review: string, architectResponse?: string): string {
-  const architectureContext = architectResponse
-    ? `
-Architect response:
-<architect_response>
-${architectResponse}
-</architect_response>
-`
-    : '';
-  return withPreparationFooter(`Bring the deck into conformance after review round ${round}.
-
-Curriculum: ${input.paths.curriculumPath}
-Current deck plan: ${input.paths.deckPlanPath}
-Review: ${deckReviewPath(input.paths, round)}
-Deck: ${input.paths.htmlPath}
-${architectureContext}
-<deck_review>
-${review}
-</deck_review>
-
-Apply implementation findings and the current plan. Merge repetition, preserve navigation, neighborhood adjacency, and exact contract access. Evaluate every finding and summarize changes, evidence-based declines, and genuine user decisions.
-
-${PLAIN_LANGUAGE_STANDARD}
-${QUICK_GLANCE_STANDARD}
-
-Modify only ${input.paths.htmlPath}.`);
-}
-
-export function guidedBeatPrompt(input: PromptInput, curriculum: Curriculum, chapter: CurriculumChapter, beat: CurriculumBeat): string {
-  return `Guide one curriculum beat of the solution walkthrough.
-
-Story: ${curriculum.story.title} — ${curriculum.story.throughline}
-Audience contract: ${JSON.stringify(curriculum.audienceContract)}
-Chapter: ${chapter.title}
-Chapter context: ${chapter.openingContext}
-Beat: ${beat.title}
-Objective: ${beat.objective}
-Narrative bridge: ${beat.narrativeBridge}
-Required content: ${beat.requiredContent.join('; ')}
-Supporting material: ${beat.supportingMaterial.join('; ') || 'None required'}
-Terms: ${beat.termsToIntroduce.map(({ term, meaning }) => `${term}: ${meaning}`).join('; ') || 'None'}
-Realization point: ${beat.realizationPoint ?? 'No separate realization point'}
-Source references: ${beat.sourceReferences.map(({ heading, locator }) => `${heading}: ${locator}`).join('; ')}
-
-Teach this beat as an adaptive, Socratic tutorial. Establish enough context for this turn to stand alone, explain directly where useful, and use focused questions to help the user form the intended model. Follow the curriculum's language policy, or the plain-language standard below when an older curriculum has no languagePolicy.
-
-${PLAIN_LANGUAGE_STANDARD}
-
-Keep replies brief and use the Show Me skill when a visual representation materially helps. The user controls dialogue inside the agent pane; the workflow Continue control advances to the next curriculum checkpoint. Treat sources as read-only.`;
-}
-
-export function guidedChapterReviewPrompt(curriculum: Curriculum, chapter: CurriculumChapter): string {
-  const checks = chapter.beats.map((beat) => `- ${beat.title}: ${beat.comprehensionObjective ?? beat.objective}`).join('\n');
-  return `Run the Socratic synthesis for the completed ${chapter.title} chapter.
-
-Story throughline: ${curriculum.story.throughline}
-Synthesis objective: ${chapter.synthesisObjective}
-Completed beats:
-${checks}
-
-Ask the user to connect, predict, or apply the important ideas. Let their answers determine brief clarification or reteaching. Stay with this chapter until the workflow Continue control is pressed. Keep replies concise and use the Show Me skill when a focused visual helps.`;
-}
-
-export function presentationGuidePrompt(input: PromptInput, curriculum: Curriculum): string {
-  return `Support the user's self-paced review of a completed walkthrough presentation.
-
-Story: ${curriculum.story.title} — ${curriculum.story.throughline}
-Audience: ${JSON.stringify(curriculum.audienceProfile)}
-Curriculum: ${input.paths.curriculumPath}
-Deck plan: ${input.paths.deckPlanPath}
-Presentation: ${input.paths.htmlPath}
+Curriculum analysis: ${input.paths.curriculumAnalysisPath}
 Canonical sources: ${JSON.stringify(input.sources)}
 
-The presentation is the primary standalone experience and the user controls its pace. Answer questions briefly and precisely from the curriculum and canonical sources. Follow the curriculum's language policy, or the plain-language standard below when an older curriculum has no languagePolicy.
+Read the curriculum and analysis. Use the curriculum's storyline, neighborhoods, outcomes, coverage roles, and visibility choices as the teaching contract. Use the analysis for grounded details and source references. Help the user build the intended model and reach their own approval judgment through concise explanations, focused questions, and checks for understanding. Preserve exact schemas, APIs, events, state transitions, and other contracts when they matter to the judgment.
 
-${PLAIN_LANGUAGE_STANDARD}
+Begin with a brief orientation and the first useful question. Let the user's answers determine clarification and pacing inside this pane. Group related obligations around the curriculum outcomes instead of turning every coverage item into a separate lesson. Use the Show Me skill when a focused representation materially helps.
 
-Use the Show Me skill when a focused visual or code-shape explanation helps. If the user says “walk me through it” without naming a slide or starting point, begin at the first curriculum beat and guide all selected material conversationally in this pane; do not rely on the workflow Continue control to advance that chat-driven walkthrough. If they name a slide or ask to start from a point, honor that starting point. The workflow Continue control means they are finished reviewing and want to end this workflow.`;
-}
-
-function representationGuidance(depth: AudienceProfile['technicalDepth']): string {
-  switch (depth) {
-    case 'product':
-      return 'Use a user journey, before-and-after comparison, or tradeoff view when it explains the product consequence more clearly than prose. Keep exact changed contracts available with annotations that connect their shape to product and operational consequences.';
-    case 'system-design':
-      return 'Prefer boundary maps, ownership views, data or control flow, sequences, and state transitions that make system relationships visible. Follow them with exact changed contract shapes that make each boundary executable.';
-    case 'implementation':
-      return 'Prefer exact code and contract shapes, call trees, state transitions, diffs, algorithms, and failure paths that keep mechanics connected to their architectural purpose.';
-  }
+${PLAIN_LANGUAGE_STANDARD}`;
 }

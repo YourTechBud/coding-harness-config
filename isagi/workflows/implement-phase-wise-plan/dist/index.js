@@ -253,7 +253,7 @@ function renderWorkflowStatus(status) {
       const next = status.nextPhase === void 0 ? "No remaining phase" : `Phase ${status.nextPhase} of ${status.phaseCount}`;
       return {
         kind: "info",
-        phase: "plan-confirmation",
+        phase: "plan-ready",
         message: [
           `Plan: ${status.entryPlanPath}`,
           `Decision log: ${status.decisionLogPath}`,
@@ -914,18 +914,7 @@ var index_default = r({
           "info",
           `Plan found at ${activeState.plan.entryPlanPath} with ${activeState.plan.phases.length} phases. Decision log: ${activeState.plan.decisionLogPath}. Completed phases: ${activeState.plan.currentPhaseIndex}. Next phase: ${nextPhase?.number ?? "none"}.`
         );
-        return a(activeState, o.userContinue());
-      }
-      case "confirm-plan": {
-        const activeState = requireActiveState(state);
-        if (!s.isUserContinue(event)) {
-          return failWorkflow(
-            ctx,
-            "Plan confirmation could not be resumed",
-            "Plan confirmation resumed with an unexpected event."
-          );
-        }
-        if (!currentPhase(activeState)) {
+        if (!nextPhase) {
           await setWorkflowStatus(ctx, { kind: "complete" });
           await ctx.log(
             "info",
@@ -933,11 +922,7 @@ var index_default = r({
           );
           return i(withStage(activeState, { kind: "done" }));
         }
-        return i(
-          withStage(activeState, {
-            kind: "select-implementer"
-          })
-        );
+        return i(withStage(activeState, { kind: "select-implementer" }));
       }
       case "select-implementer": {
         const activeState = requireActiveState(state);
@@ -1361,7 +1346,7 @@ function activatePlan(state, discovered) {
       phases: discovered.phases,
       currentPhaseIndex: discovered.currentPhaseIndex
     },
-    stage: { kind: "confirm-plan" }
+    stage: { kind: "select-implementer" }
   };
 }
 async function normalizeDiscoveryOrFail(ctx, result, worktreePath) {

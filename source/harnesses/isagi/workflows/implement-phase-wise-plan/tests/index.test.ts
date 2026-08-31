@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import type {
@@ -24,6 +27,54 @@ test("rejects persisted state from an unsupported workflow version", async () =>
     ),
     /Unsupported implement-phase-wise-plan state version: expected 5, received 4/,
   );
+});
+
+test("plan discovery proceeds directly to implementer selection", async () => {
+  const worktreePath = mkdtempSync(join(tmpdir(), "phase-wise-plan-"));
+  try {
+    writePlanFixture(worktreePath);
+    const harness = workflowHarness({ worktreePath });
+    const result = await workflow.step(
+      harness.ctx,
+      discoveryState(),
+      discoveryResult(0),
+    );
+
+    assert.equal(result.type, "cont");
+    assert.equal(
+      result.type === "cont"
+        ? (result.state as WorkflowState).stage.kind
+        : undefined,
+      "select-implementer",
+    );
+    assert.equal(harness.feedback.at(-1)?.phase, "plan-ready");
+  } finally {
+    rmSync(worktreePath, { recursive: true, force: true });
+  }
+});
+
+test("a fully completed discovered plan proceeds directly to completion", async () => {
+  const worktreePath = mkdtempSync(join(tmpdir(), "phase-wise-plan-"));
+  try {
+    writePlanFixture(worktreePath, true);
+    const harness = workflowHarness({ worktreePath });
+    const result = await workflow.step(
+      harness.ctx,
+      discoveryState(),
+      discoveryResult(1),
+    );
+
+    assert.equal(result.type, "cont");
+    assert.equal(
+      result.type === "cont"
+        ? (result.state as WorkflowState).stage.kind
+        : undefined,
+      "done",
+    );
+    assert.equal(harness.feedback.at(-1)?.phase, "complete");
+  } finally {
+    rmSync(worktreePath, { recursive: true, force: true });
+  }
 });
 
 test("every non-complete implementer turn returns to the planner, including after approval", async () => {
@@ -901,6 +952,7 @@ function workflowHarness(input?: {
   readonly conversationHistory?: Awaited<
     ReturnType<WorkflowContext["getConversationHistory"]>
   >;
+  readonly worktreePath?: string;
 }) {
   const sentPrompts: Array<{
     readonly agentSessionId: number;
@@ -920,7 +972,7 @@ function workflowHarness(input?: {
   const feedback: Array<Parameters<WorkflowContext["setUiFeedback"]>[0]> = [];
   let headlessLaunchCount = 0;
   const ctx: WorkflowContext = {
-    worktreePath: "/workspace",
+    worktreePath: input?.worktreePath ?? "/workspace",
     spawnAgentSession: async (spawnInput) => {
       spawnedSessions.push(spawnInput);
       return {
@@ -981,6 +1033,39 @@ function headlessResult(output: string) {
     kind: "headless_agent",
     results: [{ opId: "op-1", status: "completed", output }],
   };
+}
+
+function discoveryState(): WorkflowState {
+  return {
+    stateVersion: 5,
+    options: {
+      autoCommit: true,
+      autoReview: true,
+      humanInTheLoop: true,
+    },
+    plannerSessionId: 11,
+    stage: { kind: "await-plan-discovery" },
+  };
+}
+
+function discoveryResult(completedPhaseCount: number) {
+  return headlessResult(JSON.stringify({
+    planReferenceFound: true,
+    entryPlanPath: "scratch/plans/current-plan/index.md",
+    decisionLogPath: "scratch/plans/current-plan/decisions.md",
+    phases: [{ number: 1, slug: "phase-01-foundations", type: "prep" }],
+    completedPhaseCount,
+  }));
+}
+
+function writePlanFixture(worktreePath: string, withDecisionLog = false): void {
+  const planDirectory = join(worktreePath, "scratch/plans/current-plan");
+  mkdirSync(planDirectory, { recursive: true });
+  writeFileSync(join(planDirectory, "index.md"), "[Foundations](phase-01-foundations.md)\n");
+  writeFileSync(join(planDirectory, "phase-01-foundations.md"), "---\ntype: prep\n---\n\n# Foundations\n");
+  if (withDecisionLog) {
+    writeFileSync(join(planDirectory, "decisions.md"), "# Decisions\n\nPhase 1 complete.\n");
+  }
 }
 
 function workflowResult(runId: number, result: unknown) {
