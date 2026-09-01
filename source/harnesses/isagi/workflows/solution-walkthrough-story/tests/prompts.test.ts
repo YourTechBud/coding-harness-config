@@ -31,11 +31,14 @@ test('deck architecture owns narrative and coverage without shell mechanics', ()
   assert.doesNotMatch(prompt, /full available browser viewport/);
 });
 
-test('shell owns the full-width presentation environment, scrolling, and Mermaid setup', () => {
+test('shell owns the full-width presentation environment and inspectable diagrams', () => {
   const prompt = genericDeckShellPrompt(input);
   assert.match(prompt, /full available browser viewport/);
   assert.match(prompt, /overflow and scrolling dependable/);
   assert.match(prompt, /Set up Mermaid/);
+  assert.match(prompt, /every rendered diagram independently inspectable/i);
+  assert.match(prompt, /zoom, pan, and reset/i);
+  assert.match(prompt, /does not disrupt slide navigation or ordinary slide scrolling/i);
   assert.match(prompt, /data-walkthrough-deck/);
   assert.match(prompt, /walkthrough-content-end/);
   assert.match(prompt, /not any neighborhood content/);
