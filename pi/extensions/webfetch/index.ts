@@ -1,6 +1,7 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -10,6 +11,7 @@ import {
 	type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
+import { Text } from "@earendil-works/pi-tui";
 import { Parser } from "htmlparser2";
 import TurndownService from "turndown";
 import { Type } from "typebox";
@@ -18,6 +20,8 @@ const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
 const DEFAULT_TIMEOUT_SECONDS = 30;
 const MAX_TIMEOUT_SECONDS = 120;
 const MAX_REDIRECTS = 5;
+const ERROR_MAX_BYTES = 16 * 1024;
+const ERROR_MAX_LINES = 100;
 
 const WEBFETCH_PARAMS = Type.Object({
 	url: Type.String({ description: "URL to fetch" }),
@@ -60,7 +64,7 @@ export default function webfetchExtension(pi: ExtensionAPI) {
 			const { response, finalUrl } = await fetchWithRedirects(initialUrl, format, timeoutSeconds, signal);
 
 			if (!response.ok) {
-				throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+				throw new Error(await formatHttpError(response, format));
 			}
 
 			const contentLength = response.headers.get("content-length");
@@ -91,7 +95,23 @@ export default function webfetchExtension(pi: ExtensionAPI) {
 				details,
 			};
 		},
+
+		renderCall(args, theme) {
+			let text = theme.fg("toolTitle", theme.bold("webfetch "));
+			text += theme.fg("accent", display(args.url));
+
+			const options: string[] = [];
+			if (args.format && args.format !== "markdown") options.push(`format=${args.format}`);
+			if (args.timeout !== undefined && args.timeout !== DEFAULT_TIMEOUT_SECONDS) options.push(`timeout=${args.timeout}s`);
+			if (options.length > 0) text += theme.fg("dim", ` (${options.join(", ")})`);
+
+			return new Text(text, 0, 0);
+		},
 	});
+}
+
+function display(value: string): string {
+	return stripVTControlCharacters(value).replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
 }
 
 function validateUrl(input: string): URL {
@@ -180,8 +200,12 @@ async function fetchWithRedirects(
 			if (!isRedirect(response.status)) return { response, finalUrl: url };
 
 			const location = response.headers.get("location");
-			if (!location) throw new Error(`Redirect response missing Location header: ${response.status}`);
-			if (redirectCount === MAX_REDIRECTS) throw new Error(`Too many redirects (max ${MAX_REDIRECTS})`);
+			if (!location) {
+				throw new Error(await formatHttpError(response, format, "Redirect response missing Location header."));
+			}
+			if (redirectCount === MAX_REDIRECTS) {
+				throw new Error(await formatHttpError(response, format, `Too many redirects (max ${MAX_REDIRECTS}).`));
+			}
 
 			url = validateUrl(new URL(location, url).toString());
 		}
@@ -212,6 +236,97 @@ function requestHeaders(format: WebFetchFormat) {
 		Accept: accept,
 		"Accept-Language": "en-US,en;q=0.9",
 	};
+}
+
+async function formatHttpError(response: Response, format: WebFetchFormat, explanation?: string): Promise<string> {
+	const status = `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+	const location = response.headers.get("location");
+	const header = [status];
+	if (location) header.push(`Location: ${location}`);
+	const sections = [header.join("\n")];
+	if (explanation) sections.push(explanation);
+
+	try {
+		const contentType = response.headers.get("content-type") ?? "";
+		const mime = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+		if (!isTextualMime(mime)) {
+			await response.body?.cancel();
+			return sections.join("\n\n");
+		}
+
+		const preview = await readResponsePreview(response, ERROR_MAX_BYTES);
+		const raw = new TextDecoder().decode(preview.bytes);
+		const output = convertContent(raw, contentType, format).trim();
+		if (!output) return sections.join("\n");
+
+		const truncation = truncateHead(output, {
+			maxLines: ERROR_MAX_LINES,
+			maxBytes: ERROR_MAX_BYTES,
+		});
+		sections.push(truncation.content.trim());
+		if (preview.truncated || truncation.truncated) sections.push("[Error response body truncated.]");
+	} catch {
+		// Preserve the HTTP failure even when its diagnostic body cannot be read or converted.
+	}
+
+	return sections.join("\n\n");
+}
+
+async function readResponsePreview(
+	response: Response,
+	maxBytes: number,
+): Promise<{ bytes: Uint8Array; truncated: boolean }> {
+	if (!response.body) {
+		const bytes = new Uint8Array(await response.arrayBuffer());
+		return { bytes: bytes.subarray(0, maxBytes), truncated: bytes.byteLength > maxBytes };
+	}
+
+	const reader = response.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	let truncated = false;
+
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		if (!value) continue;
+
+		const remaining = maxBytes - total;
+		if (value.byteLength > remaining) {
+			if (remaining > 0) chunks.push(value.subarray(0, remaining));
+			total += Math.max(remaining, 0);
+			truncated = true;
+			try {
+				await reader.cancel();
+			} catch {
+				// The preview is already complete; cancellation failures do not remove useful diagnostics.
+			}
+			break;
+		}
+
+		chunks.push(value);
+		total += value.byteLength;
+		if (total === maxBytes) {
+			const next = await reader.read();
+			if (!next.done) {
+				truncated = true;
+				try {
+					await reader.cancel();
+				} catch {
+					// The preview is already complete; cancellation failures do not remove useful diagnostics.
+				}
+			}
+			break;
+		}
+	}
+
+	const bytes = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return { bytes, truncated };
 }
 
 async function readResponseBytes(response: Response, maxBytes: number): Promise<Uint8Array> {
