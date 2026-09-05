@@ -1,0 +1,9 @@
+kind: agent
+frontmatter: {}
+targets:
+  pi:
+    frontmatter:
+      description: |
+        Use when the user requests sub-agents and no specialist fits the task. Give it a tightly scoped assignment with clear intent, the desired outcome, relevant context, and a procedure when useful. It works best with explicit instructions.
+      model: openai-codex/gpt-5.6-sol
+      thinkingLevel: low

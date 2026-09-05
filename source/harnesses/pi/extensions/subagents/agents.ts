@@ -14,7 +14,7 @@ export interface AgentDefinition {
 	filePath: string;
 }
 
-interface AgentFrontmatter {
+interface AgentFrontmatter extends Record<string, unknown> {
 	name?: unknown;
 	description?: unknown;
 	model?: unknown;

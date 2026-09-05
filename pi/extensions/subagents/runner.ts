@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
@@ -42,9 +43,13 @@ function resolveModel(ctx: ExtensionContext, modelRef: string | undefined) {
 	if (slash > 0) {
 		const provider = modelRef.slice(0, slash);
 		const modelId = modelRef.slice(slash + 1);
-		return ctx.modelRegistry.find(provider, modelId) ?? ctx.model;
+		const model = ctx.modelRegistry.find(provider, modelId);
+		if (!model) throw new Error(`Unknown sub-agent model: ${modelRef}`);
+		return model;
 	}
-	return ctx.modelRegistry.getAll().find((m) => m.id === modelRef || m.name === modelRef) ?? ctx.model;
+	const model = ctx.modelRegistry.getAll().find((m) => m.id === modelRef || m.name === modelRef);
+	if (!model) throw new Error(`Unknown sub-agent model: ${modelRef}`);
+	return model;
 }
 
 function formatModelId(model: ReturnType<typeof resolveModel>, fallback: string | undefined): string | undefined {
@@ -101,16 +106,24 @@ export async function runSubagentTask(input: {
 	agent: AgentDefinition;
 	description: string;
 	prompt: string;
+	taskId?: string;
 	signal?: AbortSignal;
 	onUpdate?: (result: AgentToolResult<TaskToolDetails>) => void;
 }): Promise<AgentToolResult<TaskToolResultDetails>> {
-	const { pi, ctx, state, agent, description, prompt, signal, onUpdate } = input;
+	const { pi, ctx, state, agent, description, prompt, taskId, signal, onUpdate } = input;
+	const previous = taskId === undefined ? undefined : state.get(taskId);
+	if (taskId !== undefined && !previous) throw new Error(`Unknown sub-agent task_id: ${taskId}`);
+	if (previous?.agent !== undefined && previous.agent !== agent.name) throw new Error(`Task ${taskId} belongs to agent ${previous.agent}, not ${agent.name}.`);
+	if (previous?.status === "running") throw new Error(`Sub-agent ${taskId} is already running. Wait for its response before following up.`);
+	if (previous && (!previous.childSessionFile || !existsSync(previous.childSessionFile))) throw new Error(`Saved session for ${taskId} is missing. Omit task_id to create a new child.`);
+	signal?.throwIfAborted();
 	const settingsManager = SettingsManager.create(ctx.cwd, getAgentDir());
-	const childSessionManager = SessionManager.create(ctx.cwd, settingsManager.getSessionDir(), {
-		parentSession: ctx.sessionManager.getSessionFile(),
-	});
-	const effectiveModel = resolveModel(ctx, agent.model);
-	const effectiveThinkingLevel = agent.thinkingLevel ?? pi.getThinkingLevel();
+	const childSessionManager = previous
+		? SessionManager.open(previous.childSessionFile!, settingsManager.getSessionDir())
+		: SessionManager.create(ctx.cwd, settingsManager.getSessionDir(), { parentSession: ctx.sessionManager.getSessionFile() });
+	if (previous && childSessionManager.getEntries().length === 0) throw new Error(`Saved session for ${taskId} is empty or invalid.`);
+	const effectiveModel = resolveModel(ctx, agent.model ?? previous?.model);
+	const effectiveThinkingLevel = agent.thinkingLevel ?? previous?.thinkingLevel ?? pi.getThinkingLevel();
 	const task = createTask({
 		agent: agent.name,
 		description,
@@ -119,6 +132,8 @@ export async function runSubagentTask(input: {
 		model: formatModelId(effectiveModel, agent.model),
 		thinkingLevel: effectiveThinkingLevel,
 	});
+	// Reserve the child synchronously, before resource loading can yield to another call.
+	if (previous) task.id = previous.id;
 	state.upsert(task);
 	const { activities: _activities, ...persistedTask } = task;
 	appendTaskEvent(pi, { kind: "start", task: persistedTask, timestamp: task.startedAt });
@@ -135,12 +150,16 @@ export async function runSubagentTask(input: {
 
 	let child: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
 	let removeAbortListener: (() => void) | undefined;
+	let unsubscribe: (() => void) | undefined;
 	try {
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: ctx.cwd,
 			agentDir: getAgentDir(),
 			settingsManager,
 			appendSystemPrompt: [childInstructions(agent)],
+			// Exclude the entire delegation extension (hooks and commands as well as tools).
+			// Identify it by ownership of its task tool, including differently installed copies.
+			extensionsOverride: (loaded) => ({ ...loaded, extensions: loaded.extensions.filter((extension) => !extension.tools.has("task")) }),
 		});
 		await resourceLoader.reload();
 
@@ -148,18 +167,20 @@ export async function runSubagentTask(input: {
 		const result = await createAgentSession({
 			cwd: ctx.cwd,
 			agentDir: getAgentDir(),
-			modelRegistry: ctx.modelRegistry,
 			settingsManager,
 			resourceLoader,
 			sessionManager: childSessionManager,
 			model: effectiveModel,
 			thinkingLevel: effectiveThinkingLevel as ThinkingLevel | undefined,
 			tools: activeTools,
-			sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile: ctx.sessionManager.getSessionFile() },
+			sessionStartEvent: { type: "session_start", reason: previous ? "resume" : "new", previousSessionFile: ctx.sessionManager.getSessionFile() },
 		});
 		child = result.session;
+		await child.bindExtensions({});
 
-		const unsubscribe = child.subscribe((event) => {
+		const turnMessages: any[] = [];
+		unsubscribe = child.subscribe((event) => {
+			if (event.type === "message_end" && event.message.role === "assistant") turnMessages.push(event.message);
 			if (event.type === "turn_start") {
 				persistActivity("thinking…", undefined, "thinking");
 			} else if (event.type === "tool_execution_start") {
@@ -169,15 +190,18 @@ export async function runSubagentTask(input: {
 
 		const abort = () => void child?.abort();
 		if (signal) {
-			if (signal.aborted) abort();
+			signal.throwIfAborted();
 			signal.addEventListener("abort", abort, { once: true });
 			removeAbortListener = () => signal.removeEventListener("abort", abort);
 		}
 
 		await child.prompt(prompt, { source: "extension" });
-		unsubscribe();
-
-		const response = getFinalAssistantText(child.messages) || "(sub-agent completed without a text response)";
+		signal?.throwIfAborted();
+		const lastMessage = turnMessages.at(-1);
+		if (lastMessage?.stopReason === "error" || lastMessage?.stopReason === "aborted") {
+			throw new Error(lastMessage.errorMessage || `Sub-agent ${lastMessage.stopReason}`);
+		}
+		const response = getFinalAssistantText(turnMessages) || "(sub-agent completed without a text response)";
 		const finalTask = state.get(task.id) ?? task;
 		state.finish(task.id, "completed", response);
 		appendTaskEvent(pi, {
@@ -190,7 +214,7 @@ export async function runSubagentTask(input: {
 		});
 		const completed = state.get(task.id) ?? finalTask;
 		return {
-			content: [{ type: "text", text: `status: completed\n\n${response}` }],
+			content: [{ type: "text", text: `task_id: ${task.id}\nstatus: completed\n\n${response}` }],
 			details: { task: cloneTask(completed), status: "completed", response },
 		};
 	} catch (error) {
@@ -209,11 +233,17 @@ export async function runSubagentTask(input: {
 		});
 		const failed = state.get(task.id) ?? task;
 		return {
-			content: [{ type: "text", text: `status: ${status}\n\n${message}` }],
+			content: [{ type: "text", text: `task_id: ${task.id}\nstatus: ${status}\n\n${message}` }],
 			details: { task: cloneTask(failed), status, response: message },
 		};
 	} finally {
 		removeAbortListener?.();
-		child?.dispose();
+		unsubscribe?.();
+		try {
+			// dispose() invalidates extensions but does not emit their shutdown hooks.
+			await child?.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+		} finally {
+			child?.dispose();
+		}
 	}
 }

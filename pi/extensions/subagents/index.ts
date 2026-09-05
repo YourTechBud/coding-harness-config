@@ -6,8 +6,6 @@ import { runSubagentTask, type TaskToolDetails, type TaskToolResultDetails } fro
 import { makeActivity, SubagentState, TASK_ENTRY_TYPE, type PersistedTaskEvent } from "./state.ts";
 import { taskParameters } from "./tool-schema.ts";
 
-const state = new SubagentState();
-
 function persistInterrupted(pi: ExtensionAPI, taskId: string, error: string): void {
 	const now = Date.now();
 	const event: PersistedTaskEvent = {
@@ -25,10 +23,8 @@ function persistInterrupted(pi: ExtensionAPI, taskId: string, error: string): vo
 }
 
 export default function subagentsExtension(pi: ExtensionAPI): void {
+	const state = new SubagentState();
 	pi.on("session_start", (_event, ctx) => {
-		// Child sub-agent sessions load normal extensions too. Do not let the child
-		// runtime clear or rewrite the parent overlay state.
-		if (ctx.sessionManager.getHeader()?.parentSession) return;
 		const interrupted = state.restoreFromEntries(ctx.sessionManager.getEntries());
 		for (const task of interrupted) {
 			const activity = makeActivity("info", "interrupted", task.error);
@@ -41,7 +37,6 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", (event, ctx) => {
-		if (ctx.sessionManager.getHeader()?.parentSession) return;
 		const agents = discoverAgents(ctx.cwd);
 		const section = formatAgentsForPrompt(agents);
 		if (!section) return;
@@ -64,7 +59,9 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 		promptGuidelines: [
 			"Use the task tool only when a configured sub-agent is a strong match for a focused, self-contained subtask",
 			"Do not use sub-agents for simple file reads, narrow searches, or tasks you can complete directly",
-			"When delegating, provide a complete prompt because the sub-agent starts with isolated context",
+			"When delegating, provide a complete prompt because a new sub-agent starts with isolated context",
+			"Prefer a new child for independent work by omitting task_id. Reuse task_id only to continue that child's task; use the same agent name",
+			"Task calls wait for the child response. Run independent children in parallel; send follow-ups to each child one at a time",
 		],
 		parameters: taskParameters,
 		renderShell: "self",
@@ -89,6 +86,7 @@ export default function subagentsExtension(pi: ExtensionAPI): void {
 				agent,
 				description: params.description,
 				prompt: params.prompt,
+				taskId: params.task_id,
 				signal,
 				onUpdate,
 			});
