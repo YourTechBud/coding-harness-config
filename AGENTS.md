@@ -10,6 +10,7 @@ Canonical source
 - `source/commands`: Canonical command/prompt assets. OpenCode commands and Pi prompts are generated from here; Claude and Codex receive these as skills with model auto-invocation disabled by default where appropriate.
 - `source/agents`: Canonical agent/subagent assets.
 - `source/harnesses`: Handwritten harness config that is copied into generated harness directories.
+- `source/instructions`: Plain Markdown common instructions, generated in alphabetical filename order and installed only by explicit opt-in.
 
 Generated harness directories
 
@@ -21,8 +22,9 @@ Generation and install commands
 
 - `pnpm run generate`: install each canonical Isagi workflow with `pnpm install --frozen-lockfile`, then run its `typecheck`, `test`, `build`, and `verify` scripts before recreating `opencode`, `pi`, `claude`, `codex`, and `isagi` from `source/`. It then runs `npm install` in generated Pi extension folders and `pnpm install --frozen-lockfile` in generated Isagi workflow folders that contain a `package.json`.
 - `pnpm run check`: verify committed generated outputs match `source/`.
-- `pnpm run harness:install`: copy generated assets for Codex, OpenCode, Pi, Claude Code, and Isagi into each harness home, overwriting repo-managed destination files.
-- `pnpm run harness:clear`: remove the currently generated repo-managed files from each harness home.
+- `pnpm run harness:install`: copy generated assets for Codex, OpenCode, Pi, Claude Code, and Isagi into each harness home, overwriting repo-managed destination files while leaving installed common instructions untouched.
+- `pnpm run harness:instructions`: explicitly reconcile all generated common instructions for the coding harnesses; optionally pass a harness name. Independent instruction inventories track ownership, including locally edited managed content.
+- `pnpm run harness:clear`: remove inventory-owned resources and common instructions from each harness home.
 - `pnpm run harness:sync`: run generation once, then install all harnesses.
 - Per-harness install/clear scripts also exist: `codex:*`, `opencode:*`, `pi:*`, `claude:*`, and `isagi:*`.
 

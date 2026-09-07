@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseJsonc, printParseErrorCode, type ParseError } from "jsonc-parser";
 import { pathExists } from "./fs.ts";
+import { applyInstructions } from "./instructions.ts";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MANIFEST_ROOT = path.join(REPO_ROOT, ".install-manifests");
@@ -57,12 +58,14 @@ interface HarnessConfig {
 	home(): string;
 	mappings: InstallMapping[];
 	settings?: SettingsOperationFile[];
+	instructionsFile?: string;
 }
 
 const HARNESS_CONFIG: Record<HarnessName, HarnessConfig> = {
 	codex: {
 		displayName: "Codex",
 		generatedDir: "codex",
+		instructionsFile: "AGENTS.md",
 		home: () => path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex")),
 		mappings: [
 			{ sourcePrefix: "skills", destPrefix: "skills" },
@@ -72,6 +75,7 @@ const HARNESS_CONFIG: Record<HarnessName, HarnessConfig> = {
 	opencode: {
 		displayName: "OpenCode",
 		generatedDir: "opencode",
+		instructionsFile: "AGENTS.md",
 		home: () => path.resolve(process.env.OPENCODE_CONFIG_DIR || path.join(os.homedir(), ".config", "opencode")),
 		mappings: [
 			{ sourcePrefix: "skills", destPrefix: "skills" },
@@ -95,6 +99,7 @@ const HARNESS_CONFIG: Record<HarnessName, HarnessConfig> = {
 	claude: {
 		displayName: "Claude Code",
 		generatedDir: "claude",
+		instructionsFile: "CLAUDE.md",
 		home: () => path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude")),
 		mappings: [
 			{ sourcePrefix: "skills", destPrefix: "skills" },
@@ -345,6 +350,23 @@ async function applySettingsOperations(config: HarnessConfig, command: Command):
 	}
 
 	return changed;
+}
+
+async function instructionsHarness(name: HarnessName, command: Command): Promise<void> {
+	const config = HARNESS_CONFIG[name];
+	if (name === "isagi") {
+		if (command === "install") console.log("Isagi uses the underlying coding harness instructions; skipped.");
+		return;
+	}
+	await applyInstructions({
+		home: config.home(),
+		generatedRoot: path.join(REPO_ROOT, config.generatedDir),
+		manifestPath: path.join(MANIFEST_ROOT, `${name}.instructions.json`),
+		instructionsFile: config.instructionsFile,
+	}, command);
+	if (command === "install" && name === "codex" && await pathExists(path.join(config.home(), "AGENTS.override.md"))) {
+		console.warn("Codex AGENTS.override.md exists and may shadow AGENTS.md; merge or remove the override to load common instructions.");
+	}
 }
 
 function shouldSkipInstallEntry(name: string): boolean {
@@ -792,6 +814,7 @@ async function installHarness(name: HarnessName): Promise<void> {
 }
 
 async function clearHarness(name: HarnessName): Promise<void> {
+	await instructionsHarness(name, "clear");
 	const config = HARNESS_CONFIG[name];
 	const home = config.home();
 	const manifestPath = relativeToRepo(manifestPathFor(name));
@@ -856,14 +879,15 @@ function parseHarnesses(value: string | undefined): HarnessName[] {
 }
 
 async function main(): Promise<void> {
-	const command = process.argv[2] as Command | undefined;
+	const command = process.argv[2];
 	const harnesses = parseHarnesses(process.argv[3]);
-	if (command !== "install" && command !== "clear") {
-		throw new Error(`Usage: tsx generator/harness-install.ts install|clear [all|${HARNESSES.join("|")}]`);
+	if (command !== "install" && command !== "clear" && command !== "instructions") {
+		throw new Error(`Usage: tsx generator/harness-install.ts install|clear|instructions [all|${HARNESSES.join("|")}]`);
 	}
 
 	for (const harness of harnesses) {
 		if (command === "install") await installHarness(harness);
+		else if (command === "instructions") await instructionsHarness(harness, "install");
 		else await clearHarness(harness);
 	}
 }

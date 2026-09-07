@@ -4,7 +4,9 @@
   "scripts": {
     "generate": "tsx generator/index.ts generate",
     "check": "tsx generator/index.ts check",
+    "test:instructions": "node --import tsx --test generator/instructions.test.ts",
     "harness:install": "tsx generator/harness-install.ts install all",
+    "harness:instructions": "tsx generator/harness-install.ts instructions",
     "harness:clear": "tsx generator/harness-install.ts clear all",
     "harness:sync": "pnpm run generate && pnpm run harness:install",
     "codex:install": "tsx generator/harness-install.ts install codex",

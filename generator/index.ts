@@ -12,6 +12,7 @@ import { renderOpenCode } from "./renderers/opencode.ts";
 import { renderPi } from "./renderers/pi.ts";
 import { renderClaude } from "./renderers/claude.ts";
 import { renderCodex } from "./renderers/codex.ts";
+import { readInstructions } from "./instructions.ts";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_DIR = path.join(REPO_ROOT, "source");
@@ -214,6 +215,12 @@ async function generateTo(outputRoot: string, resetOutputs: boolean, runHooks: b
   }
 
   await copyHarnesses(outputRoot);
+  const instructions = await readInstructions(path.join(SOURCE_DIR, "instructions"));
+  for (const target of ["codex", "opencode", "claude", "pi"]) {
+    const destination = path.join(outputRoot, target, "instructions");
+    await writeFileEnsured(path.join(destination, "manifest.json"), `${JSON.stringify(instructions.map(({ name }) => name), null, 2)}\n`);
+    for (const { name, content } of instructions) await writeFileEnsured(path.join(destination, name), content);
+  }
   await fs.mkdir(path.join(outputRoot, "isagi", "workflows"), { recursive: true });
   const assets = await discoverAssets();
   await writeRendered(outputRoot, renderAssets(assets));
