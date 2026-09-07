@@ -14,8 +14,8 @@ export const writer = {
 
 export const reviewer = {
   harness: 'codex',
-  model: 'gpt-5.6-sol',
-  effort: 'high',
+  model: 'gpt-6-astra',
+  effort: 'low',
 } satisfies AgentProfile;
 
 export const writerJudgment = {

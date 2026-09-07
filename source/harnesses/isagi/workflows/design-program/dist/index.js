@@ -98,8 +98,8 @@ var writer = {
 };
 var reviewer = {
   harness: "codex",
-  model: "gpt-5.6-sol",
-  effort: "high"
+  model: "gpt-6-astra",
+  effort: "low"
 };
 var writerJudgment = {
   harness: "codex",

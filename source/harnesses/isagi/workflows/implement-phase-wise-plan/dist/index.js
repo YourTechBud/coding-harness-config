@@ -112,8 +112,8 @@ var implementerUiHeavy = {
 var implementerProseHeavy = {
   kind: "prose-heavy",
   harness: "codex",
-  model: "gpt-5.6-sol",
-  effort: "medium"
+  model: "gpt-6-astra",
+  effort: "low"
 };
 var headlessJudgment = {
   harness: "codex",

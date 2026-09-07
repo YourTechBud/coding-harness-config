@@ -99,7 +99,7 @@ var writer = {
 var reviewer = {
   harness: "codex",
   model: "gpt-5.6-sol",
-  effort: "high"
+  effort: "medium"
 };
 var writerJudgment = {
   harness: "codex",

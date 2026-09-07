@@ -103,8 +103,8 @@ function u(e) {
 // src/constants.ts
 var planner = {
   harness: "codex",
-  model: "gpt-5.6-sol",
-  effort: "high"
+  model: "gpt-6-astra",
+  effort: "medium"
 };
 var plannerJudgment = {
   harness: "codex",

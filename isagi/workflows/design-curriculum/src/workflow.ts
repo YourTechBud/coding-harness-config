@@ -8,10 +8,10 @@ import type { ParsedInputs } from './inputs.js';
 import { analysisPrompt, curriculumPrompt } from './prompts.js';
 import type { CurriculumAnalysis } from './types.js';
 
-const curriculumDesigner = {
+export const curriculumDesigner = {
   harness: 'codex',
-  model: 'gpt-5.6-sol',
-  effort: 'medium',
+  model: 'gpt-6-astra',
+  effort: 'low',
 } as const;
 
 type Designer = {

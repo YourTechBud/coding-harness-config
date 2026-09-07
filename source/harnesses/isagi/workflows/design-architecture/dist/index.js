@@ -92,13 +92,13 @@ function u(e) {
 
 // src/constants.ts
 var writer = {
-  harness: "claude",
-  model: "opus",
+  harness: "codex",
+  model: "gpt-6-astra",
   effort: "medium"
 };
 var reviewer = {
-  harness: "codex",
-  model: "gpt-5.6-sol",
+  harness: "claude",
+  model: "fable",
   effort: "high"
 };
 var writerJudgment = {

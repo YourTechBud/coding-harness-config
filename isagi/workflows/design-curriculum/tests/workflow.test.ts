@@ -7,6 +7,7 @@ import test from 'node:test';
 import type { WorkflowContext, WorkflowLaunchContext } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import workflow from '../src/index.js';
+import { curriculumDesigner } from '../src/workflow.js';
 import { analysis, curriculum, variables, writeJson, writeSources } from './fixtures.js';
 
 const launchContext = (worktreePath: string): WorkflowLaunchContext => ({ worktreeId: 1, worktreePath, surfaceId: 1 });
@@ -27,7 +28,7 @@ test('workflow uses two turns in one designer session and returns observable met
     const started = await workflow.step(harness.ctx, state, null);
     assert.equal(started.type, 'suspend');
     assert.equal(harness.spawned.length, 1);
-    assert.deepEqual(profile(harness.spawned[0]), { harness: 'codex', model: 'gpt-5.6-sol', effort: 'medium' });
+    assert.deepEqual(profile(harness.spawned[0]), curriculumDesigner);
     assert.match(harness.spawned[0]?.prompt ?? '', /curriculum-analysis\.json/);
 
     const input = state.input;

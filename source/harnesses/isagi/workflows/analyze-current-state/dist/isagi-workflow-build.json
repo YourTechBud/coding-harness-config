@@ -10,10 +10,10 @@
     "version": "0.0.1"
   },
   "source": {
-    "sha256": "b1029347906c0450704f89866699d7eabb437cc59ffd19ab56fad9a2f426c81e"
+    "sha256": "845869c7678b7b6d877651040f3a10ef89d33e7e22a7812101402c26b0affa65"
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "a70923a335c1c2d1a396b35aba25ba755dbcfa5e98eba45144152304dee05260"
+    "sha256": "037e7c5315116783efe961e4655010e42a6ff7804641694be5b8bf0a65db2fcb"
   }
 }

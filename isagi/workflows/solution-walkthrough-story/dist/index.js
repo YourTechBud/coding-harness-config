@@ -126,9 +126,9 @@ var guide = {
   effort: "low"
 };
 var deckArchitect = {
-  harness: "claude",
-  model: "fable",
-  effort: "high"
+  harness: "codex",
+  model: "gpt-6-astra",
+  effort: "low"
 };
 
 // src/curriculum-v3.ts

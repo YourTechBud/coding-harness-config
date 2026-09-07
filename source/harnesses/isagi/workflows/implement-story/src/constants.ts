@@ -8,8 +8,8 @@ export type AgentProfile = {
 
 export const planner = {
   harness: 'codex',
-  model: 'gpt-5.6-sol',
-  effort: 'high',
+  model: 'gpt-6-astra',
+  effort: 'medium',
 } satisfies AgentProfile;
 
 export const plannerJudgment = {

@@ -10,6 +10,7 @@ import type {
 } from "@yourtechbudstudio/isagi-workflow-sdk";
 
 import workflow from "../src/index.js";
+import { implementerGeneric, implementerUiHeavy } from "../src/constants.js";
 
 type WorkflowState = Parameters<typeof workflow.step>[1];
 
@@ -234,7 +235,12 @@ test("mock-ui phase selects the UI-heavy profile without a classifier", async ()
     spawned.type === "suspend" ? spawned.condition.kind : undefined,
     "agent_turn",
   );
-  assert.equal(harness.spawnedSessions[0]?.harness, "claude");
+  const { kind: _kind, ...expectedProfile } = implementerUiHeavy;
+  const launched = harness.spawnedSessions[0];
+  assert.deepEqual(
+    launched && { harness: launched.harness, model: launched.model, effort: launched.effort },
+    expectedProfile,
+  );
   assert.deepEqual(harness.spawnedSessions[0]?.modifiers, [
     { kind: "skill", name: "designing-ui" },
   ]);
@@ -250,12 +256,7 @@ test("non-mock phase keeps the default alignment prompt without modifiers", asyn
     harness.ctx,
     activeState({
       kind: "spawn-implementer",
-      profile: {
-        kind: "generic",
-        harness: "claude",
-        model: "opus",
-        effort: "medium",
-      },
+      profile: implementerGeneric,
     }),
     null,
   );
