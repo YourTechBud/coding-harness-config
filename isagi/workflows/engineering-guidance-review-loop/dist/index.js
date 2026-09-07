@@ -239,9 +239,10 @@ var index_default = r({
   validate: (_launchCtx, variables) => {
     parseContext(variables.context);
   },
-  init: (_launchCtx, variables) => ({
+  init: (launchCtx, variables) => ({
     stateVersion: 1,
     context: parseContext(variables.context),
+    ...launchCtx.agentSessionId == null ? {} : { fixerSessionId: launchCtx.agentSessionId },
     stage: { kind: "spawn_reviewer" }
   }),
   step: async (ctx, state, incoming) => {
@@ -328,7 +329,7 @@ var index_default = r({
         if (!latestReview.ok) return latestReview.result;
         await ctx.log(
           "info",
-          "User continued after the initial disagreement; sending the reviewer session's latest complete turn to a new fixer."
+          "User continued after the initial disagreement; sending the reviewer session's latest complete turn to the fixer."
         );
         return spawnFixerForReview(ctx, state, {
           reviewer: state.stage.reviewer,
@@ -487,6 +488,12 @@ async function readRoutingJudgment(ctx, incoming) {
 }
 async function spawnFixerForReview(ctx, state, input) {
   await ctx.setUiFeedback({ phase: "Fixing review findings" });
+  if (state.fixerSessionId !== void 0) {
+    return sendReviewToFixer(ctx, state, {
+      ...input,
+      fixer: { agentSessionId: state.fixerSessionId }
+    });
+  }
   const spawned = await ctx.spawnAgentSession({
     harness: fixer.harness,
     model: fixer.model,
@@ -532,7 +539,7 @@ async function sendReviewToFixer(ctx, state, input) {
 }
 async function finishReviewLoop(ctx, reviewerAgent, fixerAgent, reviewCount) {
   await ctx.setUiFeedback({ phase: "Review loop complete" });
-  if (fixerAgent) await ctx.closePane(fixerAgent.paneId);
+  if (fixerAgent?.paneId !== void 0) await ctx.closePane(fixerAgent.paneId);
   await ctx.closePane(reviewerAgent.paneId);
   await ctx.log(
     "info",

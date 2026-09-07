@@ -306,6 +306,61 @@ test("terminal Nits get one final fixer turn without another re-review", async (
   assert.deepEqual(harness.closedPanes, [22, 21]);
 });
 
+for (const route of ["complete", "continue", "final-fixer", "human-decision"] as const) {
+  test(`caller-supplied fixer is reused and preserved for ${route}`, async () => {
+    const harness = workflowHarness({
+      histories: {
+        11: [message("assistant", "Apply the narrow fix.")],
+        99: [message("assistant", "Fixed the finding.")],
+      },
+    });
+    const initial = await workflow.init(
+      { ...launchCtx, agentSessionId: 99, paneId: 109 },
+      { context: "Review this phase." },
+    );
+    assert.equal(initial.fixerSessionId, 99);
+    let result = await workflow.step(harness.ctx, initial, null);
+    result = await workflow.step(harness.ctx, suspendedState(result), endedTurn());
+    result = await workflow.step(harness.ctx, suspendedState(result), headlessResult(JSON.stringify({ outcome: route })));
+    if (route === "human-decision") {
+      result = await workflow.step(harness.ctx, suspendedState(result), { kind: "user_continue" });
+    }
+    if (route !== "complete") {
+      assert.equal(result.type, "suspend");
+      assert.deepEqual(result.type === "suspend" ? result.condition : undefined, {
+        kind: "agent_turn", agentSessionId: 99, sentAt: "2026-07-14T00:00:00.000Z",
+      });
+      assert.equal(harness.sent[0]?.agentSessionId, 99);
+      assert.match(harness.sent[0]?.prompt ?? "", /Apply the narrow fix/);
+      result = await workflow.step(harness.ctx, suspendedState(result), endedTurn());
+      if (route !== "final-fixer") {
+        // A subsequent review round keeps using the same borrowed session.
+        result = await workflow.step(harness.ctx, suspendedState(result), endedTurn());
+        result = await workflow.step(harness.ctx, suspendedState(result), headlessResult('{"outcome":"continue"}'));
+        assert.equal(harness.sent.at(-1)?.agentSessionId, 99);
+        result = await workflow.step(harness.ctx, suspendedState(result), endedTurn());
+        result = await workflow.step(harness.ctx, suspendedState(result), endedTurn());
+        result = await workflow.step(harness.ctx, suspendedState(result), headlessResult('{"outcome":"complete"}'));
+      }
+    }
+    assert.equal(result.type, "done");
+    assert.equal(harness.spawned.length, 1);
+    assert.deepEqual(harness.closedPanes, [21]);
+  });
+}
+
+test("a null launch session creates and closes its own fixer", async () => {
+  const harness = workflowHarness({ histories: { 11: [message("assistant", "Nit: rename this.")] } });
+  const initial = await workflow.init({ ...launchCtx, agentSessionId: null }, { context: "Review this phase." });
+  let result = await workflow.step(harness.ctx, initial, null);
+  result = await workflow.step(harness.ctx, suspendedState(result), endedTurn());
+  result = await workflow.step(harness.ctx, suspendedState(result), headlessResult('{"outcome":"final-fixer"}'));
+  result = await workflow.step(harness.ctx, suspendedState(result), endedTurn());
+  assert.equal(result.type, "done");
+  assert.equal(harness.spawned.length, 2);
+  assert.deepEqual(harness.closedPanes, [22, 21]);
+});
+
 test("a failed agent turn fails with visible feedback and diagnostics", async () => {
   const harness = workflowHarness();
   const result = await workflow.step(

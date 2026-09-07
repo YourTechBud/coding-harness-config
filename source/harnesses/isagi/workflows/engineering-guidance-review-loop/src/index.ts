@@ -20,10 +20,16 @@ import {
 } from './judgments.js';
 import { fixerToReviewerPrompt, reviewToFixerPrompt } from './prompts.js';
 
-type Agent = {
+type Session = {
   readonly agentSessionId: number;
+};
+
+// A pane is recorded only for sessions created by this workflow.
+type Agent = Session & {
   readonly paneId: number;
 };
+
+type Fixer = Session & { readonly paneId?: number };
 
 type Stage =
   | { readonly kind: 'spawn_reviewer' }
@@ -40,33 +46,35 @@ type Stage =
   | {
       readonly kind: 'await_fixer_turn';
       readonly reviewer: Agent;
-      readonly fixer: Agent;
+      readonly fixer: Fixer;
       readonly reviewRound: number;
       readonly afterFixer: 'complete' | 'rereview';
     }
   | {
       readonly kind: 'await_rereview';
       readonly reviewer: Agent;
-      readonly fixer: Agent;
+      readonly fixer: Fixer;
       readonly reviewRound: number;
     }
   | {
       readonly kind: 'await_rereview_routing';
       readonly reviewer: Agent;
-      readonly fixer: Agent;
+      readonly fixer: Fixer;
       readonly review: string;
       readonly reviewRound: number;
     }
   | {
       readonly kind: 'await_disagreement_resolution';
       readonly reviewer: Agent;
-      readonly fixer: Agent;
+      readonly fixer: Fixer;
       readonly reviewRound: number;
     };
 
 type State = {
   readonly stateVersion: 1;
   readonly context: string;
+  // Optional so persisted runs from before session reuse remain compatible.
+  readonly fixerSessionId?: number;
   readonly stage: Stage;
 };
 
@@ -90,9 +98,10 @@ export default defineWorkflow<State, Variables>({
   validate: (_launchCtx, variables) => {
     parseContext(variables.context);
   },
-  init: (_launchCtx, variables): State => ({
+  init: (launchCtx, variables): State => ({
     stateVersion: 1,
     context: parseContext(variables.context),
+    ...(launchCtx.agentSessionId == null ? {} : { fixerSessionId: launchCtx.agentSessionId }),
     stage: { kind: 'spawn_reviewer' },
   }),
   step: async (ctx, state, incoming) => {
@@ -184,7 +193,7 @@ export default defineWorkflow<State, Variables>({
         if (!latestReview.ok) return latestReview.result;
         await ctx.log(
           'info',
-          "User continued after the initial disagreement; sending the reviewer session's latest complete turn to a new fixer.",
+          "User continued after the initial disagreement; sending the reviewer session's latest complete turn to the fixer.",
         );
         return spawnFixerForReview(ctx, state, {
           reviewer: state.stage.reviewer,
@@ -373,6 +382,12 @@ async function spawnFixerForReview(
   },
 ): Promise<WorkflowResult> {
   await ctx.setUiFeedback({ phase: 'Fixing review findings' });
+  if (state.fixerSessionId !== undefined) {
+    return sendReviewToFixer(ctx, state, {
+      ...input,
+      fixer: { agentSessionId: state.fixerSessionId },
+    });
+  }
   const spawned = await ctx.spawnAgentSession({
     harness: fixer.harness,
     model: fixer.model,
@@ -401,7 +416,7 @@ async function sendReviewToFixer(
   state: State,
   input: {
     readonly reviewer: Agent;
-    readonly fixer: Agent;
+    readonly fixer: Fixer;
     readonly review: string;
     readonly reviewRound: number;
     readonly afterFixer: 'complete' | 'rereview';
@@ -431,11 +446,11 @@ async function sendReviewToFixer(
 async function finishReviewLoop(
   ctx: WorkflowContext,
   reviewerAgent: Agent,
-  fixerAgent: Agent | undefined,
+  fixerAgent: Fixer | undefined,
   reviewCount: number,
 ): Promise<WorkflowResult> {
   await ctx.setUiFeedback({ phase: 'Review loop complete' });
-  if (fixerAgent) await ctx.closePane(fixerAgent.paneId);
+  if (fixerAgent?.paneId !== undefined) await ctx.closePane(fixerAgent.paneId);
   await ctx.closePane(reviewerAgent.paneId);
   await ctx.log(
     'info',
@@ -472,7 +487,7 @@ async function requireEndedTurn(
 
 async function latestTurnOrFail(
   ctx: WorkflowContext,
-  agent: Agent,
+  agent: Session,
   role: 'reviewer' | 'fixer',
 ): Promise<
   | { readonly ok: true; readonly text: string }

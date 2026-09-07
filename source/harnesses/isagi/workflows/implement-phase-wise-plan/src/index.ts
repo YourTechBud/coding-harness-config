@@ -895,7 +895,7 @@ async function completePhase(
     const context = `We are currently implementing phase ${activePhase(state).number} of the plan in ${state.plan.entryPlanPath}. Review all the changes since HEAD.`;
     const runId = await ctx.startWorkflow("engineering-guidance-review-loop", {
       context,
-    });
+    }, { agentSessionId: implementer.agentSessionId });
     await ctx.log(
       "info",
       `Started automatic review child workflow ${runId} for phase ${activePhase(state).number}.`,

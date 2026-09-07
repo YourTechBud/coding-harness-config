@@ -347,6 +347,8 @@ test("mock-ui completion starts enabled auto review before commit", async () => 
     },
   ]);
 
+  assert.deepEqual(harness.workflowContexts, [{ agentSessionId: 22 }]);
+
   const reviewed = await workflow.step(
     harness.ctx,
     suspendedState(resumed),
@@ -968,6 +970,7 @@ function workflowHarness(input?: {
     readonly workflowKey: string;
     readonly variables: Record<string, unknown> | undefined;
   }> = [];
+  const workflowContexts: Array<Parameters<WorkflowContext["startWorkflow"]>[2]> = [];
   const closedPanes: number[] = [];
   const feedback: Array<Parameters<WorkflowContext["setUiFeedback"]>[0]> = [];
   let headlessLaunchCount = 0;
@@ -1005,8 +1008,9 @@ function workflowHarness(input?: {
         },
       };
     },
-    startWorkflow: async (workflowKey, variables) => {
+    startWorkflow: async (workflowKey, variables, context) => {
       startedWorkflows.push({ workflowKey, variables });
+      workflowContexts.push(context);
       return 44;
     },
     log: async () => {},
@@ -1020,6 +1024,7 @@ function workflowHarness(input?: {
     spawnedSessions,
     headlessLaunches,
     startedWorkflows,
+    workflowContexts,
     closedPanes,
     feedback,
     get headlessLaunchCount() {
