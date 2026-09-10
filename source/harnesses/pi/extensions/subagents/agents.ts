@@ -85,6 +85,7 @@ export function formatAgentsForPrompt(agents: AgentDefinition[]): string {
 		"You may delegate focused, self-contained work to a sub-agent when one of the available agent descriptions is a strong match.",
 		"Do not delegate simple file reads, narrow searches, or tasks you can complete directly with available tools.",
 		"A sub-agent starts with isolated context, so provide a complete task prompt. If several independent subtasks would benefit from delegation, you may run multiple sub-agent tasks in parallel.",
+		"Sub-agents can mistakes. Consider verifying their work when the risk justifies it.",
 		"",
 		"<available_agents>",
 	];
