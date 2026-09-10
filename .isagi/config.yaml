@@ -1,0 +1,9 @@
+commands:
+  - name: harness install
+    command: pnpm run harness:install
+  - name: harness sync
+    command: pnpm run harness:sync
+  - name: harness instructions
+    command: pnpm run harness:instructions
+  - name: harness generate
+    command: pnpm run generate
