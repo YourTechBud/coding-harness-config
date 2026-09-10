@@ -4,6 +4,6 @@ targets:
   pi:
     frontmatter:
       description: |
-        Use when the user requests sub-agents and no specialist fits the task. Give it a tightly scoped assignment with clear intent, the desired outcome, relevant context, and a procedure when useful. It works best with explicit instructions.
+        Use for clearly scoped work requiring reasoning or judgment, including evaluations, analysis, and prototypes. When delegating, explain the goal, why it matters, and the desired outcome—including how the result should be presented. Supply relevant context and constraints, and keep consequential decisions with the user.
       model: openai-codex/gpt-5.6-sol
       thinkingLevel: low
