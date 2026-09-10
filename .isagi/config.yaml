@@ -1,9 +1,21 @@
 commands:
   - name: harness install
     command: pnpm run harness:install
+    lifecycle:
+      deactivate:
+        stop: false
   - name: harness sync
     command: pnpm run harness:sync
+    lifecycle:
+      deactivate:
+        stop: false
   - name: harness instructions
     command: pnpm run harness:instructions
+    lifecycle:
+      deactivate:
+        stop: false
   - name: harness generate
     command: pnpm run generate
+    lifecycle:
+      deactivate:
+        stop: false
