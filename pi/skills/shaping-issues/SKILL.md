@@ -15,14 +15,14 @@ Use these phases to guide the conversation with the user, making the current pha
 1. **Problem discovery:** establish the problem and its context. Use existing information and ask questions to draw out missing needs, circumstances, and assumptions the user may not have articulated.
 2. **Discover value:** explore who benefits, what product outcome would meaningfully improve the problem, and why that outcome matters. Establish the desired value before choosing features or an engineering approach.
 3. **Converge:** explore alternative ways to deliver that value and help the user choose the product approach and features to pursue.
-4. **Sharpen:** narrow the direction to the smallest worthwhile outcome needed today. Challenge scope and sequence the work so usable value arrives incrementally, rather than requiring the entire story set before anything is useful.
+4. **Sharpen:** shape an ambitious, coherent product outcome within the epic's budget. Carve it into substantial stories that deliver meaningful value and whose designs the user can comprehend as a whole.
 5. **Harden:** review the chosen epic's goal, rationale, scope and exclusions, completion condition, and supported stories. Address remaining details and make consequential uncertainty explicit, using spikes where needed; readiness may mean a clear investigation rather than a complete implementation backlog.
 
-Sharpen and Harden may share an exchange, but give scope reduction and final review distinct attention. Revisit earlier phases when new understanding warrants it. After a spike or other new evidence, resume from established context at the phases affected by what changed.
+Sharpen and Harden may share an exchange, but give scope shaping and final review distinct attention. Revisit earlier phases when new understanding warrants it. After a spike or other new evidence, resume from established context at the phases affected by what changed.
 
 ## Epic
 
-An epic may span investigation and implementation while remaining a bounded promise. Its initial story set is provisional: add, remove, move, split, merge, or revise stories as evidence warrants. Revisit the epic itself with the user when findings affect its goal, scope, or completion condition; it remains open until that condition is met or the user chooses to defer or end it.
+An epic is a substantial product promise within roughly one week of the user's workflow: one story per day, with at most five sizable stories per epic. This is a scope budget, not an estimate of model execution time. When the promise requires more stories, reshape the epic with the user rather than compressing work beyond coherent, comprehensible story boundaries. An epic may span investigation and implementation within that budget. Its initial story set is provisional: add, remove, move, split, merge, or revise stories as evidence warrants. Revisit the epic itself with the user when findings affect its goal, scope, or completion condition; it remains open until that condition is met or the user chooses to defer or end it.
 
 Focus on the current epic. Preserve a candidate epic only when the user explicitly requests it, recording its possible outcome, value, reason for deferral, and context needed to resume. Candidates remain uncommitted and have no stories until shaped for active work.
 
@@ -48,9 +48,13 @@ Resume this work from either the live investigation or findings supplied in a la
 
 ### Implementation
 
-An implementation story delivers a coherent vertical slice end-to-end, including the UI and other changes needed for its outcome. Settle significant product and design decisions through shaping or spikes so the agent can complete implementation with minimal human involvement.
+An implementation story is a substantial deliverable that produces meaningful value end-to-end, including the UI and other changes needed for its outcome. Favor ambitious, coherent outcomes.
 
-Write acceptance criteria as observable pass-or-fail conditions that distinguish success from a materially incomplete result, while leaving the engineering route open. Keep preparatory technical steps within the slice's implementation; size stories as meaningful outcomes that can be worked on one at a time.
+The purpose of splitting an epic into stories is to keep each story's consequential design comprehensible to the user as a whole before implementation begins. For sizing, the only bottleneck is the user's comprehension; assume highly capable models whose ability to plan and execute is not the bottleneck. Comprehension is easier than planning: models develop the plans and explain them, while the user understands, evaluates, and approves the consequential design.
+
+That understanding centers on architecture, API contracts, database schema, important deep-module interfaces, and code/data flows. Module internals can remain black boxes when their interfaces and behavior provide enough understanding. Use this comprehension boundary to judge story scope with the user; detailed program design can follow during planning before implementation is authorized.
+
+Write acceptance criteria as observable pass-or-fail conditions that distinguish success from a materially incomplete result, while leaving the engineering route open. Keep preparatory technical work within the deliverable's implementation. Resolve consequential product and design uncertainty with the user through shaping or spikes.
 
 When implementation reveals consequential uncertainty or a need for new product decisions, return that work to shaping with the user and consider a spike.
 
