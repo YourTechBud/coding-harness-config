@@ -78,9 +78,11 @@ Delivers standalone documentation artifacts that warrant their own phase and com
 
 ## Phasing
 
-Size phases by reasoning burden, not file count or another numerical heuristic. Each phase should have one dominant implementation objective, a bounded architectural and decision surface, a meaningful expected state, and enough cohesion for one fresh agent. Prefer additional focused phases over a phase that asks a low-reasoning implementer to make several architectural or implementation decisions at once.
+Break the story's implementation into sizable increments so review can detect problems and meaningfully course-correct before the entire story is implemented. A phase should leave enough evidence to assess the direction while correction can still influence subsequent work without extensive rework.
 
-Phases need not be user-facing increments. Preparatory refactors, temporary red states, and later integration are legitimate boundaries. Separate meaningful UI exploration from production functionality through a mock-UI phase.
+Balance the cost of correction against execution and review overhead: overly broad phases let too much work accumulate before feedback, while overly small phases waste time and tokens on repeated setup, handoffs, and reviews. Assume highly capable implementers and reviewers; the reviewer is usually another model that can assess substantial amounts of code. Favor larger phases within that balance, using judgment about the work rather than treating code volume or model reasoning capacity as the bottleneck.
+
+Phases need not be user-facing increments. Preparatory refactors, temporary red states, and later integration are legitimate boundaries.
 
 Use stable phase identifiers matching each filename stem. Each phase file must begin with exactly this minimal YAML frontmatter shape:
 
