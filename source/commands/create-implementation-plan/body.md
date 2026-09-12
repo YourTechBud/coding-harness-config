@@ -62,7 +62,13 @@ Establishes foundations that make later implementation simpler. It may intention
 
 ### `mock-ui`
 
-Establishes meaningful visual and interaction behavior using fixtures, hardcoded data, or local state without production integration. Use a mock-UI phase for every meaningful new UI unless the user explicitly waived it. Cover the important states and interactions needed for human visual iteration; do not add production wiring merely to make the phase appear complete.
+Produces a presentation-only UI mock through human-led iteration, with agents helping build and revise it. Cover every meaningful new UI with a mock-UI phase unless the user explicitly waived it.
+
+Use fixtures, hardcoded data, and minimal local state to show appearance and simulated interactions, such as opening a menu or selecting a prepared success state. Assign business logic, real feature behavior, persistence, and production integration to named later `implementation` phases, including functionality that could run entirely locally.
+
+Size each phase around one cohesive screen, flow, or aspect the human can iterate on as a unit. Keep related elements and states together and give unrelated topics separate phases. Human iteration scope determines these boundaries, rather than agent review capacity.
+
+Specify how to open the mock and reach its representative states, and what the human needs to judge before the phase is complete. Agent checks provide supporting evidence; the human owns design decisions and acceptance.
 
 ### `implementation`
 
@@ -76,7 +82,7 @@ Delivers standalone documentation artifacts that warrant their own phase and com
 
 Break the story's implementation into sizable increments so review can detect problems and meaningfully course-correct before the entire story is implemented. A phase should leave enough evidence to assess the direction while correction can still influence subsequent work without extensive rework.
 
-Balance the cost of correction against execution and review overhead: overly broad phases let too much work accumulate before feedback, while overly small phases waste time and tokens on repeated setup, handoffs, and reviews. Assume highly capable implementers and reviewers; the reviewer is usually another model that can assess substantial amounts of code. Favor larger phases within that balance, using judgment about the work rather than treating code volume or model reasoning capacity as the bottleneck.
+Balance the cost of correction against execution and review overhead: overly broad phases let too much work accumulate before feedback, while overly small phases waste time and tokens on repeated setup, handoffs, and reviews. For agent-led phases, favor larger increments within that balance: capable implementers and reviewers can assess substantial code, so code volume alone is not a reason to split. For `mock-ui`, follow the human-led sizing guidance in its phase definition.
 
 Phases need not be user-facing increments. Preparatory refactors, temporary red states, and later integration are legitimate boundaries.
 
@@ -127,6 +133,6 @@ Tell every phase implementer to read `index.md`, its phase file, and the existin
 
 ## Finish
 
-Before reporting completion, reread the plan as a zero-context implementer and reviewer. Check that links and phase identifiers resolve, dependencies and payback references exist, global decisions agree with phase guidance, UI work has the required mock phase unless waived, and the final phase sequence pays all temporary debt.
+Before reporting completion, reread the plan as a zero-context implementer and reviewer. Check that links and phase identifiers resolve, dependencies and payback references exist, global decisions agree with phase guidance, each phase satisfies its type definition and contract, UI work has mock-phase coverage unless waived, and the final phase sequence pays all temporary debt.
 
 Report the path to `index.md`.
