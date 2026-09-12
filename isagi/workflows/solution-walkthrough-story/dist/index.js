@@ -121,8 +121,8 @@ var deckBuilder = {
   effort: "medium"
 };
 var guide = {
-  harness: "codex",
-  model: "gpt-5.6-sol",
+  harness: "pi",
+  model: "openai-codex/gpt-6-astra",
   effort: "low"
 };
 var deckArchitect = {
