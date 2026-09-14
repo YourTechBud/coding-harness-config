@@ -4,6 +4,7 @@
   "scripts": {
     "generate": "tsx generator/index.ts generate",
     "check": "tsx generator/index.ts check",
+    "test:generator": "node --import tsx --test generator/concurrency.test.ts",
     "test:instructions": "node --import tsx --test generator/instructions.test.ts",
     "harness:install": "tsx generator/harness-install.ts install all",
     "harness:instructions": "tsx generator/harness-install.ts instructions",
