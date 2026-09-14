@@ -13,6 +13,7 @@ import { renderPi } from "./renderers/pi.ts";
 import { renderClaude } from "./renderers/claude.ts";
 import { renderCodex } from "./renderers/codex.ts";
 import { readInstructions } from "./instructions.ts";
+import { runConcurrent } from "./concurrency.ts";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_DIR = path.join(REPO_ROOT, "source");
@@ -174,7 +175,8 @@ async function runCommand(command: string, args: string[], cwd: string): Promise
 }
 
 async function prepareSourceWorkflows(): Promise<void> {
-  for (const packageDir of await findPackageDirs(path.join(SOURCE_DIR, "harnesses", "isagi", "workflows"))) {
+  const packageDirs = await findPackageDirs(path.join(SOURCE_DIR, "harnesses", "isagi", "workflows"));
+  await runConcurrent(packageDirs, async (packageDir) => {
     const relativePackageDir = path.relative(REPO_ROOT, packageDir);
     console.log(`Installing pnpm dependencies in ${relativePackageDir}`);
     await runCommand("pnpm", ["install", "--frozen-lockfile"], packageDir);
@@ -183,19 +185,20 @@ async function prepareSourceWorkflows(): Promise<void> {
       console.log(`Running pnpm ${script} in ${relativePackageDir}`);
       await runCommand("pnpm", ["run", script], packageDir);
     }
-  }
+  });
 }
 
 async function runPostGenerateHooks(outputRoot: string): Promise<void> {
-  for (const packageDir of await findPackageDirs(path.join(outputRoot, "pi", "extensions"))) {
-    console.log(`Installing npm dependencies in ${path.relative(REPO_ROOT, packageDir)}`);
-    await runCommand("npm", ["install"], packageDir);
-  }
-
-  for (const packageDir of await findPackageDirs(path.join(outputRoot, "isagi", "workflows"))) {
-    console.log(`Installing pnpm dependencies in ${path.relative(REPO_ROOT, packageDir)}`);
-    await runCommand("pnpm", ["install", "--frozen-lockfile"], packageDir);
-  }
+  const extensionDirs = await findPackageDirs(path.join(outputRoot, "pi", "extensions"));
+  const workflowDirs = await findPackageDirs(path.join(outputRoot, "isagi", "workflows"));
+  const jobs = [
+    ...extensionDirs.map((cwd) => ({ cwd, command: "npm", args: ["install"] })),
+    ...workflowDirs.map((cwd) => ({ cwd, command: "pnpm", args: ["install", "--frozen-lockfile"] })),
+  ];
+  await runConcurrent(jobs, async ({ cwd, command, args }) => {
+    console.log(`Installing ${command} dependencies in ${path.relative(REPO_ROOT, cwd)}`);
+    await runCommand(command, args, cwd);
+  });
 }
 
 async function generateTo(outputRoot: string, resetOutputs: boolean, runHooks: boolean): Promise<void> {
