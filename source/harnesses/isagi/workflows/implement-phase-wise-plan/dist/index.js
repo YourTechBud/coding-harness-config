@@ -123,7 +123,7 @@ var headlessJudgment = {
 var commitAgent = {
   harness: "codex",
   model: "gpt-5.6-luna",
-  effort: "low"
+  effort: "medium"
 };
 
 // src/commit.ts

@@ -13,8 +13,8 @@ export const fixer = {
 } satisfies AgentProfile;
 
 export const reviewer = {
-  harness: "codex",
-  model: "gpt-5.6-sol",
+  harness: "pi",
+  model: "openai-codex/gpt-5.6-sol",
   effort: "medium",
 } satisfies AgentProfile;
 

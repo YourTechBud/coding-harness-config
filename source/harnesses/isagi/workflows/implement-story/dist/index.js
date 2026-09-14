@@ -102,8 +102,8 @@ function u(e) {
 
 // src/constants.ts
 var planner = {
-  harness: "codex",
-  model: "gpt-6-astra",
+  harness: "pi",
+  model: "openai-codex/gpt-6-astra",
   effort: "medium"
 };
 var plannerJudgment = {
