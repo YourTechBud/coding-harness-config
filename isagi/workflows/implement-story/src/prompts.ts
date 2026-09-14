@@ -9,8 +9,9 @@ export function plannerPrompt(input: {
   readonly currentStatePath: string;
   readonly architecturePath: string;
   readonly programDesignPath: string;
+  readonly uiBriefPath: string;
 }): string {
-  return withPromptFooter(`Create the complete implementation plan for the supplied story using all three reviewed engineering artifacts.
+  return withPromptFooter(`Create the complete implementation plan for this story using the engineering documents and UI brief.
 
 Repository: ${input.repositoryPath}
 Story: ${input.story}
@@ -19,8 +20,15 @@ Entry plan path: ${input.entryPlanPath}
 Current-state analysis: ${input.currentStatePath}
 Architecture: ${input.architecturePath}
 Program design: ${input.programDesignPath}
+UI brief: ${input.uiBriefPath}
 
-Use the explicit plan directory exactly. Treat the files under its artifacts directory as read-only inputs and place index.md and every phase file in the plan directory root. Work unattended, resolve uncertainty through grounded recommendations and recorded assumptions, and finish only when the complete plan is ready for implementation.`);
+Read the inputs and inspect the relevant repository code and referenced mocks. Use the explicit plan directory exactly. Treat files under its artifacts directory as read-only inputs and place index.md and every phase file in the plan directory root.
+
+For this plan, omit mock-UI phases and repository documentation work. UI exploration has already happened under human direction; the brief captures its outcome and decisions. Treat the session-created mocks as throwaway artifacts and account for their removal or replacement with production implementation within the implementation phases.
+
+If you encounter consequential ambiguity, missing UI context, or inconsistency between the mocks, brief, and engineering documents, explain the concern and stop for human reconciliation.
+
+Write index.md last, only when the complete plan is ready and there are no unresolved escalations. Finish by reporting the entry plan path.`);
 }
 
 export function plannerRoutingPrompt(input: {

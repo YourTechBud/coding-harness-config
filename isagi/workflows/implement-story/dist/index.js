@@ -180,7 +180,7 @@ function extractJsonObject(output) {
 // src/prompts.ts
 var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
 function plannerPrompt(input) {
-  return withPromptFooter(`Create the complete implementation plan for the supplied story using all three reviewed engineering artifacts.
+  return withPromptFooter(`Create the complete implementation plan for this story using the engineering documents and UI brief.
 
 Repository: ${input.repositoryPath}
 Story: ${input.story}
@@ -189,8 +189,15 @@ Entry plan path: ${input.entryPlanPath}
 Current-state analysis: ${input.currentStatePath}
 Architecture: ${input.architecturePath}
 Program design: ${input.programDesignPath}
+UI brief: ${input.uiBriefPath}
 
-Use the explicit plan directory exactly. Treat the files under its artifacts directory as read-only inputs and place index.md and every phase file in the plan directory root. Work unattended, resolve uncertainty through grounded recommendations and recorded assumptions, and finish only when the complete plan is ready for implementation.`);
+Read the inputs and inspect the relevant repository code and referenced mocks. Use the explicit plan directory exactly. Treat files under its artifacts directory as read-only inputs and place index.md and every phase file in the plan directory root.
+
+For this plan, omit mock-UI phases and repository documentation work. UI exploration has already happened under human direction; the brief captures its outcome and decisions. Treat the session-created mocks as throwaway artifacts and account for their removal or replacement with production implementation within the implementation phases.
+
+If you encounter consequential ambiguity, missing UI context, or inconsistency between the mocks, brief, and engineering documents, explain the concern and stop for human reconciliation.
+
+Write index.md last, only when the complete plan is ready and there are no unresolved escalations. Finish by reporting the entry plan path.`);
 }
 function plannerRoutingPrompt(input) {
   return withPromptFooter(`You are an unattended routing judgment for an implementation-plan writer.
@@ -218,6 +225,7 @@ var defaults = {
   currentStatePath: "scratch/story/design/current-state.md",
   architecturePath: "scratch/story/design/architecture.md",
   programDesignPath: "scratch/story/design/program-design.md",
+  uiBriefPath: "scratch/story/design/ui-brief.md",
   planDirectory: "scratch/story/implementation",
   entryPlanPath: "scratch/story/implementation/index.md"
 };
@@ -260,6 +268,7 @@ var index_default = r({
       { kind: "text", key: "currentStatePath", label: "Current-state source path", default: defaults.currentStatePath },
       { kind: "text", key: "architecturePath", label: "Architecture source path", default: defaults.architecturePath },
       { kind: "text", key: "programDesignPath", label: "Program-design source path", default: defaults.programDesignPath },
+      { kind: "text", key: "uiBriefPath", label: "UI brief path", default: defaults.uiBriefPath },
       { kind: "text", key: "planDirectory", label: "Implementation-plan directory", default: defaults.planDirectory },
       { kind: "text", key: "entryPlanPath", label: "Implementation-plan entry path", default: defaults.entryPlanPath },
       humanInTheLoopInput,
@@ -299,7 +308,8 @@ var index_default = r({
             entryPlanPath: state.plan.entryPlanPath,
             currentStatePath: state.artifacts.currentStatePath,
             architecturePath: state.artifacts.architecturePath,
-            programDesignPath: state.artifacts.programDesignPath
+            programDesignPath: state.artifacts.programDesignPath,
+            uiBriefPath: state.artifacts.uiBriefPath
           })
         });
         const plannerAgent = agentFromSpawn(spawned);
@@ -309,6 +319,7 @@ var index_default = r({
       case "await_planner": {
         if (s.isAgentTurnFailed(incoming)) return failWorkflow(ctx, "Implementation-plan writer failed", `Implementation-plan writer turn failed: ${incoming.reason}`);
         if (!s.isAgentTurnEnded(incoming)) return failWorkflow(ctx, "The implementation-plan writer could not be resumed", "Implementation-plan writer wait resumed with an unexpected event.");
+        if (!entryPlanExists(state)) return pauseForReconciliation(ctx, state, state.stage.planner, `Plan entry ${state.plan.entryPlanPath} is missing. Work with the planner to resolve concerns and create the plan, then select Continue.`);
         const history = await ctx.getConversationHistory(state.stage.planner.agentSessionId);
         const plannerResponse = latestAssistantTurnText(history);
         if (!plannerResponse) return failWorkflow(ctx, "No implementation-plan response was found", `Planner session ${state.stage.planner.agentSessionId} has no complete assistant turn to inspect.`);
@@ -326,14 +337,19 @@ var index_default = r({
           const result = completedSingleHeadlessResult(incoming);
           const route = parsePlannerRoute(result.output ?? "");
           await ctx.log("info", `Implementation-plan routing outcome=${route}.`);
-          if (route === "failed") return failWorkflow(ctx, "The implementation plan was not completed", `Planner session ${state.stage.planner.agentSessionId} did not complete the plan. Latest response:
+          if (route === "failed") return pauseForReconciliation(ctx, state, state.stage.planner, `Resolve the planner's concerns and finish the plan, then select Continue. Planner response:
 ${state.stage.plannerResponse}`);
           const validationError = planArtifactError(state.repositoryPath, state.plan);
-          if (validationError) return failWorkflow(ctx, "The implementation plan is incomplete", validationError);
+          if (validationError) return pauseForReconciliation(ctx, state, state.stage.planner, validationError);
           return i(withStage(state, { kind: "start_implementation", planner: state.stage.planner }));
         } catch (error) {
           return failWorkflow(ctx, "The implementation-plan response could not be routed", `Implementation-plan routing failed: ${errorText(error)}`);
         }
+      }
+      case "await_planner_reconciliation": {
+        if (!s.isUserContinue(incoming)) return failWorkflow(ctx, "Planner reconciliation could not continue", "Expected user Continue.");
+        if (!entryPlanExists(state)) return pauseForReconciliation(ctx, state, state.stage.planner, `Plan entry ${state.plan.entryPlanPath} is still missing. Talk to the planner to ensure it is created, then select Continue.`);
+        return i(withStage(state, { kind: "start_implementation", planner: state.stage.planner }));
       }
       case "start_implementation": {
         await ctx.setUiFeedback({ phase: "Preparing phase-wise implementation", message: `Plan ready at ${state.plan.entryPlanPath}.` });
@@ -367,7 +383,8 @@ function parseVariables(variables) {
     artifacts: {
       currentStatePath: parsePath(variables.currentStatePath, "currentStatePath", defaults.currentStatePath),
       architecturePath: parsePath(variables.architecturePath, "architecturePath", defaults.architecturePath),
-      programDesignPath: parsePath(variables.programDesignPath, "programDesignPath", defaults.programDesignPath)
+      programDesignPath: parsePath(variables.programDesignPath, "programDesignPath", defaults.programDesignPath),
+      uiBriefPath: parsePath(variables.uiBriefPath, "uiBriefPath", defaults.uiBriefPath)
     },
     plan: {
       planDirectory: parsePath(variables.planDirectory, "planDirectory", defaults.planDirectory),
@@ -403,6 +420,15 @@ function readSingleChild(incoming, runId, workflowKey) {
   if (!child || child.runId !== runId) return failure(`${workflowKey} resumed with an unexpected child run.`);
   if (child.status !== "done") return failure(`${workflowKey} child workflow ${runId} failed: ${errorText(child.error)}`);
   return success(child.result);
+}
+function entryPlanExists(state) {
+  const path = resolve(state.repositoryPath, state.plan.entryPlanPath);
+  return existsSync(path) && statSync(path).isFile();
+}
+async function pauseForReconciliation(ctx, state, planner2, message) {
+  await ctx.setUiFeedback({ kind: "warning", phase: "Planner needs human reconciliation", message });
+  await ctx.log("warning", message);
+  return a(withStage(state, { kind: "await_planner_reconciliation", planner: planner2 }), o.userContinue());
 }
 function planArtifactError(repositoryPath, plan) {
   const entryPath = resolve(repositoryPath, plan.entryPlanPath);

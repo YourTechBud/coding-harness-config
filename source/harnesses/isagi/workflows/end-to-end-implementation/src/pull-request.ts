@@ -14,12 +14,6 @@ export type PullRequestResult = {
   readonly state: 'OPEN';
 };
 
-export const pullRequestAgent = {
-  harness: 'codex',
-  model: 'gpt-5.6-luna',
-  effort: 'medium',
-} as const;
-
 export function pullRequestPrompt(input: {
   readonly worktreePath: string;
   readonly story: string;

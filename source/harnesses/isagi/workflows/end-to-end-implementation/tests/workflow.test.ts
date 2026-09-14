@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -18,6 +19,10 @@ const designPaths = {
   architecturePath: 'scratch/story/design/architecture.md',
   programDesignPath: 'scratch/story/design/program-design.md',
 };
+const uiBriefPath = 'scratch/story/design/ui-brief.md';
+const session = { agentSessionId: 77, paneId: 88 };
+const ended = { outcome: 'ended', recordedAt: '2026-08-20T00:00:00.000Z' };
+const continued = { kind: 'user_continue' };
 const reviewDirectory = 'scratch/story/walkthrough';
 const plan = {
   planDirectory: 'scratch/story/implementation',
@@ -135,7 +140,7 @@ test('presentation completion waits for explicit approval and preserves all metr
   });
 });
 
-test('approval resets the implementation plan and starts implementation', async (t) => {
+test('approval resets the implementation plan before UI discovery', async (t) => {
   const worktreePath = tempWorktree(t);
   writeArtifact(worktreePath, plan.entryPlanPath, '# stale plan');
   const harness = workflowHarness(worktreePath);
@@ -152,14 +157,8 @@ test('approval resets the implementation plan and starts implementation', async 
 
   result = await workflow.step(harness.ctx, resultState(result), null);
   assert.equal(existsSync(resolve(worktreePath, plan.planDirectory)), false);
-  assert.deepEqual(resultState(result).stage, { kind: 'start_implementation', design, walkthrough });
-
-  result = await workflow.step(harness.ctx, resultState(result), null);
-  assert.deepEqual(harness.started.at(-1), {
-    workflowKey: 'implement-story',
-    variables: { story, ...designPaths, ...plan, ...implementationOptions },
-    context: undefined,
-  });
+  assert.deepEqual(resultState(result).stage, { kind: 'start_ui', design, walkthrough });
+  assert.equal(harness.started.length, 0);
 });
 
 test('rejection stops cleanly before touching the implementation plan', async (t) => {
@@ -217,7 +216,7 @@ test('obsolete walkthrough result shapes are rejected', async () => {
   assert.match(harness.logs.at(-1)?.message ?? '', /does not match Socratic mode/);
 });
 
-test('implementation completion can finish without pull-request submission', async () => {
+test('delivery can finish without pull-request submission after documentation', async () => {
   const harness = workflowHarness();
   const design = designResult();
   const walkthrough = presentationResult();
@@ -225,8 +224,8 @@ test('implementation completion can finish without pull-request submission', asy
   const initial = await workflow.init(launchCtx, { story, submitPullRequest: 'no' });
   const result = await workflow.step(
     harness.ctx,
-    { ...initial, stage: { kind: 'await_implementation', design, walkthrough, runId: 101 } },
-    childEvent(101, implementation),
+    { ...initial, stage: { kind: 'finish_delivery', design, walkthrough, implementation } },
+    null,
   );
   assert.equal(result.type, 'done');
   assert.deepEqual(result.type === 'done' ? result.value : undefined, {
@@ -251,6 +250,138 @@ test('failed child workflows stop the wrapper with their diagnostic', async () =
   assert.equal(result.type, 'fail');
   assert.match(harness.logs.at(-1)?.message ?? '', /analyst failed/);
 });
+
+test('UI always opens brainstorming, pauses, writes a brief in the same session, and skips a clean checkpoint', async (t) => {
+  const worktreePath = tempWorktree(t);
+  initGit(worktreePath);
+  writeArtifact(worktreePath, '.git/info/exclude', 'scratch/\n');
+  const harness = workflowHarness(worktreePath);
+  const context = { design: designResult(), walkthrough: presentationResult() };
+  let result = await workflow.step(harness.ctx, await state({ kind: 'start_ui', ...context }), null);
+  assert.deepEqual(harness.spawned[0], {
+    harness: 'claude', model: 'fable', effort: 'medium', modifiers: [{ kind: 'skill', name: 'brainstorming' }], prompt: harness.spawned[0]?.prompt,
+  });
+  assert.match(harness.spawned[0]?.prompt ?? '', /Let's brainstorm/);
+  assert.match(harness.spawned[0]?.prompt ?? '', /opening turn focused on discovery/);
+  result = await workflow.step(harness.ctx, resultState(result), ended);
+  assert.equal(resultState(result).stage.kind, 'await_ui_continue');
+  assert.deepEqual(result.type === 'suspend' && result.condition, { kind: 'user_continue' });
+  assert.equal(harness.sent.length, 0);
+  result = await workflow.step(harness.ctx, resultState(result), continued);
+  assert.equal(harness.sent[0]?.agentSessionId, session.agentSessionId);
+  assert.equal(harness.sent[0]?.modifiers, undefined);
+  assert.match(harness.sent[0]?.prompt ?? '', /Capture decisions/);
+  assert.match(harness.sent[0]?.prompt ?? '', /scratch\/story\/design\/ui-brief.md/);
+  writeArtifact(worktreePath, uiBriefPath, 'No UI needed.');
+  result = await workflow.step(harness.ctx, resultState(result), ended);
+  assert.equal(resultState(result).stage.kind, 'commit_ui');
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.equal(resultState(result).stage.kind, 'close_ui');
+  assert.equal(harness.headless.length, 0);
+  assert.deepEqual(harness.closed, []);
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.deepEqual(harness.closed, [session.paneId]);
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.deepEqual(harness.started.at(-1), {
+    workflowKey: 'implement-story', variables: { story, ...designPaths, uiBriefPath, ...plan, ...implementationOptions }, context: undefined,
+  });
+});
+
+test('missing UI brief or failed agent turns block without closing the pane', async (t) => {
+  const harness = workflowHarness(tempWorktree(t));
+  const context = { design: designResult(), walkthrough: presentationResult(), session };
+  const missing = await workflow.step(harness.ctx, await state({ kind: 'await_ui_brief', ...context }), ended);
+  assert.equal(missing.type, 'fail');
+  assert.match(harness.logs.at(-1)?.message ?? '', /ui-brief.md/);
+  for (const kind of ['await_ui_discovery', 'await_ui_brief', 'await_documentation_discovery'] as const) {
+    const failed = await workflow.step(harness.ctx, await state({ kind, ...context, implementation: implementationResult() }), { outcome: 'failed', reason: 'agent failed', recordedAt: ended.recordedAt });
+    assert.equal(failed.type, 'fail');
+  }
+  assert.deepEqual(harness.closed, []);
+});
+
+test('implementation always enters documentation discovery before the PR branch', async () => {
+  for (const submitPullRequest of ['yes', 'no'] as const) {
+    const harness = workflowHarness();
+    const initial = await workflow.init(launchCtx, { story, submitPullRequest });
+    const context = { design: designResult(), walkthrough: presentationResult() };
+    let result = await workflow.step(harness.ctx, { ...initial, stage: { kind: 'await_implementation', ...context, runId: 101 } }, childEvent(101, implementationResult()));
+    assert.equal(resultState(result).stage.kind, 'start_documentation');
+    result = await workflow.step(harness.ctx, resultState(result), null);
+    assert.deepEqual(harness.spawned[0], {
+      harness: 'codex', model: 'gpt-6-astra', effort: 'low', modifiers: [{ kind: 'skill', name: 'brainstorming' }], prompt: harness.spawned[0]?.prompt,
+    });
+    assert.match(harness.spawned[0]?.prompt ?? '', /Let's brainstorm/);
+    assert.match(harness.spawned[0]?.prompt ?? '', /both new documentation and updates to existing documentation within ADRs/);
+    assert.match(harness.spawned[0]?.prompt ?? '', /implementation\/decisions.md/);
+    result = await workflow.step(harness.ctx, resultState(result), ended);
+    assert.equal(resultState(result).stage.kind, 'await_documentation_continue');
+    assert.deepEqual(result.type === 'suspend' && result.condition, { kind: 'user_continue' });
+    assert.equal(harness.headless.length, 0);
+  }
+});
+
+test('documentation Continue skips a clean commit, closes its pane, and proceeds to PR', async (t) => {
+  const worktreePath = tempWorktree(t);
+  initGit(worktreePath);
+  const harness = workflowHarness(worktreePath);
+  let result = await workflow.step(harness.ctx, await state({ kind: 'await_documentation_continue', design: designResult(), walkthrough: presentationResult(), implementation: implementationResult(), session }), continued);
+  assert.equal(resultState(result).stage.kind, 'commit_documentation');
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.equal(resultState(result).stage.kind, 'close_documentation');
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.deepEqual(harness.closed, [session.paneId]);
+  assert.equal(harness.sent.length, 0);
+  result = await workflow.step(harness.ctx, resultState(result), null);
+  assert.equal(resultState(result).stage.kind, 'start_pull_request');
+  assert.equal(harness.headless.length, 0);
+});
+
+for (const checkpoint of ['ui', 'documentation'] as const) {
+  test(`${checkpoint} checkpoint commits outstanding changes before closing its pane`, async (t) => {
+    const worktreePath = tempWorktree(t);
+    initGit(worktreePath);
+    writeArtifact(worktreePath, 'temporary-route.ts', 'export const mock = true;');
+    const harness = workflowHarness(worktreePath);
+    const context = { design: designResult(), walkthrough: presentationResult(), session, implementation: implementationResult() };
+    let result = await workflow.step(harness.ctx, await state({ kind: checkpoint === 'ui' ? 'commit_ui' : 'commit_documentation', ...context }), null);
+    assert.equal(result.type, 'suspend');
+    assert.deepEqual(harness.closed, []);
+    assert.equal(harness.headless.length, 1);
+    if (checkpoint === 'ui') assert.match(harness.headless[0]?.prompt ?? '', /draft: /);
+    const subject = checkpoint === 'ui' ? 'draft: UI exploration' : 'docs: architecture overview';
+    git(worktreePath, ['add', '-A']);
+    git(worktreePath, ['commit', '-m', subject]);
+    const commit = git(worktreePath, ['rev-parse', 'HEAD']).trim();
+    result = await workflow.step(harness.ctx, resultState(result), { kind: 'headless_agent', results: [{ opId: 'pr-1', status: 'completed', output: JSON.stringify({ outcome: 'commit-created', commit, subject }) }] });
+    assert.equal(resultState(result).stage.kind, checkpoint === 'ui' ? 'close_ui' : 'close_documentation');
+    assert.deepEqual(harness.closed, []);
+    await workflow.step(harness.ctx, resultState(result), null);
+    assert.deepEqual(harness.closed, [session.paneId]);
+  });
+
+  test(`${checkpoint} checkpoint failures preserve the session`, async (t) => {
+    const worktreePath = tempWorktree(t);
+    initGit(worktreePath);
+    const harness = workflowHarness(worktreePath);
+    const stage = { kind: checkpoint === 'ui' ? 'await_ui_commit' : 'await_documentation_commit', design: designResult(), walkthrough: presentationResult(), implementation: implementationResult(), session, opId: 'pr-1' } as const;
+    const result = await workflow.step(harness.ctx, await state(stage), { kind: 'headless_agent', results: [{ opId: 'pr-1', status: 'failed', error: 'hook failed' }] });
+    assert.equal(result.type, 'fail');
+    assert.deepEqual(harness.closed, []);
+  });
+}
+
+function git(worktreePath: string, args: string[]): string {
+  return execFileSync('git', args, { cwd: worktreePath, encoding: 'utf8' });
+}
+
+function initGit(worktreePath: string): void {
+  git(worktreePath, ['init', '-q']);
+  git(worktreePath, ['config', 'user.name', 'Workflow Test']);
+  git(worktreePath, ['config', 'user.email', 'test@example.invalid']);
+  git(worktreePath, ['config', 'commit.gpgsign', 'false']);
+  git(worktreePath, ['config', 'core.hooksPath', '/dev/null']);
+}
 
 async function state(stage: Stage): Promise<State> {
   return { ...await workflow.init(launchCtx, { story }), stage } satisfies State;
@@ -326,6 +457,9 @@ function workflowHarness(worktreePath = '/workspace') {
   const started: Array<{ readonly workflowKey: string; readonly variables: Record<string, unknown> | undefined; readonly context: unknown }> = [];
   const logs: Array<{ readonly level: string; readonly message: string }> = [];
   const headless: Array<Parameters<WorkflowContext['runHeadlessAgent']>[0]> = [];
+  const spawned: Array<Parameters<WorkflowContext['spawnAgentSession']>[0]> = [];
+  const sent: Array<Parameters<WorkflowContext['sendAgentPrompt']>[0]> = [];
+  const closed: number[] = [];
   const ctx = {
     worktreePath,
     startWorkflow: async (workflowKey: string, variables?: Record<string, unknown>, context?: unknown) => {
@@ -345,11 +479,19 @@ function workflowHarness(worktreePath = '/workspace') {
         },
       };
     },
-    closePane: async () => {},
+    spawnAgentSession: async (input: Parameters<WorkflowContext['spawnAgentSession']>[0]) => {
+      spawned.push(input);
+      return { ...session, sentAt: ended.recordedAt };
+    },
+    sendAgentPrompt: async (input: Parameters<WorkflowContext['sendAgentPrompt']>[0]) => {
+      sent.push(input);
+      return { agentSessionId: input.agentSessionId, sentAt: ended.recordedAt };
+    },
+    closePane: async (paneId: number) => { closed.push(paneId); },
     setUiFeedback: async () => {},
     log: async (level: string, message: string) => { logs.push({ level, message }); },
   } as unknown as WorkflowContext;
-  return { ctx, started, logs, headless };
+  return { ctx, started, logs, headless, spawned, sent, closed };
 }
 
 function tempWorktree(t: TestContext): string {

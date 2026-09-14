@@ -101,11 +101,6 @@ function u(e) {
 }
 
 // src/pull-request.ts
-var pullRequestAgent = {
-  harness: "codex",
-  model: "gpt-5.6-luna",
-  effort: "medium"
-};
 function pullRequestPrompt(input) {
   const storyLink = storyLinkLine(input.story);
   return `You are the unattended pull-request agent for an Isagi end-to-end implementation workflow.
@@ -190,6 +185,104 @@ function extractJsonObject(output) {
   return output.slice(first, last + 1);
 }
 
+// src/constants.ts
+var uiAgent = {
+  harness: "claude",
+  model: "fable",
+  effort: "medium"
+};
+var documentationAgent = {
+  harness: "codex",
+  model: "gpt-6-astra",
+  effort: "low"
+};
+var commitAgent = {
+  harness: "codex",
+  model: "gpt-5.6-luna",
+  effort: "medium"
+};
+var pullRequestAgent = {
+  harness: "codex",
+  model: "gpt-5.6-luna",
+  effort: "medium"
+};
+
+// src/prompts.ts
+function designContext(input) {
+  return `Story: ${input.story}
+Current-state analysis: ${input.currentStatePath}
+Architecture: ${input.architecturePath}
+Program design: ${input.programDesignPath}`;
+}
+function uiDiscoveryPrompt(input) {
+  return `Let's brainstorm which UI pieces need to be mocked for this story.
+
+${designContext(input)}
+
+Read these documents and explore the relevant existing UI and code to ground the discussion. We will work together to create throwaway, presentation-only mocks using standalone HTML files or temporary routes in the relevant frontend environment.
+
+Start with a concise assessment of the UI pieces worth exploring and any questions that would help me decide what to do. Keep this opening turn focused on discovery; I will steer the scope and subsequent mock creation.`;
+}
+function uiBriefPrompt(uiBriefPath2) {
+  return `Write a concise UI brief at ${uiBriefPath2} summarizing the outcome of this session for a fresh implementation planner.
+
+Capture decisions, what was created, and where the mocks exist, including relevant file paths, routes, and how to view them. Give the planner enough context to use the designs without access to this conversation.
+
+If no UI mocks were needed or created, capture that outcome. Keep the brief simple and report its path when finished.`;
+}
+function documentationDiscoveryPrompt(input) {
+  return `Let's brainstorm which documentation updates would be valuable now that this story has been implemented.
+
+${designContext(input)}
+Implementation plan: ${input.entryPlanPath}
+Implementation decision log: ${input.decisionLogPath}
+
+Read the relevant inputs and existing documentation, and explore the code as needed to understand what was actually implemented.
+
+Keep both new documentation and updates to existing documentation within ADRs and durable, high-level overviews that will remain useful over the longer term. No documentation changes may be necessary.
+
+Start with a concise assessment of worthwhile changes and the questions or options we should discuss. Keep this opening turn focused on discovery; I will steer what we actually write or update.`;
+}
+
+// src/checkpoint.ts
+import { execFileSync } from "node:child_process";
+function git(worktreePath, args) {
+  return execFileSync("git", args, { cwd: worktreePath, encoding: "utf8" }).trim();
+}
+function isWorktreeClean(worktreePath) {
+  return git(worktreePath, ["status", "--porcelain=v1", "--untracked-files=all"]) === "";
+}
+function checkpointPrompt(worktreePath, draft) {
+  return `You are the unattended commit agent for an Isagi workflow.
+
+Check the working tree and index in ${worktreePath}.
+
+If there are outstanding changes, including non-ignored untracked files, review the diff to choose an appropriate commit message and commit all outstanding changes using git add -A and git commit --signoff. ${draft ? 'Use a commit subject beginning with "draft: ".' : "Use a normal commit message following repository conventions."}
+
+Leave ignored files untracked. If the working tree and index are already clean, finish without creating a commit.
+
+Verify that the working tree and index are clean afterward. Never amend, push, discard changes, or bypass failing hooks. If committing fails, stop and report the failure.
+
+Return exactly one JSON object without markdown or commentary:
+- After creating a commit: {"outcome":"commit-created","commit":"<full commit hash>","subject":"<exact commit subject>"}
+- If already clean: {"outcome":"clean"}`;
+}
+function verifyCheckpoint(incoming, opId, worktreePath, draft) {
+  const results = s.getHeadlessAgentResults(incoming);
+  if (!results || results.length !== 1 || results[0]?.opId !== opId) throw new Error("Unexpected commit checkpoint result.");
+  const result = results[0];
+  if (result.status !== "completed") throw new Error(`Commit checkpoint failed: ${result.error ?? "agent failed"}`);
+  const record = JSON.parse(result.output ?? "");
+  if (!record || typeof record !== "object" || Array.isArray(record)) throw new Error("Invalid commit checkpoint response.");
+  if (!isWorktreeClean(worktreePath)) throw new Error("Commit checkpoint left outstanding working-tree or index changes.");
+  if (record.outcome === "clean" && Object.keys(record).length === 1) return "No commit needed; worktree is clean.";
+  if (record.outcome !== "commit-created" || Object.keys(record).sort().join(",") !== "commit,outcome,subject") throw new Error("Invalid commit checkpoint outcome.");
+  if (typeof record.commit !== "string" || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(record.commit)) throw new Error("Invalid checkpoint commit hash.");
+  if (typeof record.subject !== "string" || !record.subject.trim() || draft && !/^draft: .+/.test(record.subject)) throw new Error("Invalid checkpoint commit subject.");
+  if (git(worktreePath, ["rev-parse", "HEAD"]) !== record.commit || git(worktreePath, ["log", "-1", "--format=%s"]) !== record.subject) throw new Error("Checkpoint result does not match Git HEAD.");
+  return `Created ${record.commit}: ${record.subject}`;
+}
+
 // src/index.ts
 var familiarityLevels = ["new", "familiar"];
 var technicalDepthLevels = ["product", "system-design", "implementation"];
@@ -205,6 +298,7 @@ var reviewDirectory = `${storyRoot}/walkthrough`;
 var curriculumPath = `${reviewDirectory}/.walkthrough/curriculum.json`;
 var deckPlanPath = `${reviewDirectory}/.walkthrough/deck-plan.json`;
 var presentationPath = `${reviewDirectory}/walkthrough.html`;
+var uiBriefPath = `${storyRoot}/design/ui-brief.md`;
 var planDirectory = `${storyRoot}/implementation`;
 var entryPlanPath = `${planDirectory}/index.md`;
 var implementationOptions = {
@@ -421,16 +515,65 @@ var index_default = r({
           return failWorkflow(ctx, "The existing implementation plan could not be removed", `Failed to remove ${planDirectory}: ${errorText(error)}`);
         }
         return i(withStage(state, {
-          kind: "start_implementation",
+          kind: "start_ui",
           design: state.stage.design,
           walkthrough: state.stage.walkthrough
         }));
+      }
+      case "start_ui": {
+        await ctx.setUiFeedback({ phase: "Discovering UI mocks" });
+        const spawned = await ctx.spawnAgentSession({
+          ...uiAgent,
+          modifiers: [{ kind: "skill", name: "brainstorming" }],
+          prompt: uiDiscoveryPrompt({ story: state.story, ...designPaths })
+        });
+        const session = { agentSessionId: spawned.agentSessionId, paneId: spawned.paneId };
+        return a(withStage(state, { kind: "await_ui_discovery", ...designContext2(state.stage), session }), o.agentTurn(spawned));
+      }
+      case "await_ui_discovery": {
+        if (!s.isAgentTurnEnded(incoming)) return failWorkflow(ctx, "UI discovery failed", agentTurnError(incoming));
+        await ctx.setUiFeedback({ phase: "Explore UI with the agent", message: "Steer the UI session, then select Continue to capture the brief and prepare implementation." });
+        return a(withStage(state, { kind: "await_ui_continue", ...designContext2(state.stage), session: state.stage.session }), o.userContinue());
+      }
+      case "await_ui_continue": {
+        if (!s.isUserContinue(incoming)) return failWorkflow(ctx, "UI session could not continue", "Expected user Continue.");
+        await ctx.setUiFeedback({ phase: "Writing UI brief" });
+        const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.session.agentSessionId, prompt: uiBriefPrompt(uiBriefPath) });
+        return a(withStage(state, { kind: "await_ui_brief", ...designContext2(state.stage), session: state.stage.session }), o.agentTurn(sent));
+      }
+      case "await_ui_brief": {
+        if (!s.isAgentTurnEnded(incoming)) return failWorkflow(ctx, "UI brief writing failed", agentTurnError(incoming));
+        if (!artifactFileExists(ctx.worktreePath, uiBriefPath)) return failWorkflow(ctx, "UI brief is missing", `Expected ${uiBriefPath}. Finish writing the brief in the UI session before retrying.`);
+        return i(withStage(state, { kind: "commit_ui", ...designContext2(state.stage), session: state.stage.session }));
+      }
+      case "commit_ui": {
+        await ctx.setUiFeedback({ phase: "Committing UI session changes" });
+        try {
+          if (isWorktreeClean(ctx.worktreePath)) return i(withStage(state, { kind: "close_ui", ...designContext2(state.stage), session: state.stage.session }));
+          const op = await ctx.runHeadlessAgent({ ...commitAgent, prompt: checkpointPrompt(ctx.worktreePath, true) });
+          return a(withStage(state, { kind: "await_ui_commit", ...designContext2(state.stage), session: state.stage.session, opId: op.opId }), o.headlessAgent(op));
+        } catch (error) {
+          return failWorkflow(ctx, "UI commit checkpoint failed", errorText(error));
+        }
+      }
+      case "await_ui_commit": {
+        try {
+          await ctx.log("info", verifyCheckpoint(incoming, state.stage.opId, ctx.worktreePath, true));
+          return i(withStage(state, { kind: "close_ui", ...designContext2(state.stage), session: state.stage.session }));
+        } catch (error) {
+          return failWorkflow(ctx, "UI commit checkpoint failed", errorText(error));
+        }
+      }
+      case "close_ui": {
+        await ctx.closePane(state.stage.session.paneId);
+        return i(withStage(state, { kind: "start_implementation", ...designContext2(state.stage) }));
       }
       case "start_implementation": {
         await ctx.setUiFeedback({ phase: "Implementing story" });
         const runId = await ctx.startWorkflow("implement-story", {
           story: state.story,
           ...designPaths,
+          uiBriefPath,
           planDirectory,
           entryPlanPath,
           ...implementationOptions
@@ -446,6 +589,50 @@ var index_default = r({
       case "await_implementation": {
         const result = readImplementationResult(incoming, state.stage.runId, state.story);
         if (!result.ok) return failWorkflow(ctx, "Story implementation failed", result.reason);
+        return i(withStage(state, { kind: "start_documentation", ...designContext2(state.stage), implementation: result.value }));
+      }
+      case "start_documentation": {
+        await ctx.setUiFeedback({ phase: "Discovering documentation updates" });
+        const spawned = await ctx.spawnAgentSession({
+          ...documentationAgent,
+          modifiers: [{ kind: "skill", name: "brainstorming" }],
+          prompt: documentationDiscoveryPrompt({ story: state.story, ...designPaths, entryPlanPath, decisionLogPath: state.stage.implementation.implementation.decisionLogPath })
+        });
+        const session = { agentSessionId: spawned.agentSessionId, paneId: spawned.paneId };
+        return a(withStage(state, { kind: "await_documentation_discovery", ...deliveryContext(state.stage), session }), o.agentTurn(spawned));
+      }
+      case "await_documentation_discovery": {
+        if (!s.isAgentTurnEnded(incoming)) return failWorkflow(ctx, "Documentation discovery failed", agentTurnError(incoming));
+        await ctx.setUiFeedback({ phase: "Work on documentation with the agent", message: "Steer documentation updates, then select Continue to commit outstanding changes and finish." });
+        return a(withStage(state, { kind: "await_documentation_continue", ...deliveryContext(state.stage), session: state.stage.session }), o.userContinue());
+      }
+      case "await_documentation_continue": {
+        if (!s.isUserContinue(incoming)) return failWorkflow(ctx, "Documentation session could not continue", "Expected user Continue.");
+        return i(withStage(state, { kind: "commit_documentation", ...deliveryContext(state.stage), session: state.stage.session }));
+      }
+      case "commit_documentation": {
+        await ctx.setUiFeedback({ phase: "Committing documentation session changes" });
+        try {
+          if (isWorktreeClean(ctx.worktreePath)) return i(withStage(state, { kind: "close_documentation", ...deliveryContext(state.stage), session: state.stage.session }));
+          const op = await ctx.runHeadlessAgent({ ...commitAgent, prompt: checkpointPrompt(ctx.worktreePath, false) });
+          return a(withStage(state, { kind: "await_documentation_commit", ...deliveryContext(state.stage), session: state.stage.session, opId: op.opId }), o.headlessAgent(op));
+        } catch (error) {
+          return failWorkflow(ctx, "Documentation commit checkpoint failed", errorText(error));
+        }
+      }
+      case "await_documentation_commit": {
+        try {
+          await ctx.log("info", verifyCheckpoint(incoming, state.stage.opId, ctx.worktreePath, false));
+          return i(withStage(state, { kind: "close_documentation", ...deliveryContext(state.stage), session: state.stage.session }));
+        } catch (error) {
+          return failWorkflow(ctx, "Documentation commit checkpoint failed", errorText(error));
+        }
+      }
+      case "close_documentation": {
+        await ctx.closePane(state.stage.session.paneId);
+        return i(withStage(state, { kind: "finish_delivery", ...deliveryContext(state.stage) }));
+      }
+      case "finish_delivery": {
         if (state.submitPullRequest === "no") {
           await ctx.setUiFeedback({ phase: "End-to-end implementation complete", message: "Implementation is complete; pull-request submission was skipped." });
           await ctx.log("info", "Completed end-to-end implementation without submitting a pull request.");
@@ -455,7 +642,7 @@ var index_default = r({
             storyRoot,
             design: state.stage.design,
             walkthrough: state.stage.walkthrough,
-            implementation: result.value,
+            implementation: state.stage.implementation,
             pullRequest: null
           });
         }
@@ -463,7 +650,7 @@ var index_default = r({
           kind: "start_pull_request",
           design: state.stage.design,
           walkthrough: state.stage.walkthrough,
-          implementation: result.value
+          implementation: state.stage.implementation
         }));
       }
       case "start_pull_request": {
@@ -510,6 +697,15 @@ var index_default = r({
     }
   }
 });
+function designContext2(context) {
+  return { design: context.design, walkthrough: context.walkthrough };
+}
+function deliveryContext(context) {
+  return { ...designContext2(context), implementation: context.implementation };
+}
+function agentTurnError(incoming) {
+  return s.isAgentTurnFailed(incoming) ? incoming.reason : "Expected a completed agent turn.";
+}
 function readArtifactResult(incoming, runId, workflowKey, expectedPath) {
   const child = readChildResult(incoming, runId, workflowKey);
   if (!child.ok) return child;

@@ -29,6 +29,7 @@ type ArtifactPaths = {
   readonly currentStatePath: string;
   readonly architecturePath: string;
   readonly programDesignPath: string;
+  readonly uiBriefPath: string;
 };
 
 type PlanPaths = {
@@ -52,6 +53,7 @@ type Stage =
   | { readonly kind: 'spawn_planner' }
   | { readonly kind: 'await_planner'; readonly planner: Planner }
   | { readonly kind: 'await_planner_judgment'; readonly planner: Planner; readonly plannerResponse: string }
+  | { readonly kind: 'await_planner_reconciliation'; readonly planner: Planner }
   | { readonly kind: 'start_implementation'; readonly planner: Planner }
   | { readonly kind: 'await_implementation'; readonly planner: Planner; readonly runId: number };
 
@@ -70,6 +72,7 @@ type Variables = {
   readonly currentStatePath?: unknown;
   readonly architecturePath?: unknown;
   readonly programDesignPath?: unknown;
+  readonly uiBriefPath?: unknown;
   readonly planDirectory?: unknown;
   readonly entryPlanPath?: unknown;
   readonly humanInTheLoop?: unknown;
@@ -81,6 +84,7 @@ const defaults = {
   currentStatePath: 'scratch/story/design/current-state.md',
   architecturePath: 'scratch/story/design/architecture.md',
   programDesignPath: 'scratch/story/design/program-design.md',
+  uiBriefPath: 'scratch/story/design/ui-brief.md',
   planDirectory: 'scratch/story/implementation',
   entryPlanPath: 'scratch/story/implementation/index.md',
 };
@@ -127,6 +131,7 @@ export default defineWorkflow<State, Variables>({
       { kind: 'text', key: 'currentStatePath', label: 'Current-state source path', default: defaults.currentStatePath },
       { kind: 'text', key: 'architecturePath', label: 'Architecture source path', default: defaults.architecturePath },
       { kind: 'text', key: 'programDesignPath', label: 'Program-design source path', default: defaults.programDesignPath },
+      { kind: 'text', key: 'uiBriefPath', label: 'UI brief path', default: defaults.uiBriefPath },
       { kind: 'text', key: 'planDirectory', label: 'Implementation-plan directory', default: defaults.planDirectory },
       { kind: 'text', key: 'entryPlanPath', label: 'Implementation-plan entry path', default: defaults.entryPlanPath },
       humanInTheLoopInput,
@@ -168,6 +173,7 @@ export default defineWorkflow<State, Variables>({
             currentStatePath: state.artifacts.currentStatePath,
             architecturePath: state.artifacts.architecturePath,
             programDesignPath: state.artifacts.programDesignPath,
+            uiBriefPath: state.artifacts.uiBriefPath,
           }),
         });
         const plannerAgent = agentFromSpawn(spawned);
@@ -178,6 +184,7 @@ export default defineWorkflow<State, Variables>({
       case 'await_planner': {
         if (workflowEvent.isAgentTurnFailed(incoming)) return failWorkflow(ctx, 'Implementation-plan writer failed', `Implementation-plan writer turn failed: ${incoming.reason}`);
         if (!workflowEvent.isAgentTurnEnded(incoming)) return failWorkflow(ctx, 'The implementation-plan writer could not be resumed', 'Implementation-plan writer wait resumed with an unexpected event.');
+        if (!entryPlanExists(state)) return pauseForReconciliation(ctx, state, state.stage.planner, `Plan entry ${state.plan.entryPlanPath} is missing. Work with the planner to resolve concerns and create the plan, then select Continue.`);
         const history = await ctx.getConversationHistory(state.stage.planner.agentSessionId);
         const plannerResponse = latestAssistantTurnText(history);
         if (!plannerResponse) return failWorkflow(ctx, 'No implementation-plan response was found', `Planner session ${state.stage.planner.agentSessionId} has no complete assistant turn to inspect.`);
@@ -196,13 +203,19 @@ export default defineWorkflow<State, Variables>({
           const result = completedSingleHeadlessResult(incoming);
           const route = parsePlannerRoute(result.output ?? '');
           await ctx.log('info', `Implementation-plan routing outcome=${route}.`);
-          if (route === 'failed') return failWorkflow(ctx, 'The implementation plan was not completed', `Planner session ${state.stage.planner.agentSessionId} did not complete the plan. Latest response:\n${state.stage.plannerResponse}`);
+          if (route === 'failed') return pauseForReconciliation(ctx, state, state.stage.planner, `Resolve the planner's concerns and finish the plan, then select Continue. Planner response:\n${state.stage.plannerResponse}`);
           const validationError = planArtifactError(state.repositoryPath, state.plan);
-          if (validationError) return failWorkflow(ctx, 'The implementation plan is incomplete', validationError);
+          if (validationError) return pauseForReconciliation(ctx, state, state.stage.planner, validationError);
           return cont(withStage(state, { kind: 'start_implementation', planner: state.stage.planner }));
         } catch (error) {
           return failWorkflow(ctx, 'The implementation-plan response could not be routed', `Implementation-plan routing failed: ${errorText(error)}`);
         }
+      }
+
+      case 'await_planner_reconciliation': {
+        if (!workflowEvent.isUserContinue(incoming)) return failWorkflow(ctx, 'Planner reconciliation could not continue', 'Expected user Continue.');
+        if (!entryPlanExists(state)) return pauseForReconciliation(ctx, state, state.stage.planner, `Plan entry ${state.plan.entryPlanPath} is still missing. Talk to the planner to ensure it is created, then select Continue.`);
+        return cont(withStage(state, { kind: 'start_implementation', planner: state.stage.planner }));
       }
 
       case 'start_implementation': {
@@ -246,6 +259,7 @@ function parseVariables(variables: Variables): {
       currentStatePath: parsePath(variables.currentStatePath, 'currentStatePath', defaults.currentStatePath),
       architecturePath: parsePath(variables.architecturePath, 'architecturePath', defaults.architecturePath),
       programDesignPath: parsePath(variables.programDesignPath, 'programDesignPath', defaults.programDesignPath),
+      uiBriefPath: parsePath(variables.uiBriefPath, 'uiBriefPath', defaults.uiBriefPath),
     },
     plan: {
       planDirectory: parsePath(variables.planDirectory, 'planDirectory', defaults.planDirectory),
@@ -283,6 +297,17 @@ function readSingleChild(incoming: unknown, runId: number, workflowKey: string):
   if (!child || child.runId !== runId) return failure(`${workflowKey} resumed with an unexpected child run.`);
   if (child.status !== 'done') return failure(`${workflowKey} child workflow ${runId} failed: ${errorText(child.error)}`);
   return success(child.result);
+}
+
+function entryPlanExists(state: State): boolean {
+  const path = resolve(state.repositoryPath, state.plan.entryPlanPath);
+  return existsSync(path) && statSync(path).isFile();
+}
+
+async function pauseForReconciliation(ctx: WorkflowContext, state: State, planner: Planner, message: string): Promise<WorkflowResult> {
+  await ctx.setUiFeedback({ kind: 'warning', phase: 'Planner needs human reconciliation', message });
+  await ctx.log('warning', message);
+  return suspend(withStage(state, { kind: 'await_planner_reconciliation', planner }), wait.userContinue());
 }
 
 function planArtifactError(repositoryPath: string, plan: PlanPaths): string | null {
