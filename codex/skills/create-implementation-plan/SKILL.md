@@ -30,6 +30,10 @@ Plan for the cleanest design and simplest mental model the problem allows, not t
 
 Intermediate phases do not need to preserve a working application or a green test suite. Intentional breakage is allowed only under the phase contracts below and must never be ambiguous: name the expected broken state, how the phase itself is verified, and where temporary debt is repaid. Distinguish intentional temporary breakage from permanent removal that belongs to the target architecture.
 
+## Documentation scope
+
+Plan repository documentation updates only when explicitly requested, within the related implementation phase rather than a dedicated docs phase. This restriction excludes required plan artifacts and necessary code comments, docstrings, or prose in operational assets.
+
 ## Output layout
 
 When the remarks specify an explicit plan directory, use it exactly. It may already contain an `artifacts/` directory; preserve those inputs and write the plan files beside it. Refuse to overwrite an existing `index.md` or phase file.
@@ -52,7 +56,7 @@ When selecting the directory yourself, never overwrite an existing plan director
 
 - The goal, target architecture, and simplest mental model of the end state.
 - Settled global decisions, assumptions, constraints, and meaningful rejected alternatives.
-- A concise definition of the four phase types below so the plan is self-descriptive.
+- A concise definition of the three phase types below so the plan is self-descriptive.
 - An ordered phase map with a short purpose, type, expected resulting state, and direct link to every phase file.
 - Cross-phase dependencies and every temporary degradation with the phase that pays it back.
 - The execution-time decision log path: `scratch/plans/<slug>/decisions.md`.
@@ -79,10 +83,6 @@ Specify how to open the mock and reach its representative states, and what the h
 
 Delivers a bounded portion of real behavior, integration, refactoring, or assigned debt repayment. It may inherit explicitly tracked prep debt that belongs to later phases, but it must pay the debt assigned to it and must not introduce unplanned temporary breakage.
 
-### `docs`
-
-Delivers standalone documentation artifacts that warrant their own phase and commit boundary, such as files in dedicated documentation directories, ADRs, engineering guidance or review documents, runbooks, README material, and similar repository-maintained documentation. Put required updates to these artifacts in a docs phase even when they accompany implementation. Do not use docs for code comments, docstrings, inline descriptions, or prose embedded in operational assets; keep those changes with the phase that owns the surrounding implementation.
-
 ## Phasing
 
 Break the story's implementation into sizable increments so review can detect problems and meaningfully course-correct before the entire story is implemented. A phase should leave enough evidence to assess the direction while correction can still influence subsequent work without extensive rework.
@@ -102,7 +102,7 @@ pays_back_in: []
 ---
 ```
 
-- `type` is one of `prep`, `mock-ui`, `implementation`, or `docs`.
+- `type` is one of `prep`, `mock-ui`, or `implementation`.
 - `depends_on` lists prerequisite phase identifiers selected by the planner; use `[]` when empty.
 - `pays_back_in` lists the phase identifiers that repay temporary debt introduced here; use `[]` when empty.
 - Do not add status, review mode, automation policy, model choice, or workflow behavior to the frontmatter.
