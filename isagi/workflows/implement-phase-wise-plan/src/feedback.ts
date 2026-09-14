@@ -88,7 +88,7 @@ export function renderWorkflowStatus(status: WorkflowStatus): WorkflowUiFeedback
       return {
         kind: 'warning',
         phase: 'human-intervention',
-        message: `Phase ${status.phase} paused — the planner raised a severe flag.\n\nResolve it in the planner pane, then Continue. The latest planner response will be sent to the implementer verbatim.`,
+        message: `Phase ${status.phase} paused — the planner requested human escalation.\n\nResolve it in the planner pane, then Continue. The latest planner response will be forwarded to the implementer with human-resolution context.`,
       };
     case 'completion-check':
       return {

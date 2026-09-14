@@ -605,9 +605,9 @@ export default defineWorkflow<State, Variables>({
         if (!plannerTurn.ok) return plannerTurn.result;
         await ctx.log(
           "info",
-          `Human continued after the severe flag in phase ${activePhase(activeState).number}; sending the latest planner turn verbatim without reclassification.`,
+          `Human continued after the severe flag in phase ${activePhase(activeState).number}; sending the latest planner turn with human-resolution framing without reclassification.`,
         );
-        return sendRawPlannerTurnAfterHumanResolution(ctx, activeState, {
+        return sendPlannerTurnAfterHumanResolution(ctx, activeState, {
           implementer: state.stage.implementer,
           plannerTurn: plannerTurn.text,
           exchangeNumber: state.stage.exchangeNumber,
@@ -874,14 +874,14 @@ async function sendPlannerTurnToImplementer(
   await ctx.log(
     "info",
     approved
-      ? `Planner approved phase ${activePhase(state).number}; sending its response verbatim to implementer session ${input.implementer.agentSessionId}.`
+      ? `Planner approved phase ${activePhase(state).number}; sending its attributed approval to implementer session ${input.implementer.agentSessionId}.`
       : `Planner returned feedback for phase ${activePhase(state).number}; sending its response with the alignment footer to implementer session ${input.implementer.agentSessionId}.`,
   );
   const sent = await ctx.sendAgentPrompt({
     agentSessionId: input.implementer.agentSessionId,
     prompt: approved
-      ? input.plannerTurn
-      : implementerFollowUpPrompt(input.plannerTurn),
+      ? implementerApprovalPrompt(activePhase(state).number, input.plannerTurn)
+      : implementerFollowUpPrompt(activePhase(state).number, input.plannerTurn),
   });
   return suspend(
     withStage(state, {
@@ -894,7 +894,7 @@ async function sendPlannerTurnToImplementer(
   );
 }
 
-async function sendRawPlannerTurnAfterHumanResolution(
+async function sendPlannerTurnAfterHumanResolution(
   ctx: WorkflowContext,
   state: ActiveState,
   input: {
@@ -910,7 +910,7 @@ async function sendRawPlannerTurnAfterHumanResolution(
   });
   const sent = await ctx.sendAgentPrompt({
     agentSessionId: input.implementer.agentSessionId,
-    prompt: input.plannerTurn,
+    prompt: humanResolutionPrompt(activePhase(state).number, input.plannerTurn),
   });
   return suspend(
     withStage(state, {
@@ -963,7 +963,7 @@ async function startOptionalReview(
       phase: activePhase(state).number,
       phaseCount: state.plan.phases.length,
     });
-    const context = `We are currently implementing phase ${activePhase(state).number} of the plan in ${state.plan.entryPlanPath}. Review all the changes since HEAD.`;
+    const context = `The workflow is implementing phase ${activePhase(state).number} of the plan in ${state.plan.entryPlanPath}. Review all the changes since HEAD.`;
     const runId = await ctx.startWorkflow("engineering-guidance-review-loop", {
       context,
     }, { agentSessionId: implementer.agentSessionId });
@@ -1260,7 +1260,9 @@ function initialImplementerPrompt(input: {
   readonly phaseNumber: number;
   readonly entryPlanPath: string;
 }): string {
-  return `Implement the phase ${input.phaseNumber} in ${input.entryPlanPath}.
+  return `You are the implementer for phase ${input.phaseNumber} in ${input.entryPlanPath}, working unattended in an orchestrated workflow.
+
+Start by establishing alignment with the planner. Include questions and pushback in your response; the workflow will forward it to the planner rather than waiting for a live human answer.
 
 ${alignmentFooter()}`;
 }
@@ -1269,45 +1271,87 @@ function initialMockUiPrompt(input: {
   readonly phaseNumber: number;
   readonly entryPlanPath: string;
 }): string {
-  return `I want to start designing mock UIs for phase ${input.phaseNumber} in ${input.entryPlanPath}. Before creating any mockups, walk me through what the phase is about and what we need to achieve, ask me questions so we can establish a shared understanding.`;
+  return `You are preparing the human-led mock-UI work for phase ${input.phaseNumber} in ${input.entryPlanPath}.
+
+Before creating mockups, explain what the phase covers and what it needs to achieve. Ask the human the questions needed to establish shared understanding.
+
+The workflow will hand control to the human after this response so they can drive the mockup implementation and visual iteration with you.`;
 }
 
-function implementerFollowUpPrompt(plannerTurn: string): string {
-  return `${plannerTurn}
+function implementerFollowUpPrompt(phaseNumber: number, plannerTurn: string): string {
+  return `The planner returned the following feedback on phase ${phaseNumber}:
+
+<planner_response>
+${plannerTurn}
+</planner_response>
+
+Continue establishing alignment with the planner. You are working unattended. Include questions and pushback in your response for the workflow to forward to the planner rather than waiting for a live human answer.
 
 ${alignmentFooter()}`;
 }
 
-function alignmentFooter(): string {
-  return `I want you to:
+function implementerApprovalPrompt(phaseNumber: number, plannerTurn: string): string {
+  return `The planner has approved implementation of phase ${phaseNumber}.
 
-- Ask clarifying questions till we have shared understanding and complete alignment on what needs to be done. Do not use the askUserQuestion tool.
-- Pushback on my ideas.
-- Try to flag or highlight major shortcomings or opportunities to simplify logic.
+<planner_response>
+${plannerTurn}
+</planner_response>
+
+Implement the agreed phase according to this approval and the established conversation. You are working unattended. If unresolved questions or blockers arise, describe them and your current understanding in your response so the workflow can return them to the planner.
+
+Run tasks and shell commands in the foreground, not in the background.`;
+}
+
+function humanResolutionPrompt(phaseNumber: number, plannerTurn: string): string {
+  return `The human has continued the workflow after resolving the planner's escalation for phase ${phaseNumber}.
+
+The planner's latest response follows:
+
+<planner_response>
+${plannerTurn}
+</planner_response>
+
+Continue work on the phase according to this response and the established conversation. You are working unattended again. Include any further questions or blockers in your response for the workflow to forward to the planner.
+
+Run tasks and shell commands in the foreground, not in the background.`;
+}
+
+function alignmentFooter(): string {
+  return `- Ask clarifying questions until you and the planner have shared understanding and complete alignment on what needs to be done. Include questions in your response for workflow routing; do not use the askUserQuestion tool.
+- Push back on the planner's ideas.
+- Flag or highlight major shortcomings or opportunities to simplify logic.
 - Clearly state your understanding.
-- Don't run tasks or shell commands in the background. You may run them in the foreground.
-- Let me know once we have alignment to begin implementation
-- Never start implementing unless I explicitly say so.`;
+- Run tasks and shell commands in the foreground, not in the background.
+- Explicitly state when alignment is established and you are ready to begin implementation.
+- Begin implementation only when the planner explicitly approves it.`;
 }
 
 function plannerPrompt(input: {
   readonly phaseNumber: number;
   readonly implementerTurn: string;
 }): string {
-  return `I am implementing phase ${input.phaseNumber}. Make sure that I am aligned.
+  return `You are the planner for phase ${input.phaseNumber}, working unattended in an orchestrated workflow.
 
+The implementer returned the following response:
+
+<implementer_response>
 ${input.implementerTurn}
+</implementer_response>
 
-I want you to:
+Evaluate the implementer's understanding and readiness to implement the phase.
 
-- Pushback on my understanding.
-- Answer my questions. Make sure the answers are grounded in our current conversation, ADRs, and guidance.
-- Feel free to refactor or update the phase scope if pushbacks make sense, are easy to implement, or simplify the logic. Remind me to document the same in the decision log instead of modifying the plan file.
-- Flag major questions or decisions which were not covered by our conversation which can impact our architecture in a severe way to me. Make sure to include all necessary context so I can understand why it's a flag and how to address it. Explicitly mention "no flags" if we are good.
-- Always mention the nuances and considerations that I may be missing to make sure I have deep understanding.
-- Try to keep fallback logic to a minimum. Introduce new fallback logic only if absolutely necessary
-- Only approve implementation once I have no clarifying questions in my most recent message.
-- Don't run tasks or shell commands in the background. You may run them in the foreground.`;
+- Push back on the implementer's understanding.
+- Answer the implementer's questions. Ground the answers in the established conversation, ADRs, and guidance.
+- Feel free to refactor or update the phase scope if the implementer's pushback makes sense, is easy to implement, or simplifies the logic. Remind the implementer to document agreed changes in the decision log instead of modifying the plan file.
+- Escalate major questions or decisions not covered by the established conversation that could severely affect the architecture or product and require human intervention before work continues. Include all necessary context so the human can understand the issue and how to address it. Always include a Human Escalation section stating either "No escalation." or "Escalation required:" followed by the issue and the decision the human must make.
+- Always mention nuances and considerations the implementer may be missing so they develop a deep understanding.
+- Keep fallback logic to a minimum. Introduce new fallback logic only if absolutely necessary.
+- Only approve implementation once the implementer has no outstanding clarifying questions in their latest response.
+- Run tasks and shell commands in the foreground, not in the background.
+
+Explicitly state when you approve implementation. Otherwise, provide the feedback needed for another exchange. Ordinary questions, caveats, and disagreements that can be resolved through the planner–implementer exchange are not human escalations.
+
+The workflow will forward your response to the implementer or pause for human resolution when escalation is required. Include everything needed for that handoff in your response rather than waiting for a live human answer.`;
 }
 
 function selectImplementerProfile(kind: ImplementerKind): ImplementerProfile {

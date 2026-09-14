@@ -8,6 +8,7 @@ import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workf
 
 import {
   classifyImplementerOutcomePrompt,
+  classifyPlannerOutcomePrompt,
   latestAssistantTurnText,
   normalizeDiscoveryResult,
   parseDiscoveryResult,
@@ -69,6 +70,19 @@ test('implementer outcome prompt requires an explicit request for further verifi
   assert.match(prompt, /Remaining work and questions take precedence/);
   assert.match(prompt, /Optional verification suggestions and checks reported as completed do not count/);
   assert.match(prompt, /with no other remaining work or questions/);
+});
+
+test('planner judgment recognizes explicit human escalation with precedence over approval', () => {
+  const response = '## Human Escalation\nEscalation required: human must decide the persistence boundary.\nI approve implementation.';
+  const prompt = classifyPlannerOutcomePrompt({ phaseNumber: 2, phaseCount: 4, plannerTurn: response });
+  assert.match(prompt, /unattended routing judgment/);
+  assert.match(prompt, /Human Escalation section explicitly states "Escalation required:"/);
+  assert.match(prompt, /active issue requiring human intervention before work continues/);
+  assert.match(prompt, /takes precedence over approval/);
+  assert.match(prompt, /"No escalation\.", resolved or historical escalations/);
+  assert.match(prompt, /disagreements without a human stop condition do not require escalation/);
+  assert.ok(prompt.includes(`<planner_response>\n${response}\n</planner_response>`));
+  assert.doesNotMatch(prompt, /repeatedly disagreed/);
 });
 
 test('planner outcomes use one tagged result including severe flags', () => {

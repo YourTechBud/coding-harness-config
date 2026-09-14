@@ -32,7 +32,7 @@ test('severe flag feedback is an actionable warning', () => {
     kind: 'warning',
     phase: 'human-intervention',
     message:
-      'Phase 2 paused — the planner raised a severe flag.\n\nResolve it in the planner pane, then Continue. The latest planner response will be sent to the implementer verbatim.',
+      'Phase 2 paused — the planner requested human escalation.\n\nResolve it in the planner pane, then Continue. The latest planner response will be forwarded to the implementer with human-resolution context.',
   });
 });
 

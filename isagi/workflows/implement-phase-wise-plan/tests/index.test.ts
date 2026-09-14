@@ -101,15 +101,27 @@ test("every non-complete implementer turn returns to the planner, including afte
   assert.equal(harness.sentPrompts[0]?.agentSessionId, 11);
   assert.match(
     harness.sentPrompts[0]?.text ?? "",
-    /^I am implementing phase 2\./,
+    /^You are the planner for phase 2, working unattended/,
   );
   assert.match(
     harness.sentPrompts[0]?.text ?? "",
     /another architectural question/,
   );
+  const prompt = harness.sentPrompts[0]?.text ?? "";
+  assert.match(prompt, /<implementer_response>\nImplementation started/);
+  assert.match(prompt, /- Push back on the implementer's understanding/);
+  assert.match(prompt, /- Answer the implementer's questions.*conversation, ADRs, and guidance/);
+  assert.match(prompt, /- Feel free to refactor or update the phase scope.*decision log instead of modifying the plan file/);
+  assert.match(prompt, /- Escalate major questions or decisions.*severely affect the architecture or product.*Human Escalation.*"No escalation\.".*"Escalation required:"/);
+  assert.match(prompt, /- Always mention nuances and considerations.*deep understanding/);
+  assert.match(prompt, /- Keep fallback logic to a minimum.*only if absolutely necessary/);
+  assert.match(prompt, /- Only approve implementation once.*no outstanding clarifying questions/);
+  assert.match(prompt, /- Run tasks and shell commands in the foreground/);
+  assert.equal(prompt.split("\n").filter((line) => line.startsWith("- ")).length, 8);
+  assert.doesNotMatch(prompt, /I want you to|I am implementing|repeatedly disagreed/);
 });
 
-test("planner feedback is sent with only the alignment footer", async () => {
+test("planner feedback is attributed and preserves the alignment bullets", async () => {
   const harness = workflowHarness();
   const result = await workflow.step(
     harness.ctx,
@@ -127,17 +139,18 @@ test("planner feedback is sent with only the alignment footer", async () => {
   assert.equal(harness.sentPrompts[0]?.agentSessionId, 22);
   assert.match(
     harness.sentPrompts[0]?.text ?? "",
-    /^The boundary belongs in the runtime\. Please revise your approach\.\n\nI want you to:/,
+    /<planner_response>\nThe boundary belongs in the runtime\. Please revise your approach\.\n<\/planner_response>/,
   );
   assert.doesNotMatch(
     harness.sentPrompts[0]?.text ?? "",
-    /Implement the phase/,
+    /Implement the agreed phase/,
   );
+  assertAlignmentBullets(harness.sentPrompts[0]?.text ?? "");
 });
 
-test("planner approval is sent verbatim without the alignment footer", async () => {
+test("planner approval is attributed without the alignment footer", async () => {
   const harness = workflowHarness();
-  const plannerTurn = "No flags. I approve implementation.";
+  const plannerTurn = "## Human Escalation\nNo escalation.\n\nI approve implementation.";
   await workflow.step(
     harness.ctx,
     activeState({
@@ -149,12 +162,16 @@ test("planner approval is sent verbatim without the alignment footer", async () 
     headlessResult('{"outcome":"approved"}'),
   );
 
-  assert.equal(harness.sentPrompts[0]?.text, plannerTurn);
+  const prompt = harness.sentPrompts[0]?.text ?? "";
+  assert.match(prompt, /^The planner has approved implementation of phase 2/);
+  assert.ok(prompt.includes(`<planner_response>\n${plannerTurn}\n</planner_response>`));
+  assert.match(prompt, /working unattended/);
+  assert.doesNotMatch(prompt, /Begin implementation only when/);
 });
 
-test("severe flag continuation sends the latest planner turn verbatim without reclassification", async () => {
+test("human escalation continuation attributes the latest planner turn without reclassification", async () => {
   const severePlannerTurn =
-    "FLAGS\n\nSevere: this changes the persistence boundary.";
+    "## Human Escalation\n\nEscalation required: this changes the persistence boundary; the human must approve that change.";
   const harness = workflowHarness({
     conversationHistory: [
       message("user", "Resolve this flag."),
@@ -185,10 +202,11 @@ test("severe flag continuation sends the latest planner turn verbatim without re
 
   assert.equal(resumed.type, "suspend");
   assert.equal(harness.sentPrompts.length, 1);
-  assert.deepEqual(harness.sentPrompts[0], {
-    agentSessionId: 22,
-    text: severePlannerTurn,
-  });
+  assert.equal(harness.sentPrompts[0]?.agentSessionId, 22);
+  const prompt = harness.sentPrompts[0]?.text ?? "";
+  assert.match(prompt, /^The human has continued the workflow/);
+  assert.ok(prompt.includes(`<planner_response>\n${severePlannerTurn}\n</planner_response>`));
+  assert.match(prompt, /working unattended again/);
   assert.equal(harness.headlessLaunchCount, 0);
 });
 
@@ -244,10 +262,12 @@ test("mock-ui phase selects the UI-heavy profile without a classifier", async ()
   assert.deepEqual(harness.spawnedSessions[0]?.modifiers, [
     { kind: "skill", name: "designing-ui" },
   ]);
-  assert.equal(
-    harness.spawnedSessions[0]?.prompt,
-    "I want to start designing mock UIs for phase 2 in docs/plan.md. Before creating any mockups, walk me through what the phase is about and what we need to achieve, ask me questions so we can establish a shared understanding.",
-  );
+  const prompt = harness.spawnedSessions[0]?.prompt ?? "";
+  assert.match(prompt, /^You are preparing the human-led mock-UI work for phase 2 in docs\/plan.md/);
+  assert.match(prompt, /Before creating mockups/);
+  assert.match(prompt, /Ask the human the questions/);
+  assert.match(prompt, /hand control to the human after this response/);
+  assert.doesNotMatch(prompt, /unattended/);
 });
 
 test("non-mock phase keeps the default alignment prompt without modifiers", async () => {
@@ -265,12 +285,9 @@ test("non-mock phase keeps the default alignment prompt without modifiers", asyn
   assert.equal(harness.spawnedSessions[0]?.modifiers, undefined);
   assert.match(
     harness.spawnedSessions[0]?.prompt ?? "",
-    /^Implement the phase 2 in docs\/plan\.md\./,
+    /^You are the implementer for phase 2 in docs\/plan\.md, working unattended/,
   );
-  assert.match(
-    harness.spawnedSessions[0]?.prompt ?? "",
-    /Never start implementing unless I explicitly say so/,
-  );
+  assertAlignmentBullets(harness.spawnedSessions[0]?.prompt ?? "");
 });
 
 test("non-mock phase still uses the implementer-kind classifier", async () => {
@@ -786,6 +803,18 @@ function message(role: "user" | "assistant", text: string) {
     role,
     parts: [{ type: "text" as const, text, state: "done" as const }],
   };
+}
+
+function assertAlignmentBullets(prompt: string): void {
+  assert.match(prompt, /- Ask clarifying questions until you and the planner.*do not use the askUserQuestion tool/);
+  assert.match(prompt, /- Push back on the planner's ideas/);
+  assert.match(prompt, /- Flag or highlight major shortcomings or opportunities to simplify logic/);
+  assert.match(prompt, /- Clearly state your understanding/);
+  assert.match(prompt, /- Run tasks and shell commands in the foreground/);
+  assert.match(prompt, /- Explicitly state when alignment is established/);
+  assert.match(prompt, /- Begin implementation only when the planner explicitly approves it/);
+  assert.equal(prompt.split("\n").filter((line) => line.startsWith("- ")).length, 7);
+  assert.doesNotMatch(prompt, /I want you to|my ideas|I explicitly say so/);
 }
 
 function unexpected(name: string): never {

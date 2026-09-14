@@ -7,7 +7,7 @@ export function completionReportPrompt(input: {
 }): string {
   const phase = `phase ${input.phaseNumber} of ${input.phaseCount} in ${input.entryPlanPath}`;
   if (input.checkpoint === 'before-review') {
-    return `We are checking whether ${phase} is ready for review.
+    return `The workflow is checking whether ${phase} is ready for review.
 
 Is there anything explicitly left in this phase to complete, apart from human verification? Check the entire agreed phase scope against what has actually been completed, rather than only your latest implementation work.
 
@@ -17,7 +17,7 @@ Otherwise, explicitly state that the phase's implementation is complete and can 
 
 This turn is for reporting only; do not implement changes. You are running unattended, so include questions in your response for the workflow to forward to the planner.`;
   }
-  return `${input.autoReview ? 'Automatic review has completed' : 'Automatic review is disabled for this run'}. We are checking ${phase} before human approval and optional commit.
+  return `${input.autoReview ? 'Automatic review has completed' : 'Automatic review is disabled for this run'}. The workflow is checking ${phase} before human approval and optional commit.
 
 Check the entire agreed phase scope against the current implementation, including any changes made during review.
 
