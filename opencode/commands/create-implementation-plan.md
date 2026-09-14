@@ -108,6 +108,8 @@ pays_back_in: []
 
 ## Phase contract
 
+Near the top of every phase file, explicitly instruct the implementer to treat the entire phase as one unit of execution: carry all in-scope work, repayment of debt from earlier phases assigned to this phase, required verification, and the decision-log handoff through to completion together, rather than stopping after individual subtasks or delivering a partial phase. Pause only for a genuine blocker or required human input or judgment, state what remains, and resume the same phase when resolved. Internal work sequencing is flexible; the completion boundary is the whole phase.
+
 Keep each phase file readable and adapt its structure to the work, but make these items easy to find:
 
 - The intended outcome and its architectural role.
@@ -133,9 +135,11 @@ A phase that intentionally leaves failures must list the expected failing checks
 
 The plan is mutable until implementation begins. Once implementation starts, implementers treat the plan files as frozen and record execution reality in `decisions.md`.
 
-Specify in `index.md` that `decisions.md` is strictly append-only: preserve existing entries unchanged and append corrections or superseding decisions as new entries that reference the earlier ones. It records execution decisions and their supporting context, never task or phase statuses, progress tracking, or completion checklists; keep any such tracking outside the decision log.
+Specify in `index.md` that `decisions.md` is strictly append-only: preserve all existing content and entry order unchanged, including during cleanup or summarization. Append corrections or superseding decisions as new entries that reference the earlier ones. It records execution decisions and their supporting context, never task or phase statuses, progress tracking, or completion checklists; keep any such tracking outside the decision log.
 
-Tell every phase implementer to read `index.md`, its phase file, and the existing decision log before working. Make the final step of every phase append a new entry identifying the phase and containing decisions and rationale, deviations from the plan, relevant verification evidence, debt decisions, and anything the next phase must know. The first implementer creates the file.
+Keep each new entry as short as possible: identify the phase, state the material decision or deviation, and give its essential rationale. Include verification evidence, debt implications, or next-phase context only when needed to understand or act on that decision; reference existing artifacts instead of repeating their contents.
+
+Tell every phase implementer to read `index.md`, its phase file, and the existing decision log before working. Make the final step of every phase append only material decisions not already recorded, leaving the log unchanged when there are none. The first implementer with an entry creates the file.
 
 ## Finish
 
