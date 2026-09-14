@@ -32,7 +32,7 @@ export const implementerProseHeavy = {
 
 export const headlessJudgment = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-5.6-terra",
   effort: "medium",
 } satisfies {
   readonly harness: WorkflowAgentHarness;

@@ -65,11 +65,10 @@ test('implementer outcome prompt requires an explicit request for further verifi
   });
 
   assert.match(prompt, /phase-complete-awaiting-human-verification/);
-  assert.match(prompt, /explicitly says that human verification is required/);
-  assert.match(prompt, /asks someone else to perform required verification/);
-  assert.match(prompt, /Do not infer pending verification/);
-  assert.match(prompt, /reports as completed/);
-  assert.match(prompt, /does not require a planner response/);
+  assert.match(prompt, /explicitly identifies outstanding required human verification/);
+  assert.match(prompt, /Remaining work and questions take precedence/);
+  assert.match(prompt, /Optional verification suggestions and checks reported as completed do not count/);
+  assert.match(prompt, /with no other remaining work or questions/);
 });
 
 test('planner outcomes use one tagged result including severe flags', () => {

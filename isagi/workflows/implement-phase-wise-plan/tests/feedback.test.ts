@@ -73,7 +73,8 @@ test('mock checkpoint explains the human-owned work and conditional commit hando
   assert.match(committed.message ?? '', /UI-heavy pane/);
   assert.match(committed.message ?? '', /visual iteration/);
   assert.match(committed.message ?? '', /decision-log handoff/);
-  assert.match(committed.message ?? '', /run the engineering review after Continue/);
+  assert.match(committed.message ?? '', /After the completeness check.*run the engineering review/);
+  assert.match(committed.message ?? '', /Continue when ready.*check phase completeness/);
   assert.match(committed.message ?? '', /Leave the changes uncommitted/);
 
   const uncommitted = renderWorkflowStatus({
@@ -84,8 +85,8 @@ test('mock checkpoint explains the human-owned work and conditional commit hando
     autoReview: false,
     autoCommit: false,
   });
-  assert.match(uncommitted.message ?? '', /Run the review before continuing/);
-  assert.doesNotMatch(uncommitted.message ?? '', /run the engineering review after Continue/);
+  assert.match(uncommitted.message ?? '', /Automatic review is disabled/);
+  assert.doesNotMatch(uncommitted.message ?? '', /run the engineering review/);
   assert.doesNotMatch(uncommitted.message ?? '', /Leave the changes uncommitted/);
 });
 

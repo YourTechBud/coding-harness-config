@@ -298,469 +298,163 @@ test("non-mock phase still uses the implementer-kind classifier", async () => {
   );
 });
 
-test("mock-ui completion starts enabled auto review before commit", async () => {
-  const harness = workflowHarness();
-  const result = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-implementer-turn",
-        implementer: { agentSessionId: 22, paneId: 32 },
-        activity: "alignment",
-        exchangeNumber: 1,
-      },
-      { phaseType: "mock-ui", autoReview: true, humanInTheLoop: false },
-    ),
-    { outcome: "ended", recordedAt: "2026-07-10T00:00:00.000Z" },
-  );
+const implementer = { agentSessionId: 22, paneId: 32 };
+const endedTurn = { outcome: "ended", recordedAt: "2026-07-10T00:00:00.000Z" };
+const completeOutcome = headlessResult('{"outcome":"phase-complete"}');
+const verificationOutcome = headlessResult('{"outcome":"phase-complete-awaiting-human-verification"}');
 
-  assert.equal(result.type, "suspend");
-  assert.equal(
-    result.type === "suspend" ? result.condition.kind : undefined,
-    "user_continue",
-  );
-  assert.equal(
-    result.type === "suspend"
-      ? (result.state as WorkflowState).stage.kind
-      : undefined,
-    "await-human-completion",
-  );
-  assert.equal(harness.headlessLaunchCount, 0);
-  assert.equal(harness.startedWorkflows.length, 0);
+function completionState(checkpoint: "before-review" | "after-review", options?: Parameters<typeof activeState>[1]) {
+  return activeState({
+    kind: "await-completion-outcome", implementer, checkpoint,
+    implementerTurn: "Implementation complete; verify manually.", exchangeNumber: 3,
+  }, options);
+}
 
-  const resumed = await workflow.step(harness.ctx, suspendedState(result), {
-    kind: "user_continue",
+function stageOf(result: WorkflowResult) {
+  assert.ok(result.type === "suspend" || result.type === "cont");
+  return (result.state as WorkflowState).stage;
+}
+
+for (const activity of ["alignment", "implementation"] as const) {
+  test(`${activity} turn uses its requested purpose to select the completion gate`, async () => {
+    const harness = workflowHarness({ conversationHistory: [message("assistant", "Only half implemented.")] });
+    const result = await workflow.step(harness.ctx, activeState({
+      kind: "await-implementer-turn", implementer, activity, exchangeNumber: 3,
+    }), endedTurn);
+    assert.equal(stageOf(result).kind, activity === "implementation" ? "await-completion-report" : "await-implementer-outcome");
+    assert.equal(harness.sentPrompts.length, activity === "implementation" ? 1 : 0);
+    assert.equal(harness.headlessLaunchCount, activity === "implementation" ? 0 : 1);
   });
-  assert.equal(resumed.type, "suspend");
-  assert.equal(
-    resumed.type === "suspend"
-      ? (resumed.state as WorkflowState).stage.kind
-      : undefined,
-    "await-auto-review",
-  );
-  assert.deepEqual(harness.startedWorkflows, [
-    {
-      workflowKey: "engineering-guidance-review-loop",
-      variables: {
-        context:
-          "We are currently implementing phase 2 of the plan in docs/plan.md. Review all the changes since HEAD.",
-      },
-    },
-  ]);
+}
 
-  assert.deepEqual(harness.workflowContexts, [{ agentSessionId: 22 }]);
-
-  const reviewed = await workflow.step(
-    harness.ctx,
-    suspendedState(resumed),
-    workflowResult(44, {
-      outcome: "workflow-executed-successfully",
-      reviewCount: 1,
-    }),
-  );
-  assert.equal(
-    reviewed.type === "cont"
-      ? (reviewed.state as WorkflowState).stage.kind
-      : undefined,
-    "start-commit",
-  );
-});
-
-test("mock-ui phase pauses for human approval after enabled auto review", async () => {
-  const harness = workflowHarness();
-  const reviewStarted = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-human-completion",
-        implementer: { agentSessionId: 22, paneId: 32 },
-      },
-      { phaseType: "mock-ui", autoReview: true, humanInTheLoop: true },
-    ),
-    { kind: "user_continue" },
-  );
-
-  const approval = await workflow.step(
-    harness.ctx,
-    suspendedState(reviewStarted),
-    workflowResult(44, {
-      outcome: "workflow-executed-successfully",
-      reviewCount: 1,
-    }),
-  );
-  assert.equal(approval.type, "suspend");
-  assert.equal(
-    approval.type === "suspend"
-      ? (approval.state as WorkflowState).stage.kind
-      : undefined,
-    "await-mock-human-approval",
-  );
-  assert.equal(harness.feedback.at(-1)?.phase, "phase-review");
-
-  const approved = await workflow.step(
-    harness.ctx,
-    suspendedState(approval),
-    { kind: "user_continue" },
-  );
-  assert.equal(
-    approved.type === "cont"
-      ? (approved.state as WorkflowState).stage.kind
-      : undefined,
-    "start-commit",
-  );
-});
-
-test("mock-ui phase keeps the human approval checkpoint when auto review is disabled", async () => {
-  const harness = workflowHarness();
-  const approval = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-human-completion",
-        implementer: { agentSessionId: 22, paneId: 32 },
-      },
-      { phaseType: "mock-ui", autoReview: false, humanInTheLoop: true },
-    ),
-    { kind: "user_continue" },
-  );
-
-  assert.equal(approval.type, "suspend");
-  assert.equal(
-    approval.type === "suspend"
-      ? (approval.state as WorkflowState).stage.kind
-      : undefined,
-    "await-mock-human-approval",
-  );
-  assert.equal(harness.startedWorkflows.length, 0);
-
-  const approved = await workflow.step(
-    harness.ctx,
-    suspendedState(approval),
-    { kind: "user_continue" },
-  );
-  assert.equal(
-    approved.type === "cont"
-      ? (approved.state as WorkflowState).stage.kind
-      : undefined,
-    "start-commit",
-  );
-});
-
-test("mock-ui phase advances directly when every optional completion step is disabled", async () => {
-  const harness = workflowHarness();
-  const result = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-human-completion",
-        implementer: { agentSessionId: 22, paneId: 32 },
-      },
-      {
-        phaseType: "mock-ui",
-        autoReview: false,
-        humanInTheLoop: false,
-        autoCommit: false,
-      },
-    ),
-    { kind: "user_continue" },
-  );
-
-  assert.equal(result.type, "cont");
-  assert.equal(
-    result.type === "cont"
-      ? (result.state as WorkflowState).stage.kind
-      : undefined,
-    "advance-phase",
-  );
-  assert.equal(harness.startedWorkflows.length, 0);
-  assert.equal(harness.headlessLaunchCount, 0);
-});
-
-test("completed phase starts the review child with phase-specific context", async () => {
-  const harness = workflowHarness();
-  const result = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-implementer-outcome",
-        implementer: { agentSessionId: 22, paneId: 32 },
-        implementerTurn: "Phase complete.",
-        exchangeNumber: 3,
-      },
-      { autoReview: true },
-    ),
-    headlessResult('{"outcome":"phase-complete"}'),
-  );
-
-  assert.equal(result.type, "suspend");
-  assert.deepEqual(result.type === "suspend" ? result.condition : undefined, {
-    kind: "workflow",
-    runIds: [44],
+for (const outcome of [completeOutcome, verificationOutcome]) {
+  test(`alignment completion claim gets an explicit check: ${JSON.stringify(outcome)}`, async () => {
+    const harness = workflowHarness();
+    const result = await workflow.step(harness.ctx, activeState({
+      kind: "await-implementer-outcome", implementer,
+      implementerTurn: "Phase complete", exchangeNumber: 3,
+    }), outcome);
+    assert.equal(stageOf(result).kind, "await-completion-report");
+    assert.equal(harness.startedWorkflows.length, 0);
   });
-  assert.deepEqual(harness.startedWorkflows, [
-    {
-      workflowKey: "engineering-guidance-review-loop",
-      variables: {
-        context:
-          "We are currently implementing phase 2 of the plan in docs/plan.md. Review all the changes since HEAD.",
-      },
-    },
-  ]);
+}
+
+for (const checkpoint of ["before-review", "after-review"] as const) {
+  test(`${checkpoint} reads the complete report and uses the shared classifier`, async () => {
+    const harness = workflowHarness({ conversationHistory: [
+      message("assistant", "## Anything left in the phase\nImplementation complete."),
+      message("assistant", "## Anything the human needs to verify\nVerify on device."),
+    ] });
+    const result = await workflow.step(harness.ctx, activeState({
+      kind: "await-completion-report", implementer, checkpoint, exchangeNumber: 3,
+    }), endedTurn);
+    const stage = stageOf(result);
+    assert.equal(stage.kind, "await-completion-outcome");
+    assert.match(harness.headlessLaunches[0]?.prompt ?? "", new RegExp(`Turn purpose: ${checkpoint}`));
+    assert.match(harness.headlessLaunches[0]?.prompt ?? "", /Verify on device/);
+    assert.match(harness.headlessLaunches[0]?.prompt ?? "", /Implementation complete/);
+  });
+
+  test(`${checkpoint} remaining work and questions return the full report to the planner`, async () => {
+    const harness = workflowHarness();
+    const report = "Half remains. My understanding is X. Should we use Y? Human verification also remains.";
+    const state = completionState(checkpoint);
+    const result = await workflow.step(harness.ctx, {
+      ...state, stage: { ...state.stage, implementerTurn: report },
+    } as WorkflowState, headlessResult('{"outcome":"planner-response-needed"}'));
+    assert.equal(stageOf(result).kind, "await-planner-turn");
+    assert.equal(harness.sentPrompts[0]?.agentSessionId, 11);
+    assert.ok(harness.sentPrompts[0]?.text.includes(report));
+    assert.equal(harness.startedWorkflows.length, 0);
+  });
+
+  test(`${checkpoint} failed report turn stops without advancing`, async () => {
+    const harness = workflowHarness();
+    const result = await workflow.step(harness.ctx, activeState({
+      kind: "await-completion-report", implementer, checkpoint, exchangeNumber: 3,
+    }), { outcome: "failed", recordedAt: endedTurn.recordedAt, reason: "transport failed" });
+    assert.equal(result.type, "fail");
+    assert.equal(harness.startedWorkflows.length, 0);
+  });
+}
+
+for (const autoReview of [false, true]) {
+  for (const outcome of [completeOutcome, verificationOutcome]) {
+    test(`pre-review completion honors autoReview=${autoReview}: ${JSON.stringify(outcome)}`, async () => {
+      const harness = workflowHarness();
+      const result = await workflow.step(harness.ctx, completionState("before-review", { autoReview }), outcome);
+      assert.equal(stageOf(result).kind, autoReview ? "await-auto-review" : "await-completion-report");
+      assert.equal(harness.startedWorkflows.length, autoReview ? 1 : 0);
+      if (autoReview) {
+        assert.deepEqual(harness.workflowContexts, [{ agentSessionId: 22 }]);
+        assert.match(String(harness.startedWorkflows[0]?.variables?.context), /phase 2.*docs\/plan.md.*since HEAD/);
+      } else {
+        assert.match(harness.sentPrompts[0]?.text ?? "", /Automatic review is disabled/);
+      }
+    });
+  }
+}
+
+test("review completion requests a fresh final report, including for older persisted states", async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(harness.ctx, activeState({
+    kind: "await-auto-review", implementer, runId: 44, requiresHumanVerification: true,
+  }, { autoReview: true }), workflowResult(44, { outcome: "workflow-executed-successfully", reviewCount: 2 }));
+  assert.equal(stageOf(result).kind, "await-completion-report");
+  assert.match(harness.sentPrompts[0]?.text ?? "", /Automatic review has completed/);
 });
 
-test("required human verification runs enabled auto review before forcing a human checkpoint", async () => {
-  const harness = workflowHarness();
-  const reviewStarted = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-implementer-outcome",
-        implementer: { agentSessionId: 22, paneId: 32 },
-        implementerTurn:
-          "Implementation is done, but a human must verify it manually.",
-        exchangeNumber: 3,
-      },
-      { autoReview: true, humanInTheLoop: false },
-    ),
-    headlessResult('{"outcome":"phase-complete-awaiting-human-verification"}'),
-  );
+for (const phaseType of ["implementation", "mock-ui", "docs"] as const) {
+  for (const autoCommit of [false, true]) {
+    test(`${phaseType} final completion honors autoCommit=${autoCommit} without forced approval`, async () => {
+      const harness = workflowHarness();
+      const result = await workflow.step(harness.ctx, completionState("after-review", {
+        phaseType, autoCommit, humanInTheLoop: false,
+      }), completeOutcome);
+      assert.equal(stageOf(result).kind, autoCommit ? "start-commit" : "advance-phase");
+      assert.equal(harness.startedWorkflows.length, 0);
+      assert.equal(harness.headlessLaunchCount, 0);
+    });
+  }
+  for (const requiredVerification of [false, true]) {
+    test(`${phaseType} pauses for ${requiredVerification ? "required verification" : "configured approval"}`, async () => {
+      const harness = workflowHarness();
+      const result = await workflow.step(harness.ctx, completionState("after-review", {
+        phaseType, humanInTheLoop: !requiredVerification,
+      }), requiredVerification ? verificationOutcome : completeOutcome);
+      assert.equal(result.type, "suspend");
+      assert.equal(result.type === "suspend" && result.condition.kind, "user_continue");
+      assert.equal(stageOf(result).kind, phaseType === "mock-ui" ? "await-mock-human-approval" : "await-human-completion");
+      assert.equal(harness.feedback.at(-1)?.phase, requiredVerification ? "phase-human-verification" : "phase-review");
+      const approved = await workflow.step(harness.ctx, suspendedState(result), { kind: "user_continue" });
+      assert.equal(stageOf(approved).kind, "start-commit");
+    });
+  }
+}
 
-  assert.equal(reviewStarted.type, "suspend");
-  assert.equal(
-    reviewStarted.type === "suspend"
-      ? (reviewStarted.state as WorkflowState).stage.kind
-      : undefined,
-    "await-auto-review",
-  );
+test("mock-ui retains its initial human work period, then checks completeness", async () => {
+  const harness = workflowHarness();
+  const paused = await workflow.step(harness.ctx, activeState({
+    kind: "await-implementer-turn", implementer, activity: "alignment", exchangeNumber: 1,
+  }, { phaseType: "mock-ui" }), endedTurn);
+  assert.equal(stageOf(paused).kind, "await-human-completion");
+  const checked = await workflow.step(harness.ctx, suspendedState(paused), { kind: "user_continue" });
+  assert.equal(stageOf(checked).kind, "await-completion-report");
+  assert.equal(harness.startedWorkflows.length, 0);
+});
+
+test("remaining work after review goes through planner, implementation, completeness, and review again", async () => {
+  const harness = workflowHarness({ conversationHistory: [message("assistant", "Implementation complete.")] });
+  const pending = await workflow.step(harness.ctx, completionState("after-review", { phaseType: "mock-ui", autoReview: true }),
+    headlessResult('{"outcome":"planner-response-needed"}'));
+  const plannerTurn = await workflow.step(harness.ctx, suspendedState(pending), endedTurn);
+  const implementing = await workflow.step(harness.ctx, suspendedState(plannerTurn), headlessResult('{"outcome":"approved"}'));
+  const checking = await workflow.step(harness.ctx, suspendedState(implementing), endedTurn);
+  assert.equal(stageOf(checking).kind, "await-completion-report");
+  const judging = await workflow.step(harness.ctx, suspendedState(checking), endedTurn);
+  const reviewing = await workflow.step(harness.ctx, suspendedState(judging), completeOutcome);
+  assert.equal(stageOf(reviewing).kind, "await-auto-review");
   assert.equal(harness.startedWorkflows.length, 1);
-
-  const verificationRequired = await workflow.step(
-    harness.ctx,
-    suspendedState(reviewStarted),
-    workflowResult(44, {
-      outcome: "workflow-executed-successfully",
-      reviewCount: 1,
-    }),
-  );
-
-  assert.equal(verificationRequired.type, "suspend");
-  assert.equal(
-    verificationRequired.type === "suspend"
-      ? verificationRequired.condition.kind
-      : undefined,
-    "user_continue",
-  );
-  assert.equal(
-    verificationRequired.type === "suspend"
-      ? (verificationRequired.state as WorkflowState).stage.kind
-      : undefined,
-    "await-human-completion",
-  );
-});
-
-test("required human verification forces a checkpoint when auto review and phase review are disabled", async () => {
-  const harness = workflowHarness();
-  const result = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-implementer-outcome",
-        implementer: { agentSessionId: 22, paneId: 32 },
-        implementerTurn:
-          "Implementation is done, but a human must verify it manually.",
-        exchangeNumber: 3,
-      },
-      { autoReview: false, humanInTheLoop: false },
-    ),
-    headlessResult('{"outcome":"phase-complete-awaiting-human-verification"}'),
-  );
-
-  assert.equal(result.type, "suspend");
-  assert.equal(
-    result.type === "suspend" ? result.condition.kind : undefined,
-    "user_continue",
-  );
-  assert.equal(
-    result.type === "suspend"
-      ? (result.state as WorkflowState).stage.kind
-      : undefined,
-    "await-human-completion",
-  );
-  assert.equal(harness.startedWorkflows.length, 0);
-});
-
-test("docs phase runs enabled auto review before forcing human approval", async () => {
-  const harness = workflowHarness();
-  const reviewStarted = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-implementer-outcome",
-        implementer: { agentSessionId: 22, paneId: 32 },
-        implementerTurn: "Documentation phase complete.",
-        exchangeNumber: 3,
-      },
-      { phaseType: "docs", autoReview: true, humanInTheLoop: false },
-    ),
-    headlessResult('{"outcome":"phase-complete"}'),
-  );
-
-  assert.equal(reviewStarted.type, "suspend");
-  assert.equal(
-    reviewStarted.type === "suspend"
-      ? (reviewStarted.state as WorkflowState).stage.kind
-      : undefined,
-    "await-auto-review",
-  );
-  assert.equal(harness.startedWorkflows.length, 1);
-
-  const awaitingApproval = await workflow.step(
-    harness.ctx,
-    suspendedState(reviewStarted),
-    workflowResult(44, {
-      outcome: "workflow-executed-successfully",
-      reviewCount: 1,
-    }),
-  );
-
-  assert.equal(awaitingApproval.type, "suspend");
-  assert.equal(
-    awaitingApproval.type === "suspend"
-      ? (awaitingApproval.state as WorkflowState).stage.kind
-      : undefined,
-    "await-human-completion",
-  );
-  assert.equal(harness.feedback.at(-1)?.phase, "phase-review");
-
-  const approved = await workflow.step(
-    harness.ctx,
-    suspendedState(awaitingApproval),
-    { kind: "user_continue" },
-  );
-  assert.equal(
-    approved.type === "cont"
-      ? (approved.state as WorkflowState).stage.kind
-      : undefined,
-    "start-commit",
-  );
-});
-
-test("docs phase respects disabled auto review and commit while still forcing human approval", async () => {
-  const harness = workflowHarness();
-  const awaitingApproval = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-implementer-outcome",
-        implementer: { agentSessionId: 22, paneId: 32 },
-        implementerTurn: "Documentation phase complete.",
-        exchangeNumber: 3,
-      },
-      {
-        phaseType: "docs",
-        autoReview: false,
-        autoCommit: false,
-        humanInTheLoop: false,
-      },
-    ),
-    headlessResult('{"outcome":"phase-complete"}'),
-  );
-
-  assert.equal(awaitingApproval.type, "suspend");
-  assert.equal(
-    awaitingApproval.type === "suspend"
-      ? (awaitingApproval.state as WorkflowState).stage.kind
-      : undefined,
-    "await-human-completion",
-  );
-  assert.equal(harness.startedWorkflows.length, 0);
-  assert.equal(harness.feedback.at(-1)?.phase, "phase-review");
-
-  const approved = await workflow.step(
-    harness.ctx,
-    suspendedState(awaitingApproval),
-    { kind: "user_continue" },
-  );
-  assert.equal(
-    approved.type === "cont"
-      ? (approved.state as WorkflowState).stage.kind
-      : undefined,
-    "advance-phase",
-  );
-});
-
-test("disabled auto review skips directly to commit when no human approval is required", async () => {
-  const harness = workflowHarness();
-  const result = await workflow.step(
-    harness.ctx,
-    activeState({
-      kind: "await-implementer-outcome",
-      implementer: { agentSessionId: 22, paneId: 32 },
-      implementerTurn: "Phase complete.",
-      exchangeNumber: 3,
-    }),
-    headlessResult('{"outcome":"phase-complete"}'),
-  );
-
-  assert.equal(result.type, "cont");
-  assert.equal(
-    result.type === "cont"
-      ? (result.state as WorkflowState).stage.kind
-      : undefined,
-    "start-commit",
-  );
-  assert.equal(harness.startedWorkflows.length, 0);
-});
-
-test("disabled auto commit advances without launching the commit agent", async () => {
-  const harness = workflowHarness();
-  const result = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-implementer-outcome",
-        implementer: { agentSessionId: 22, paneId: 32 },
-        implementerTurn: "Phase complete.",
-        exchangeNumber: 3,
-      },
-      { autoCommit: false },
-    ),
-    headlessResult('{"outcome":"phase-complete"}'),
-  );
-
-  assert.equal(result.type, "cont");
-  assert.equal(
-    result.type === "cont"
-      ? (result.state as WorkflowState).stage.kind
-      : undefined,
-    "advance-phase",
-  );
-  assert.equal(harness.headlessLaunchCount, 0);
-});
-
-test("successful auto review waits for human approval when enabled", async () => {
-  const harness = workflowHarness();
-  const result = await workflow.step(
-    harness.ctx,
-    activeState(
-      {
-        kind: "await-auto-review",
-        implementer: { agentSessionId: 22, paneId: 32 },
-        runId: 44,
-      },
-      { autoReview: true, humanInTheLoop: true },
-    ),
-    workflowResult(44, {
-      outcome: "workflow-executed-successfully",
-      reviewCount: 2,
-    }),
-  );
-
-  assert.equal(result.type, "suspend");
-  assert.equal(
-    result.type === "suspend" ? result.condition.kind : undefined,
-    "user_continue",
-  );
 });
 
 test("malformed review child success stops the parent workflow", async () => {

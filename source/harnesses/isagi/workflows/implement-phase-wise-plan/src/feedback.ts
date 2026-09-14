@@ -15,6 +15,7 @@ export type WorkflowStatus =
   | { readonly kind: 'planner-reviewing'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'implementing'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'severe-flag'; readonly phase: number }
+  | { readonly kind: 'completion-check'; readonly phase: number; readonly phaseCount: number; readonly checkpoint: 'before-review' | 'after-review' }
   | { readonly kind: 'auto-review'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'phase-review'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'human-verification'; readonly phase: number; readonly phaseCount: number }
@@ -89,6 +90,12 @@ export function renderWorkflowStatus(status: WorkflowStatus): WorkflowUiFeedback
         phase: 'human-intervention',
         message: `Phase ${status.phase} paused — the planner raised a severe flag.\n\nResolve it in the planner pane, then Continue. The latest planner response will be sent to the implementer verbatim.`,
       };
+    case 'completion-check':
+      return {
+        kind: 'info',
+        phase: status.checkpoint === 'before-review' ? 'phase-completeness' : 'phase-final-check',
+        message: `Checking phase ${status.phase} of ${status.phaseCount}: ${status.checkpoint === 'before-review' ? 'remaining implementation work' : 'remaining work and required human verification'}.`,
+      };
     case 'auto-review':
       return {
         kind: 'info',
@@ -109,15 +116,15 @@ export function renderWorkflowStatus(status: WorkflowStatus): WorkflowUiFeedback
       };
     case 'mock-human-completion': {
       const reviewInstruction = status.autoReview
-        ? ' The workflow will run the engineering review after Continue.'
-        : ' Run the review before continuing.';
+        ? ' After the completeness check, the workflow will run the engineering review.'
+        : ' Automatic review is disabled.';
       const commitInstruction = status.autoCommit
         ? ' Leave the changes uncommitted so the workflow can create the phase commit.'
         : '';
       return {
         kind: 'info',
         phase: 'mock-human-completion',
-        message: `Mock-UI phase ${status.phase} of ${status.phaseCount} (${status.phaseSlug}) is ready in the UI-heavy pane. Drive the implementation and visual iteration, and complete the decision-log handoff.${reviewInstruction}${commitInstruction} Continue when the phase is complete.`,
+        message: `Mock-UI phase ${status.phase} of ${status.phaseCount} (${status.phaseSlug}) is ready in the UI-heavy pane. Drive the implementation and visual iteration, and complete the decision-log handoff.${reviewInstruction}${commitInstruction} Continue when ready for the workflow to check phase completeness.`,
       };
     }
     case 'commit':
