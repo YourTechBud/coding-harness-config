@@ -134,7 +134,9 @@ A phase that intentionally leaves failures must list the expected failing checks
 
 The plan is mutable until implementation begins. Once implementation starts, implementers treat the plan files as frozen and record execution reality in `decisions.md`.
 
-Tell every phase implementer to read `index.md`, its phase file, and the existing decision log before working. Make the final step of every phase an update under that phase's heading containing decisions and rationale, deviations from the plan, verification evidence, debt introduced or repaid, and anything the next phase must know. The first implementer creates the file.
+Specify in `index.md` that `decisions.md` is strictly append-only: preserve existing entries unchanged and append corrections or superseding decisions as new entries that reference the earlier ones. It records execution decisions and their supporting context, never task or phase statuses, progress tracking, or completion checklists; keep any such tracking outside the decision log.
+
+Tell every phase implementer to read `index.md`, its phase file, and the existing decision log before working. Make the final step of every phase append a new entry identifying the phase and containing decisions and rationale, deviations from the plan, relevant verification evidence, debt decisions, and anything the next phase must know. The first implementer creates the file.
 
 ## Finish
 
