@@ -67,9 +67,11 @@ test('implementer outcome prompt requires an explicit request for further verifi
 
   assert.match(prompt, /phase-complete-awaiting-human-verification/);
   assert.match(prompt, /explicitly identifies outstanding required human verification/);
-  assert.match(prompt, /Remaining work and questions take precedence/);
+  assert.match(prompt, /actual current-phase blocker takes precedence/);
   assert.match(prompt, /Optional verification suggestions and checks reported as completed do not count/);
-  assert.match(prompt, /with no other remaining work or questions/);
+  assert.match(prompt, /Non-blocking ratification requests.*do not override completion/);
+  assert.match(prompt, /Earlier progress notes about work subsequently completed do not reopen it/);
+  assert.match(prompt, /required receipt validation is still missing/);
 });
 
 test('planner judgment recognizes explicit human escalation with precedence over approval', () => {
@@ -83,15 +85,18 @@ test('planner judgment recognizes explicit human escalation with precedence over
   assert.match(prompt, /disagreements without a human stop condition do not require escalation/);
   assert.ok(prompt.includes(`<planner_response>\n${response}\n</planner_response>`));
   assert.doesNotMatch(prompt, /repeatedly disagreed/);
+  assert.match(prompt, /Requested implementation changes take precedence over completion approval/);
+  assert.match(prompt, /Clarifications, handoff corrections, and decision-log notes alone do not reopen implementation/);
+  assert.match(prompt, /Approval stands; no code changes or further review are needed/);
 });
 
 test('planner outcomes use one tagged result including severe flags', () => {
-  for (const outcome of ['severe-flag', 'approved', 'feedback'] as const) {
+  for (const outcome of ['severe-flag', 'approved', 'completion-approved', 'feedback'] as const) {
     assert.deepEqual(parsePlannerOutcomeResult(`{"outcome":"${outcome}"}`), { outcome });
   }
   assert.throws(
     () => parsePlannerOutcomeResult('{"outcome":"no-flags"}'),
-    /severe-flag, approved, feedback/,
+    /severe-flag, approved, completion-approved, feedback/,
   );
 });
 

@@ -65,6 +65,8 @@ type PlanContext = {
   readonly decisionLogPath: string;
   readonly phases: readonly PlanPhase[];
   readonly currentPhaseIndex: number;
+  // Absent in older version-5 states; only a successful review establishes this fact.
+  readonly reviewComplete?: boolean;
 };
 
 type Implementer = {
@@ -516,7 +518,11 @@ export default defineWorkflow<State, Variables>({
         });
         if (!judgment.ok) return judgment.result;
         if (judgment.value.outcome === "planner-response-needed") {
-          return routeImplementerTurnToPlanner(ctx, activeState, state.stage);
+          return routeImplementerTurnToPlanner(ctx,
+            state.stage.checkpoint === "after-review" && activeState.options.autoReview
+              ? withReviewComplete(activeState, true)
+              : activeState,
+            state.stage);
         }
         if (state.stage.checkpoint === "before-review") {
           return startOptionalReview(ctx, activeState, state.stage.implementer, state.stage.exchangeNumber);
@@ -580,6 +586,10 @@ export default defineWorkflow<State, Variables>({
             wait.userContinue(),
           );
         }
+        if (judgment.value.outcome === "completion-approved") {
+          return requestCompletionReport(ctx, activeState, state.stage.implementer,
+            "before-review", state.stage.exchangeNumber, state.stage.plannerTurn);
+        }
         return sendPlannerTurnToImplementer(ctx, activeState, {
           implementer: state.stage.implementer,
           plannerTurn: state.stage.plannerTurn,
@@ -631,7 +641,7 @@ export default defineWorkflow<State, Variables>({
           "info",
           `Automatic review child workflow ${state.stage.runId} completed phase ${activePhase(activeState).number} after ${reviewResult.reviewCount} review rounds.`,
         );
-        return requestCompletionReport(ctx, activeState, state.stage.implementer, "after-review", state.stage.exchangeNumber ?? 1);
+        return requestCompletionReport(ctx, withReviewComplete(activeState, true), state.stage.implementer, "after-review", state.stage.exchangeNumber ?? 1);
       }
 
       case "await-human-completion": {
@@ -741,7 +751,7 @@ export default defineWorkflow<State, Variables>({
           await ctx.closePane(state.stage.implementer.paneId);
           return cont({
             ...activeState,
-            plan: { ...activeState.plan, currentPhaseIndex: nextPhaseIndex },
+            plan: { ...activeState.plan, currentPhaseIndex: nextPhaseIndex, reviewComplete: false },
             stage: { kind: "done" },
           } satisfies State);
         }
@@ -755,6 +765,7 @@ export default defineWorkflow<State, Variables>({
           plan: {
             ...activeState.plan,
             currentPhaseIndex: nextPhaseIndex,
+            reviewComplete: false,
           },
           stage: { kind: "select-implementer" },
         } satisfies State);
@@ -843,6 +854,7 @@ async function routeImplementerTurnToPlanner(
     prompt: plannerPrompt({
       phaseNumber: activePhase(state).number,
       implementerTurn: input.implementerTurn,
+      reviewComplete: state.plan.reviewComplete === true,
     }),
   });
   return suspend(
@@ -861,7 +873,7 @@ async function sendPlannerTurnToImplementer(
   input: {
     readonly implementer: Implementer;
     readonly plannerTurn: string;
-    readonly outcome: Exclude<PlannerOutcome, "severe-flag">;
+    readonly outcome: Exclude<PlannerOutcome, "severe-flag" | "completion-approved">;
     readonly exchangeNumber: number;
   },
 ): Promise<WorkflowResult> {
@@ -884,7 +896,7 @@ async function sendPlannerTurnToImplementer(
       : implementerFollowUpPrompt(activePhase(state).number, input.plannerTurn),
   });
   return suspend(
-    withStage(state, {
+    withStage(approved ? withReviewComplete(state, false) : state, {
       kind: "await-implementer-turn",
       implementer: input.implementer,
       activity: approved ? "implementation" : "alignment",
@@ -913,7 +925,7 @@ async function sendPlannerTurnAfterHumanResolution(
     prompt: humanResolutionPrompt(activePhase(state).number, input.plannerTurn),
   });
   return suspend(
-    withStage(state, {
+    withStage(withReviewComplete(state, false), {
       kind: "await-implementer-turn",
       implementer: input.implementer,
       activity: "implementation",
@@ -929,7 +941,9 @@ async function requestCompletionReport(
   implementer: Implementer,
   checkpoint: CompletionCheckpoint,
   exchangeNumber: number,
+  plannerTurn?: string,
 ): Promise<WorkflowResult> {
+  if (state.plan.reviewComplete) checkpoint = "after-review";
   await setWorkflowStatus(ctx, {
     kind: "completion-check",
     phase: activePhase(state).number,
@@ -938,7 +952,7 @@ async function requestCompletionReport(
   });
   const sent = await ctx.sendAgentPrompt({
     agentSessionId: implementer.agentSessionId,
-    prompt: completionReportPrompt({
+    prompt: (plannerTurn ? `The planner accepted phase completion. Incorporate this clarification into your report; this does not authorize new implementation work.\n\n<planner_response>\n${plannerTurn}\n</planner_response>\n\n` : "") + completionReportPrompt({
       phaseNumber: activePhase(state).number,
       phaseCount: state.plan.phases.length,
       entryPlanPath: state.plan.entryPlanPath,
@@ -1317,8 +1331,8 @@ Run tasks and shell commands in the foreground, not in the background.`;
 }
 
 function alignmentFooter(): string {
-  return `- Ask clarifying questions until you and the planner have shared understanding and complete alignment on what needs to be done. Include questions in your response for workflow routing; do not use the askUserQuestion tool.
-- Push back on the planner's ideas.
+  return `- Ask clarifying questions when the answer materially changes the current phase's implementation. State reasonable assumptions for routine details. Include blocking questions in your response for workflow routing; do not use the askUserQuestion tool.
+- Push back when you see a concrete correctness, scope, or complexity problem.
 - Flag or highlight major shortcomings or opportunities to simplify logic.
 - Clearly state your understanding.
 - Run tasks and shell commands in the foreground, not in the background.
@@ -1329,6 +1343,7 @@ function alignmentFooter(): string {
 function plannerPrompt(input: {
   readonly phaseNumber: number;
   readonly implementerTurn: string;
+  readonly reviewComplete: boolean;
 }): string {
   return `You are the planner for phase ${input.phaseNumber}, working unattended in an orchestrated workflow.
 
@@ -1338,18 +1353,18 @@ The implementer returned the following response:
 ${input.implementerTurn}
 </implementer_response>
 
-Evaluate the implementer's understanding and readiness to implement the phase.
+Evaluate the implementer's current phase status. ${input.reviewComplete ? "Automatic review has already completed. Preserve that approval through clarification-only exchanges; explicitly identify any implementation changes that require reopening the phase." : "Establish enough shared understanding to implement the agreed phase."}
 
-- Push back on the implementer's understanding.
+- Push back on concrete misunderstandings that affect the work.
 - Answer the implementer's questions. Ground the answers in the established conversation, ADRs, and guidance.
 - Feel free to refactor or update the phase scope if the implementer's pushback makes sense, is easy to implement, or simplifies the logic. Remind the implementer to document agreed changes in the decision log instead of modifying the plan file.
 - Escalate major questions or decisions not covered by the established conversation that could severely affect the architecture or product and require human intervention before work continues. Include all necessary context so the human can understand the issue and how to address it. Always include a Human Escalation section stating either "No escalation." or "Escalation required:" followed by the issue and the decision the human must make.
-- Always mention nuances and considerations the implementer may be missing so they develop a deep understanding.
+- Mention nuances only when they materially affect the current phase; keep later-phase obligations in the handoff.
 - Keep fallback logic to a minimum. Introduce new fallback logic only if absolutely necessary.
-- Only approve implementation once the implementer has no outstanding clarifying questions in their latest response.
+- Answer questions and approve in the same response when your answers resolve the blockers. A separate confirmation exchange is unnecessary. If implementation is already complete, explicitly accept completion rather than approving implementation again.
 - Run tasks and shell commands in the foreground, not in the background.
 
-Explicitly state when you approve implementation. Otherwise, provide the feedback needed for another exchange. Ordinary questions, caveats, and disagreements that can be resolved through the planner–implementer exchange are not human escalations.
+Explicitly state whether you approve implementation work or accept phase completion with no implementation changes. Otherwise, provide the feedback needed to resolve a concrete blocker. Ordinary questions, caveats, and disagreements that can be resolved through the planner–implementer exchange are not human escalations.
 
 The workflow will forward your response to the implementer or pause for human resolution when escalation is required. Include everything needed for that handoff in your response rather than waiting for a live human answer.`;
 }
@@ -1386,6 +1401,10 @@ function requireActiveState(state: State): ActiveState {
 
 function withStage(state: ActiveState, stage: ActiveStage): ActiveState {
   return { ...activateCommonState(state), plan: state.plan, stage };
+}
+
+function withReviewComplete(state: ActiveState, reviewComplete: boolean): ActiveState {
+  return { ...state, plan: { ...state.plan, reviewComplete } };
 }
 
 function currentPhase(state: ActiveState): PlanPhase | undefined {

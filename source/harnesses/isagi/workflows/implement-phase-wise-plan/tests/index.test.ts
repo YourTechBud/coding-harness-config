@@ -109,13 +109,13 @@ test("every non-complete implementer turn returns to the planner, including afte
   );
   const prompt = harness.sentPrompts[0]?.text ?? "";
   assert.match(prompt, /<implementer_response>\nImplementation started/);
-  assert.match(prompt, /- Push back on the implementer's understanding/);
+  assert.match(prompt, /Push back on concrete misunderstandings/);
   assert.match(prompt, /- Answer the implementer's questions.*conversation, ADRs, and guidance/);
   assert.match(prompt, /- Feel free to refactor or update the phase scope.*decision log instead of modifying the plan file/);
   assert.match(prompt, /- Escalate major questions or decisions.*severely affect the architecture or product.*Human Escalation.*"No escalation\.".*"Escalation required:"/);
-  assert.match(prompt, /- Always mention nuances and considerations.*deep understanding/);
+  assert.match(prompt, /Mention nuances only when they materially affect the current phase/);
   assert.match(prompt, /- Keep fallback logic to a minimum.*only if absolutely necessary/);
-  assert.match(prompt, /- Only approve implementation once.*no outstanding clarifying questions/);
+  assert.match(prompt, /Answer questions and approve in the same response/);
   assert.match(prompt, /- Run tasks and shell commands in the foreground/);
   assert.equal(prompt.split("\n").filter((line) => line.startsWith("- ")).length, 8);
   assert.doesNotMatch(prompt, /I want you to|I am implementing|repeatedly disagreed/);
@@ -458,6 +458,61 @@ test("mock-ui retains its initial human work period, then checks completeness", 
   const checked = await workflow.step(harness.ctx, suspendedState(paused), { kind: "user_continue" });
   assert.equal(stageOf(checked).kind, "await-completion-report");
   assert.equal(harness.startedWorkflows.length, 0);
+});
+
+for (const humanVerification of [false, true]) {
+  test(`post-review clarification preserves review and required human verification=${humanVerification}`, async () => {
+    const harness = workflowHarness({ conversationHistory: [message("assistant", "Approval stands. No implementation changes are requested.")] });
+    // Includes a legacy checkpoint without the new reviewComplete field.
+    const pending = await workflow.step(harness.ctx, completionState("after-review", { autoReview: true }),
+      headlessResult('{"outcome":"planner-response-needed"}'));
+    assert.match(harness.sentPrompts[0]?.text ?? "", /Automatic review has already completed/);
+    const plannerTurn = await workflow.step(harness.ctx, suspendedState(pending), endedTurn);
+    const checking = await workflow.step(harness.ctx, suspendedState(plannerTurn), headlessResult('{"outcome":"completion-approved"}'));
+    const checkpoint = stageOf(checking);
+    assert.equal(checkpoint.kind, "await-completion-report");
+    assert.equal(checkpoint.kind === "await-completion-report" && checkpoint.checkpoint, "after-review");
+    assert.match(harness.sentPrompts.at(-1)?.text ?? "", /Approval stands/);
+    const judging = await workflow.step(harness.ctx, suspendedState(checking), endedTurn);
+    const finished = await workflow.step(harness.ctx, suspendedState(judging), humanVerification ? verificationOutcome : completeOutcome);
+    assert.equal(stageOf(finished).kind, humanVerification ? "await-human-completion" : "start-commit");
+    assert.equal(harness.startedWorkflows.length, 0);
+  });
+}
+
+test("completion approval before the first review still requires review", async () => {
+  const harness = workflowHarness({ conversationHistory: [message("assistant", "Phase complete.")] });
+  const checking = await workflow.step(harness.ctx, activeState({
+    kind: "await-planner-outcome", implementer, plannerTurn: "Phase completion approved.", exchangeNumber: 3,
+  }, { autoReview: true }), headlessResult('{"outcome":"completion-approved"}'));
+  const judging = await workflow.step(harness.ctx, suspendedState(checking), endedTurn);
+  const reviewing = await workflow.step(harness.ctx, suspendedState(judging), completeOutcome);
+  assert.equal(stageOf(reviewing).kind, "await-auto-review");
+  assert.equal(harness.startedWorkflows.length, 1);
+});
+
+test("clarification feedback and an alignment completion claim retain the review checkpoint", async () => {
+  const harness = workflowHarness({ conversationHistory: [message("assistant", "Phase complete.")] });
+  const pending = await workflow.step(harness.ctx, completionState("after-review", { autoReview: true }),
+    headlessResult('{"outcome":"planner-response-needed"}'));
+  const plannerTurn = await workflow.step(harness.ctx, suspendedState(pending), endedTurn);
+  const aligning = await workflow.step(harness.ctx, suspendedState(plannerTurn), headlessResult('{"outcome":"feedback"}'));
+  const outcome = await workflow.step(harness.ctx, suspendedState(aligning), endedTurn);
+  const checking = await workflow.step(harness.ctx, suspendedState(outcome), completeOutcome);
+  const stage = stageOf(checking);
+  assert.equal(stage.kind === "await-completion-report" && stage.checkpoint, "after-review");
+  assert.equal(harness.startedWorkflows.length, 0);
+});
+
+test("review status is cleared when advancing to the next phase", async () => {
+  const harness = workflowHarness();
+  const state = activeState({ kind: "advance-phase", implementer });
+  assert.ok("plan" in state);
+  const next = await workflow.step(harness.ctx, { ...state, plan: { ...state.plan, reviewComplete: true } }, null);
+  assert.equal(next.type, "cont");
+  const nextState = (next as Extract<WorkflowResult, { type: "cont" }>).state as WorkflowState;
+  assert.ok("plan" in nextState);
+  assert.equal(nextState.plan.reviewComplete, false);
 });
 
 test("remaining work after review goes through planner, implementation, completeness, and review again", async () => {
@@ -806,8 +861,8 @@ function message(role: "user" | "assistant", text: string) {
 }
 
 function assertAlignmentBullets(prompt: string): void {
-  assert.match(prompt, /- Ask clarifying questions until you and the planner.*do not use the askUserQuestion tool/);
-  assert.match(prompt, /- Push back on the planner's ideas/);
+  assert.match(prompt, /Ask clarifying questions when the answer materially changes.*do not use the askUserQuestion tool/);
+  assert.match(prompt, /Push back when you see a concrete correctness, scope, or complexity problem/);
   assert.match(prompt, /- Flag or highlight major shortcomings or opportunities to simplify logic/);
   assert.match(prompt, /- Clearly state your understanding/);
   assert.match(prompt, /- Run tasks and shell commands in the foreground/);

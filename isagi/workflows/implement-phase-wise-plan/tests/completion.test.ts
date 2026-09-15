@@ -10,7 +10,7 @@ test('pre-review prompt checks the whole phase and reports remaining work to the
   const prompt = completionReportPrompt({ ...phase, checkpoint: 'before-review', autoReview: true });
   assert.match(prompt, /phase 2 of 4 in plans\/index.md/);
   assert.match(prompt, /entire agreed phase scope/);
-  assert.match(prompt, /current understanding.*necessary questions for the planner/);
+  assert.match(prompt, /current understanding and the necessary questions for the planner/);
   assert.match(prompt, /reporting only; do not implement changes/);
   assert.match(prompt, /human verification separately/);
 });
@@ -22,7 +22,8 @@ for (const autoReview of [false, true]) {
     assert.match(prompt, /## Anything left in the phase/);
     assert.match(prompt, /## Anything the human needs to verify/);
     assert.match(prompt, /previously identified checks that have not been completed/);
-    assert.match(prompt, /Remaining work or questions will return to the planner before/);
+    assert.match(prompt, /Only current-phase work or decisions that block completion will return to the planner/);
+    assert.match(prompt, /Repeat checks only when changes or unresolved failures make that evidence stale/);
     assert.match(prompt, /reporting only; do not implement changes/);
   });
 }
