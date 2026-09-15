@@ -1,7 +1,11 @@
 export const PROMPT_FOOTER =
   "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
 
-const ARCHITECTURE_REVIEW_CONTRACT = `Review the artifact through each of these sections:
+const DESIGN_SCOPE = `The story defines the bounded scope through its acceptance criteria, provided contracts, and explicitly agreed design decisions. Treat initial thinking, plans, and other suggested approaches recorded in the story as strong starting suggestions rather than requirements, except where they record those binding commitments. Treat the current-state analysis as completed predecessor work to build on, correcting substantive factual flaws when necessary. Ground factual constraints in repository evidence. Prefer the simplest architecture that fulfills the binding scope; revise suggested approaches when a simpler one meets it. Keep behavior and edge-case coverage to what that scope requires. Surface any needed scope change as a decision for the user rather than adopting it unattended.`;
+
+const ARCHITECTURE_REVIEW_CONTRACT = `${DESIGN_SCOPE}
+
+Review the artifact through each of these sections:
 
 - **Contradictions:** Decisions or claims that conflict with the story, verified current-state facts, repository constraints, applicable engineering guidance, another architectural decision, or the architecture's own boundaries and flows. Distinguish repository facts from proposed design choices.
 - **Important Simplifications:** A simpler architecture that preserves the same story outcomes with fewer new components, abstractions, boundaries, state owners, or integration paths. Prefer existing extension seams and one clear source of authority. Explain which outcomes and quality drivers the simpler design preserves.
@@ -14,7 +18,7 @@ For every finding, assign one severity and order findings by severity within eac
 - **Concern:** The issue creates material complexity, ambiguity, weak rationale, a missing architectural decision, or an unmitigated risk. It should be corrected or resolved through an evidence-backed response.
 - **Optional:** A worthwhile local improvement that does not affect whether program design can safely proceed.
 
-State "None." under a section with no findings. Consolidate findings with the same root cause. Give every Blocker and Concern concrete evidence and a clear correction target. Optional findings may coexist with closure; Blockers and Concerns may not.
+State "None." under a section with no findings. Consolidate findings with the same root cause. Give every Blocker and Concern concrete evidence and a clear correction target. Optional findings may coexist with closure; Blockers and Concerns may not. Keep findings within the binding scope above. A departure from an initial suggestion recorded in the story alone is not a defect.
 
 Keep the review at the architecture boundary. Do not treat absent exact API signatures or routes, schema fields, concrete types, validation rules, detailed state machines, error taxonomies, algorithms, pseudocode, transaction or retry mechanics, or component-level collaboration as gaps unless their absence leaves ownership, boundary semantics, major behavior, or the system shape unresolved.`;
 
@@ -35,7 +39,9 @@ Story: ${input.story}
 Current-state analysis: ${input.currentStatePath}
 Architecture artifact path: ${input.artifactPath}
 
-Work unattended. Treat the story as immutable, use the current-state analysis and repository as evidence, converge on one recommended system shape, and finish only when the architecture artifact is ready for an independent review. If architecture work exposes a substantive flaw in the current-state analysis, correct that predecessor artifact and keep both artifacts coherent.`);
+${DESIGN_SCOPE}
+
+Work unattended. Preserve the story, use the current-state analysis and repository as evidence, and converge on one recommended system shape within the binding scope. Finish with the architecture artifact ready for an independent review, making any unresolved user decision explicit. If architecture work exposes a substantive flaw in the current-state analysis, correct that predecessor artifact and keep both artifacts coherent.`);
 }
 
 export function reviewToWriterPrompt(review: string): string {
@@ -43,7 +49,9 @@ export function reviewToWriterPrompt(review: string): string {
 
 ${review}
 
-Evaluate every finding against the story, current-state analysis, repository evidence, and architectural drivers. Update the architecture artifact directly wherever the review improves its correctness, simplicity, coherence, or decision quality. Correct the current-state artifact only when resolving a substantive predecessor flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect or would make the architecture worse. Finish with the artifacts ready for another independent review.`);
+${DESIGN_SCOPE}
+
+Evaluate every finding against the binding scope, current-state analysis, and repository evidence. Update the architecture artifact wherever the review improves its correctness, simplicity, coherence, or decision quality within that scope. Correct the current-state artifact only when resolving a substantive predecessor flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect, expands the binding scope, treats a suggestion as a requirement, or would make the architecture worse. Finish with the artifacts ready for another independent review.`);
 }
 
 export function retryWriterPrompt(): string {

@@ -60,7 +60,7 @@ test('spawns the existing planner prompt with every explicit artifact path', asy
   assert.equal(result.type, 'suspend');
   assert.equal(harness.spawned.length, 1);
   assert.deepEqual({ harness: harness.spawned[0]?.harness, model: harness.spawned[0]?.model, effort: harness.spawned[0]?.effort }, planner);
-  assert.deepEqual(harness.spawned[0]?.modifiers, [{ kind: 'skill', name: 'create-implementation-plan' }]);
+  assert.deepEqual(harness.spawned[0]?.modifiers, [{ kind: 'command', name: 'create-implementation-plan' }]);
   const prompt = String(harness.spawned[0]?.prompt);
   assert.match(prompt, /omit mock-UI phases and repository documentation work/);
   assert.match(prompt, /Write index.md last/);

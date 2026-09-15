@@ -15,6 +15,8 @@ import {
   initialWriterPrompt,
   PROMPT_FOOTER,
   retryWriterPrompt,
+  reviewToWriterPrompt,
+  writerToReviewerPrompt,
 } from '../src/prompts.js';
 
 type State = Parameters<typeof workflow.step>[1];
@@ -24,6 +26,18 @@ const launchCtx: WorkflowLaunchContext = {
   worktreePath: '/workspace',
   surfaceId: 7,
 };
+
+test('writers and reviewers distinguish story suggestions from completed architecture', () => {
+  const input = baseState({ kind: 'spawn_writer' });
+  for (const prompt of [initialWriterPrompt(input), initialReviewerPrompt(input), reviewToWriterPrompt('Review'), writerToReviewerPrompt('Response')]) {
+    assert.match(prompt, /story defines the bounded scope through its acceptance criteria, provided contracts, and explicitly agreed design decisions/);
+    assert.match(prompt, /strong starting suggestions rather than requirements/);
+    assert.match(prompt, /suggested approaches recorded in the story/);
+    assert.match(prompt, /architecture artifact is completed predecessor work to build on/);
+    assert.match(prompt, /simplest program design that fulfills the story's binding scope within that architecture/);
+    assert.match(prompt, /scope change as a decision for the user/);
+  }
+});
 
 test('command captures the story, predecessor paths, program-design path, and repository path', async () => {
   const manifest = await workflow.command(launchCtx);
@@ -63,7 +77,7 @@ test('spawns the configured Opus writer with the program design skill and requir
   });
   assert.match(harness.spawned[0]?.prompt ?? '', /Current-state analysis: scratch\/current-state/);
   assert.match(harness.spawned[0]?.prompt ?? '', /Architecture: scratch\/architecture/);
-  assert.match(harness.spawned[0]?.prompt ?? '', /correct the affected predecessor artifact/);
+  assert.match(harness.spawned[0]?.prompt ?? '', /update the affected predecessor artifact/);
   assert.equal(harness.spawned[0]?.prompt?.endsWith(PROMPT_FOOTER), true);
   const waiting = suspendedState(result);
   assert.deepEqual(

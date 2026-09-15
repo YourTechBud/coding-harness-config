@@ -300,7 +300,7 @@ var index_default = r({
           harness: planner.harness,
           model: planner.model,
           effort: planner.effort,
-          modifiers: [{ kind: "skill", name: "create-implementation-plan" }],
+          modifiers: [{ kind: "command", name: "create-implementation-plan" }],
           prompt: plannerPrompt({
             repositoryPath: state.repositoryPath,
             story: state.story,

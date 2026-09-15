@@ -15,6 +15,8 @@ import {
   initialWriterPrompt,
   PROMPT_FOOTER,
   retryWriterPrompt,
+  reviewToWriterPrompt,
+  writerToReviewerPrompt,
 } from '../src/prompts.js';
 
 type State = Parameters<typeof workflow.step>[1];
@@ -24,6 +26,18 @@ const launchCtx: WorkflowLaunchContext = {
   worktreePath: '/workspace',
   surfaceId: 7,
 };
+
+test('writers and reviewers distinguish story suggestions from completed analysis', () => {
+  const input = baseState({ kind: 'spawn_writer' });
+  for (const prompt of [initialWriterPrompt(input), initialReviewerPrompt(input), reviewToWriterPrompt('Review'), writerToReviewerPrompt('Response')]) {
+    assert.match(prompt, /story defines the bounded scope through its acceptance criteria, provided contracts, and explicitly agreed design decisions/);
+    assert.match(prompt, /strong starting suggestions rather than requirements/);
+    assert.match(prompt, /suggested approaches recorded in the story/);
+    assert.match(prompt, /current-state analysis as completed predecessor work to build on/);
+    assert.match(prompt, /simplest architecture that fulfills the binding scope/);
+    assert.match(prompt, /scope change as a decision for the user/);
+  }
+});
 
 test('command captures the story, current-state path, architecture path, and repository path', async () => {
   const manifest = await workflow.command(launchCtx);
