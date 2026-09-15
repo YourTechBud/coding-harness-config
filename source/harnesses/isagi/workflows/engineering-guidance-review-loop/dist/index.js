@@ -99,7 +99,7 @@ var fixer = {
 var reviewer = {
   harness: "codex",
   model: "gpt-5.6-sol",
-  effort: "medium"
+  effort: "low"
 };
 var routingJudgment = {
   harness: "codex",
