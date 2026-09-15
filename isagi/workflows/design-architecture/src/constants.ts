@@ -6,16 +6,16 @@ export type AgentProfile = {
   readonly effort: string;
 };
 
-export const writer = {
+export const reviewer = {
   harness: 'codex',
-  model: 'gpt-6-astra',
+  model: 'gpt-5.5-sol',
   effort: 'medium',
 } satisfies AgentProfile;
 
-export const reviewer = {
+export const writer = {
   harness: 'claude',
   model: 'fable',
-  effort: 'high',
+  effort: 'medium',
 } satisfies AgentProfile;
 
 export const writerJudgment = {

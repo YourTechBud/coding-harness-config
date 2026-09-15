@@ -126,8 +126,8 @@ var guide = {
   effort: "low"
 };
 var deckArchitect = {
-  harness: "pi",
-  model: "openai-codex/gpt-6-astra",
+  harness: "claude",
+  model: "fable",
   effort: "low"
 };
 

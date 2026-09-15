@@ -8,14 +8,14 @@ export type AgentProfile = {
 
 export const writer = {
   harness: 'claude',
-  model: 'opus',
+  model: 'fable',
   effort: 'medium',
 } satisfies AgentProfile;
 
 export const reviewer = {
   harness: 'codex',
-  model: 'gpt-6-astra',
-  effort: 'low',
+  model: 'gpt-5.6-sol',
+  effort: 'medium',
 } satisfies AgentProfile;
 
 export const writerJudgment = {

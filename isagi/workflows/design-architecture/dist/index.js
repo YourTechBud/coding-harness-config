@@ -91,15 +91,15 @@ function u(e) {
 }
 
 // src/constants.ts
-var writer = {
+var reviewer = {
   harness: "codex",
-  model: "gpt-6-astra",
+  model: "gpt-5.5-sol",
   effort: "medium"
 };
-var reviewer = {
+var writer = {
   harness: "claude",
   model: "fable",
-  effort: "high"
+  effort: "medium"
 };
 var writerJudgment = {
   harness: "codex",

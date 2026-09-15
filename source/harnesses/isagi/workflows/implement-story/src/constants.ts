@@ -9,7 +9,7 @@ export type AgentProfile = {
 export const planner = {
   harness: 'pi',
   model: 'openai-codex/gpt-6-astra',
-  effort: 'medium',
+  effort: 'low',
 } satisfies AgentProfile;
 
 export const plannerJudgment = {

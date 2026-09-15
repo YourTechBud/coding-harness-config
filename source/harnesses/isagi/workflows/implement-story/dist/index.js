@@ -104,7 +104,7 @@ function u(e) {
 var planner = {
   harness: "pi",
   model: "openai-codex/gpt-6-astra",
-  effort: "medium"
+  effort: "low"
 };
 var plannerJudgment = {
   harness: "codex",
