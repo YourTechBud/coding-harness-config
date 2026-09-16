@@ -97,8 +97,8 @@ var writer = {
   effort: "medium"
 };
 var reviewer = {
-  harness: "codex",
-  model: "gpt-5.6-sol",
+  harness: "claude",
+  model: "opus",
   effort: "medium"
 };
 var writerJudgment = {

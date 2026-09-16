@@ -7,9 +7,9 @@ export type AgentProfile = {
 };
 
 export const planner = {
-  harness: 'pi',
-  model: 'openai-codex/gpt-5.6-sol',
-  effort: 'high',
+  harness: 'claude',
+  model: 'opus',
+  effort: 'medium',
 } satisfies AgentProfile;
 
 export const plannerJudgment = {

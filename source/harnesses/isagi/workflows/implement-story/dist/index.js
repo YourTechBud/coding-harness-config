@@ -102,9 +102,9 @@ function u(e) {
 
 // src/constants.ts
 var planner = {
-  harness: "pi",
-  model: "openai-codex/gpt-5.6-sol",
-  effort: "high"
+  harness: "claude",
+  model: "opus",
+  effort: "medium"
 };
 var plannerJudgment = {
   harness: "codex",

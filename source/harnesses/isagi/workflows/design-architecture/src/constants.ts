@@ -7,8 +7,8 @@ export type AgentProfile = {
 };
 
 export const reviewer = {
-  harness: 'codex',
-  model: 'gpt-5.5-sol',
+  harness: 'claude',
+  model: 'opus',
   effort: 'medium',
 } satisfies AgentProfile;
 

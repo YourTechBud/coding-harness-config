@@ -13,13 +13,13 @@ export const deckBuilder = {
 } satisfies AgentProfile;
 
 export const guide = {
-  harness: 'pi',
-  model: 'openai-codex/gpt-6-astra',
-  effort: 'low',
+  harness: 'claude',
+  model: 'fable',
+  effort: 'medium',
 } satisfies AgentProfile;
 
 export const deckArchitect = {
   harness: 'claude',
   model: 'fable',
-  effort: 'low',
+  effort: 'medium',
 } satisfies AgentProfile;

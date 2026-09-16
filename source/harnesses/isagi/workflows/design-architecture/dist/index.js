@@ -92,8 +92,8 @@ function u(e) {
 
 // src/constants.ts
 var reviewer = {
-  harness: "codex",
-  model: "gpt-5.5-sol",
+  harness: "claude",
+  model: "opus",
   effort: "medium"
 };
 var writer = {

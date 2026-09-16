@@ -121,14 +121,14 @@ var deckBuilder = {
   effort: "medium"
 };
 var guide = {
-  harness: "pi",
-  model: "openai-codex/gpt-6-astra",
-  effort: "low"
+  harness: "claude",
+  model: "fable",
+  effort: "medium"
 };
 var deckArchitect = {
   harness: "claude",
   model: "fable",
-  effort: "low"
+  effort: "medium"
 };
 
 // src/curriculum-v3.ts
