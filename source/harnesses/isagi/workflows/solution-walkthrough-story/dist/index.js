@@ -121,9 +121,9 @@ var deckBuilder = {
   effort: "medium"
 };
 var guide = {
-  harness: "claude",
-  model: "fable",
-  effort: "medium"
+  harness: "codex",
+  model: "gpt-6-astra",
+  effort: "low"
 };
 var deckArchitect = {
   harness: "claude",

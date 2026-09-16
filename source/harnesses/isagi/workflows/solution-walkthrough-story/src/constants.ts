@@ -13,9 +13,9 @@ export const deckBuilder = {
 } satisfies AgentProfile;
 
 export const guide = {
-  harness: 'claude',
-  model: 'fable',
-  effort: 'medium',
+  harness: 'codex',
+  model: 'gpt-6-astra',
+  effort: 'low',
 } satisfies AgentProfile;
 
 export const deckArchitect = {
