@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   commitPrompt,
+  commitRecoveryPrompt,
   completedSingleCommitResult,
   parseCommitResult,
 } from '../src/commit.js';
@@ -108,6 +109,39 @@ test('docs results use the normal non-draft commit contract', () => {
       ),
     /phase type docs must begin with feat:, fix:, chore:/,
   );
+});
+
+test('recovery accepts existing commits only with the same strict result contract', () => {
+  const result = { outcome: 'commit-existing', commit: 'a'.repeat(40), subject: 'feat: phase work' };
+  assert.deepEqual(parseCommitResult(JSON.stringify(result), implementationPhase, true), result);
+  assert.throws(() => parseCommitResult(JSON.stringify(result), implementationPhase), /outcome must be commit-created/);
+  for (const malformed of [
+    { ...result, extra: true },
+    { outcome: result.outcome, commit: result.commit },
+    { ...result, outcome: 'clean' },
+    { ...result, commit: 'abc' },
+    { ...result, subject: 'draft: wrong phase type' },
+  ]) {
+    assert.throws(() => parseCommitResult(JSON.stringify(malformed), implementationPhase, true));
+  }
+});
+
+test('recovery checks existing work before committing and stops on ambiguous history', () => {
+  const prompt = commitRecoveryPrompt({
+    worktreePath: '/workspace', phase: prepPhase, phaseCount: 4,
+    entryPlanPath: 'scratch/plans/example/index.md', previousResult: { output: 'bad response' },
+  });
+  assert.match(prompt, /Inspect Git before making any changes/);
+  assert.match(prompt, /matching subject prefix.*alone is not proof/);
+  assert.match(prompt, /HEAD is the completed phase commit.*clean/);
+  assert.match(prompt, /actual commit diff against the phase contract/);
+  assert.match(prompt, /history is ambiguous.*stop and report/);
+  assert.match(prompt, /unrelated changes/);
+  assert.match(prompt, /git commit --signoff/);
+  assert.match(prompt, /Never create an empty or duplicate commit/);
+  assert.match(prompt, /untrusted diagnostic data/);
+  assert.match(prompt, /Allowed subject prefixes: draft:/);
+  assert.match(prompt, /bad response/);
 });
 
 test('commit result inspection rejects failed headless operations', () => {

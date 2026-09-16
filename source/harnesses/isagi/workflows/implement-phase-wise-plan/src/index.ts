@@ -22,6 +22,7 @@ import {
 } from "./constants.js";
 import {
   commitPrompt,
+  commitRecoveryPrompt,
   completedSingleCommitResult,
   parseCommitResult,
 } from "./commit.js";
@@ -149,6 +150,8 @@ type ActiveStage =
   | {
       readonly kind: "await-commit";
       readonly implementer: Implementer;
+      // Absent on persisted version-5 waits created before commit recovery.
+      readonly recoveryAttempted?: true;
     }
   | {
       readonly kind: "advance-phase";
@@ -716,18 +719,50 @@ export default defineWorkflow<State, Variables>({
         const phase = activePhase(activeState);
         try {
           const result = completedSingleCommitResult(event);
-          const commit = parseCommitResult(result.output ?? "", phase);
+          const commit = parseCommitResult(result.output ?? "", phase, state.stage.recoveryAttempted === true);
           await ctx.log(
             "info",
-            `Created commit ${commit.commit} for phase ${phase.number}: ${commit.subject}.`,
+            `Verified ${commit.outcome} ${commit.commit} for phase ${phase.number}: ${commit.subject}.`,
           );
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
+          await ctx.log("error", `Commit result validation failed for phase ${phase.number}: ${message}. Raw event: ${JSON.stringify(event)}`);
+          // The pinned published SDK predates invocation; the runtime supplies it.
+          // Missing markers never authorize another operational attempt.
+          const invocation = "invocation" in ctx ? ctx.invocation : undefined;
+          const explicitRetry = invocation !== null && typeof invocation === "object" &&
+            "kind" in invocation && invocation.kind === "retry";
+          const savedResults = workflowEvent.getHeadlessAgentResults(event);
+          if (explicitRetry && savedResults?.length === 1 && !state.stage.recoveryAttempted) {
+            await ctx.setUiFeedback({
+              kind: "info",
+              phase: "commit-recovery",
+              message: `Checking Git before retrying the commit for phase ${phase.number}.`,
+            });
+            const op = await ctx.runHeadlessAgent({
+              harness: commitAgent.harness,
+              model: commitAgent.model,
+              effort: commitAgent.effort,
+              prompt: commitRecoveryPrompt({
+                worktreePath: ctx.worktreePath,
+                phase,
+                phaseCount: activeState.plan.phases.length,
+                entryPlanPath: activeState.plan.entryPlanPath,
+                previousResult: event,
+              }),
+            });
+            await ctx.log("info", `Started commit recovery op ${op.opId} for phase ${phase.number}.`);
+            return suspend(withStage(activeState, {
+              kind: "await-commit",
+              implementer: state.stage.implementer,
+              recoveryAttempted: true,
+            }), wait.headlessAgent(op));
+          }
           return failWorkflow(
             ctx,
             `Commit failed for phase ${phase.number}`,
-            `Commit failed for phase ${phase.number}: ${message}`,
+            `Commit failed for phase ${phase.number}: ${message}${state.stage.recoveryAttempted ? " Recovery attempt exhausted; inspect Git and the recovery output before repairing the workflow." : " Retry will inspect Git before attempting commit recovery."}`,
           );
         }
         return cont(

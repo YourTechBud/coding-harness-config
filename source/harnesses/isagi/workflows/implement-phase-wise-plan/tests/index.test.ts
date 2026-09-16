@@ -643,6 +643,95 @@ test("verified commit advances the phase", async () => {
   );
 });
 
+test("malformed commit output fails normally and recovers only on explicit Retry", async () => {
+  const state = activeState({ kind: "await-commit", implementer: { agentSessionId: 22, paneId: 32 } });
+  const savedEvent = headlessResult('{"message":"committed already"}');
+  for (const invocation of [undefined, { kind: "normal" }, null, "retry"]) {
+    const harness = workflowHarness();
+    const result = await workflow.step({ ...harness.ctx, ...{ invocation } }, state, savedEvent);
+    assert.equal(result.type, "fail");
+    assert.equal(harness.headlessLaunchCount, 0);
+  }
+  const harness = workflowHarness();
+  const retryCtx = { ...harness.ctx, invocation: { kind: "retry" } };
+  const recovered = await workflow.step(retryCtx, state, savedEvent);
+  assert.equal(recovered.type, "suspend");
+  assert.equal(recovered.type === "suspend" ? recovered.condition.kind : undefined, "headless_agent");
+  assert.deepEqual(stageOf(recovered), {
+    kind: "await-commit", implementer: { agentSessionId: 22, paneId: 32 }, recoveryAttempted: true,
+  });
+  assert.equal(harness.headlessLaunchCount, 1);
+  assert.match(harness.headlessLaunches[0]?.prompt ?? "", /committed already/);
+  assert.match(harness.headlessLaunches[0]?.prompt ?? "", /phase-02-production-wiring/);
+  assert.equal(harness.feedback.at(-1)?.phase, "commit-recovery");
+});
+
+test("Retry does not authorize recovery for an unrelated or ambiguous event", async () => {
+  const harness = workflowHarness();
+  const ctx = { ...harness.ctx, invocation: { kind: "retry" } };
+  for (const event of [null, { kind: "user_continue" }, { kind: "headless_agent", results: [] }, {
+    kind: "headless_agent", results: [
+      { opId: "one", status: "failed" }, { opId: "two", status: "failed" },
+    ],
+  }]) {
+    const result = await workflow.step(ctx, activeState({
+      kind: "await-commit", implementer: { agentSessionId: 22, paneId: 32 },
+    }), event);
+    assert.equal(result.type, "fail");
+  }
+  assert.equal(harness.headlessLaunchCount, 0);
+});
+
+test("explicit Retry also recovers a failed commit operation", async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step(
+    { ...harness.ctx, ...{ invocation: { kind: "retry" } } },
+    activeState({ kind: "await-commit", implementer: { agentSessionId: 22, paneId: 32 } }),
+    { kind: "headless_agent", results: [{ opId: "failed-commit", status: "failed", error: "hook failed" }] },
+  );
+  assert.equal(result.type, "suspend");
+  assert.match(harness.headlessLaunches[0]?.prompt ?? "", /hook failed/);
+});
+
+test("both successful recovery outcomes advance without another commit operation", async () => {
+  for (const outcome of ["commit-existing", "commit-created"]) {
+    const harness = workflowHarness();
+    const result = await workflow.step(harness.ctx, activeState({
+      kind: "await-commit", implementer: { agentSessionId: 22, paneId: 32 }, recoveryAttempted: true,
+    }), headlessResult(JSON.stringify({ outcome, commit: "b".repeat(40), subject: "fix: complete phase" })));
+    assert.equal(result.type, "cont");
+    assert.equal(stageOf(result).kind, "advance-phase");
+    assert.equal(harness.headlessLaunchCount, 0);
+  }
+});
+
+test("failed recovery remains bounded across saved state replay and another Retry", async () => {
+  const harness = workflowHarness();
+  const state = JSON.parse(JSON.stringify(activeState({
+    kind: "await-commit", implementer: { agentSessionId: 22, paneId: 32 }, recoveryAttempted: true,
+  }))) as WorkflowState;
+  for (const invocation of ["normal", "retry"]) {
+    for (const event of [
+      headlessResult("History is ambiguous; no changes made."),
+      { kind: "headless_agent", results: [{ opId: "recovery", status: "failed", error: "timeout" }] },
+    ]) {
+      const result = await workflow.step({ ...harness.ctx, ...{ invocation: { kind: invocation } } }, state, event);
+      assert.equal(result.type, "fail");
+      assert.match(result.type === "fail" ? result.reason : "", /Recovery attempt exhausted/);
+    }
+  }
+  assert.equal(harness.headlessLaunchCount, 0);
+});
+
+test("Retry with a valid original commit result does not launch recovery", async () => {
+  const harness = workflowHarness();
+  const result = await workflow.step({ ...harness.ctx, ...{ invocation: { kind: "retry" } } }, activeState({
+    kind: "await-commit", implementer: { agentSessionId: 22, paneId: 32 },
+  }), headlessResult(JSON.stringify({ outcome: "commit-created", commit: "a".repeat(40), subject: "feat: phase work" })));
+  assert.equal(stageOf(result).kind, "advance-phase");
+  assert.equal(harness.headlessLaunchCount, 0);
+});
+
 test("the final phase closes its implementer while preserving the planner session", async () => {
   const harness = workflowHarness();
   const state = activeState({
