@@ -124,6 +124,8 @@ Keep each phase file readable and adapt its structure to the work, but make thes
 - How to verify that the phase is complete.
 - A final decision-log handoff.
 
+Structure `prep` and `implementation` phases for unattended execution, since implementation may run overnight. Prefer agent-run checks within intermediate phases and consolidate human verification into the final phase or as near the end as practical. Where implementation can reasonably proceed without human verification, plan for best-effort progress and carry the outstanding checks forward explicitly for final human verification. Reserve intermediate human-verification gates for cases where further implementation depends on their outcome. Keep upfront clarification and human-led `mock-ui` iteration before the implementation that depends on their decisions.
+
 Verification must name who performs each applicable check. Use only the modes the phase needs:
 
 - **Agent-run checks** — tests, scripts, builds, API calls, browser automation, or other executable evidence.
