@@ -265,6 +265,15 @@ export default defineWorkflow<State, Variables>({
       }
 
       case "await-plan-discovery": {
+        if (isExplicitRetry(ctx)) {
+          await ctx.log(
+            "info",
+            "Explicit Retry discarded the saved plan-discovery result and will discover the current plan again.",
+          );
+          return cont(
+            { ...state, stage: { kind: "discover-plan" } } satisfies State,
+          );
+        }
         const judgment = await readHeadlessJudgment(ctx, state, event, {
           name: "discoverPlan",
           failureMessage: "The current plan could not be discovered",
@@ -728,13 +737,8 @@ export default defineWorkflow<State, Variables>({
           const message =
             error instanceof Error ? error.message : String(error);
           await ctx.log("error", `Commit result validation failed for phase ${phase.number}: ${message}. Raw event: ${JSON.stringify(event)}`);
-          // The pinned published SDK predates invocation; the runtime supplies it.
-          // Missing markers never authorize another operational attempt.
-          const invocation = "invocation" in ctx ? ctx.invocation : undefined;
-          const explicitRetry = invocation !== null && typeof invocation === "object" &&
-            "kind" in invocation && invocation.kind === "retry";
           const savedResults = workflowEvent.getHeadlessAgentResults(event);
-          if (explicitRetry && savedResults?.length === 1 && !state.stage.recoveryAttempted) {
+          if (isExplicitRetry(ctx) && savedResults?.length === 1 && !state.stage.recoveryAttempted) {
             await ctx.setUiFeedback({
               kind: "info",
               phase: "commit-recovery",
@@ -1503,6 +1507,14 @@ function parseAutoCommit(value: unknown): "yes" | "no" {
   if (value === undefined) return "yes";
   if (value === "yes" || value === "no") return value;
   throw new Error("Automatic commit must be yes or no.");
+}
+
+function isExplicitRetry(ctx: WorkflowContext): boolean {
+  // The pinned published SDK predates invocation; the runtime supplies it.
+  // Missing or malformed markers never authorize another operational attempt.
+  const invocation = "invocation" in ctx ? ctx.invocation : undefined;
+  return invocation !== null && typeof invocation === "object" &&
+    "kind" in invocation && invocation.kind === "retry";
 }
 
 function headlessRawOutput(event: unknown): string {

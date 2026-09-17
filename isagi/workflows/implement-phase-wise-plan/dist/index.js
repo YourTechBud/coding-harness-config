@@ -117,7 +117,7 @@ var implementerProseHeavy = {
 };
 var headlessJudgment = {
   harness: "codex",
-  model: "gpt-5.6-terra",
+  model: "gpt-5.6-luna",
   effort: "medium"
 };
 var commitAgent = {
@@ -949,6 +949,15 @@ var index_default = r({
         });
       }
       case "await-plan-discovery": {
+        if (isExplicitRetry(ctx)) {
+          await ctx.log(
+            "info",
+            "Explicit Retry discarded the saved plan-discovery result and will discover the current plan again."
+          );
+          return i(
+            { ...state, stage: { kind: "discover-plan" } }
+          );
+        }
         const judgment = await readHeadlessJudgment(ctx, state, event, {
           name: "discoverPlan",
           failureMessage: "The current plan could not be discovered",
@@ -1400,10 +1409,8 @@ var index_default = r({
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           await ctx.log("error", `Commit result validation failed for phase ${phase.number}: ${message}. Raw event: ${JSON.stringify(event)}`);
-          const invocation = "invocation" in ctx ? ctx.invocation : void 0;
-          const explicitRetry = invocation !== null && typeof invocation === "object" && "kind" in invocation && invocation.kind === "retry";
           const savedResults = s.getHeadlessAgentResults(event);
-          if (explicitRetry && savedResults?.length === 1 && !state.stage.recoveryAttempted) {
+          if (isExplicitRetry(ctx) && savedResults?.length === 1 && !state.stage.recoveryAttempted) {
             await ctx.setUiFeedback({
               kind: "info",
               phase: "commit-recovery",
@@ -1997,6 +2004,10 @@ function parseAutoCommit(value) {
   if (value === void 0) return "yes";
   if (value === "yes" || value === "no") return value;
   throw new Error("Automatic commit must be yes or no.");
+}
+function isExplicitRetry(ctx) {
+  const invocation = "invocation" in ctx ? ctx.invocation : void 0;
+  return invocation !== null && typeof invocation === "object" && "kind" in invocation && invocation.kind === "retry";
 }
 function headlessRawOutput(event) {
   if (!event || typeof event !== "object") return "";

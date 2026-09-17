@@ -54,6 +54,38 @@ test("plan discovery proceeds directly to implementer selection", async () => {
   }
 });
 
+test("explicit Retry discards a stale plan-discovery result and discovers the current plan again", async () => {
+  const harness = workflowHarness({
+    conversationHistory: [
+      message("assistant", "The current plan is at scratch/plans/current-plan/index.md."),
+    ],
+  });
+  const staleResult = discoveryResult(0);
+  const restarted = await workflow.step(
+    { ...harness.ctx, ...{ invocation: { kind: "retry" } } },
+    discoveryState(),
+    staleResult,
+  );
+
+  assert.equal(restarted.type, "cont");
+  assert.equal(stageOf(restarted).kind, "discover-plan");
+  assert.equal(harness.headlessLaunchCount, 0);
+
+  const rediscovery = await workflow.step(
+    harness.ctx,
+    restarted.type === "cont" ? restarted.state as WorkflowState : discoveryState(),
+    undefined,
+  );
+
+  assert.equal(rediscovery.type, "suspend");
+  assert.equal(
+    rediscovery.type === "suspend" ? rediscovery.condition.kind : undefined,
+    "headless_agent",
+  );
+  assert.equal(stageOf(rediscovery).kind, "await-plan-discovery");
+  assert.equal(harness.headlessLaunchCount, 1);
+});
+
 test("a fully completed discovered plan proceeds directly to completion", async () => {
   const worktreePath = mkdtempSync(join(tmpdir(), "phase-wise-plan-"));
   try {

@@ -180,7 +180,7 @@ function extractJsonObject(output) {
 // src/prompts.ts
 var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
 function plannerPrompt(input) {
-  return withPromptFooter(`Create the complete implementation plan for this story using the engineering documents and UI brief.
+  return withPromptFooter(`Create the complete implementation plan using the create-implementation-plan skill for this story using the engineering documents and UI brief.
 
 Repository: ${input.repositoryPath}
 Story: ${input.story}

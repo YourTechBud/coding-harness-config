@@ -11,7 +11,7 @@ export function plannerPrompt(input: {
   readonly programDesignPath: string;
   readonly uiBriefPath: string;
 }): string {
-  return withPromptFooter(`Create the complete implementation plan for this story using the engineering documents and UI brief.
+  return withPromptFooter(`Create the complete implementation plan using the create-implementation-plan skill for this story using the engineering documents and UI brief.
 
 Repository: ${input.repositoryPath}
 Story: ${input.story}
