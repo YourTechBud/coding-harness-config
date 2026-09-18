@@ -1,5 +1,5 @@
 ---
-description: Create a phased, self-sufficient implementation plan from the current brainstorming context
+description: Create a phase-wise implementation plan
 ---
 
 Create a complete implementation plan from the current brainstorming context. The plan will be read by fresh implementers and reviewers with no access to this conversation, so it must preserve the intent and decisions they cannot recover elsewhere while pointing them to repository knowledge they can inspect themselves.
@@ -86,7 +86,7 @@ Delivers a bounded portion of real behavior, integration, refactoring, or assign
 
 Break the story's implementation into sizable increments so review can detect problems and meaningfully course-correct before the entire story is implemented. A phase should leave enough evidence to assess the direction while correction can still influence subsequent work without extensive rework.
 
-Balance the cost of correction against execution and review overhead: overly broad phases let too much work accumulate before feedback, while overly small phases waste time and tokens on repeated setup, handoffs, and reviews. For agent-led phases, favor larger increments within that balance: capable implementers and reviewers can assess substantial code, so code volume alone is not a reason to split. For `mock-ui`, follow the human-led sizing guidance in its phase definition.
+Balance the cost of correction against execution and review overhead: overly broad phases let too much work accumulate before feedback, while overly small phases waste time and tokens on repeated setup, handoffs, and reviews. The cost of having smaller phases outweight the cost of overly broad phases. Therefore, favor much larger increments within that balance: we have really capable implementers and reviewers that can assess substantial code, so code volume alone is not a reason to split. For `mock-ui`, follow the human-led sizing guidance in its phase definition.
 
 Phases need not be user-facing increments. Preparatory refactors, temporary red states, and later integration are legitimate boundaries.
 
