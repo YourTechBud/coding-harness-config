@@ -1061,11 +1061,15 @@ var index_default = r({
         const activeState = requireActiveState(state);
         const phase = activePhase(activeState);
         const profile = state.stage.profile;
-        await setWorkflowStatus(ctx, {
-          kind: "implementer-aligning",
-          phase: phase.number,
-          phaseCount: activeState.plan.phases.length
-        });
+        if (phase.type === "mock-ui") {
+          await setHumanCompletionStatus(ctx, activeState);
+        } else {
+          await setWorkflowStatus(ctx, {
+            kind: "implementer-aligning",
+            phase: phase.number,
+            phaseCount: activeState.plan.phases.length
+          });
+        }
         const spawned = await ctx.spawnAgentSession({
           harness: profile.harness,
           model: profile.model,
@@ -1087,6 +1091,15 @@ var index_default = r({
           "info",
           `Spawned ${profile.kind} implementer for phase ${activePhase(activeState).number}/${activeState.plan.phases.length}: harness=${profile.harness}, model=${profile.model}, effort=${profile.effort}, agentSessionId=${implementer.agentSessionId}, paneId=${implementer.paneId}.`
         );
+        if (phase.type === "mock-ui") {
+          return a(
+            withStage(activeState, {
+              kind: "await-human-completion",
+              implementer
+            }),
+            o.userContinue()
+          );
+        }
         return a(
           withStage(activeState, {
             kind: "await-implementer-turn",

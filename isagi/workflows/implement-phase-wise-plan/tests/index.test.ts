@@ -283,8 +283,9 @@ test("mock-ui phase selects the UI-heavy profile without a classifier", async ()
   assert.equal(spawned.type, "suspend");
   assert.equal(
     spawned.type === "suspend" ? spawned.condition.kind : undefined,
-    "agent_turn",
+    "user_continue",
   );
+  assert.equal(stageOf(spawned).kind, "await-human-completion");
   const { kind: _kind, ...expectedProfile } = implementerUiHeavy;
   const launched = harness.spawnedSessions[0];
   assert.deepEqual(
@@ -294,6 +295,11 @@ test("mock-ui phase selects the UI-heavy profile without a classifier", async ()
   assert.deepEqual(harness.spawnedSessions[0]?.modifiers, [
     { kind: "skill", name: "designing-ui" },
   ]);
+  assert.equal(
+    harness.feedbackWhenSessionsSpawned[0]?.phase,
+    "mock-human-completion",
+  );
+  assert.equal(harness.feedback.at(-1)?.phase, "mock-human-completion");
   const prompt = harness.spawnedSessions[0]?.prompt ?? "";
   assert.match(prompt, /^You are preparing the human-led mock-UI work for phase 2 in docs\/plan.md/);
   assert.match(prompt, /Before creating mockups/);
@@ -861,11 +867,15 @@ function workflowHarness(input?: {
   const workflowContexts: Array<Parameters<WorkflowContext["startWorkflow"]>[2]> = [];
   const closedPanes: number[] = [];
   const feedback: Array<Parameters<WorkflowContext["setUiFeedback"]>[0]> = [];
+  const feedbackWhenSessionsSpawned: Array<
+    Parameters<WorkflowContext["setUiFeedback"]>[0] | undefined
+  > = [];
   let headlessLaunchCount = 0;
   const ctx: WorkflowContext = {
     worktreePath: input?.worktreePath ?? "/workspace",
     spawnAgentSession: async (spawnInput) => {
       spawnedSessions.push(spawnInput);
+      feedbackWhenSessionsSpawned.push(feedback.at(-1));
       return {
         agentSessionId: 22,
         paneId: 32,
@@ -915,6 +925,7 @@ function workflowHarness(input?: {
     workflowContexts,
     closedPanes,
     feedback,
+    feedbackWhenSessionsSpawned,
     get headlessLaunchCount() {
       return headlessLaunchCount;
     },
