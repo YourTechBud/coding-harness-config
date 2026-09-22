@@ -97,8 +97,8 @@ var fixer = {
   effort: "medium"
 };
 var reviewer = {
-  harness: "claude",
-  model: "opus",
+  harness: "codex",
+  model: "gpt-5.6-sol",
   effort: "medium"
 };
 var routingJudgment = {

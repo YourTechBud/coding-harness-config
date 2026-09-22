@@ -1,5 +1,5 @@
 {
-  "packageManager": "pnpm@11.4.0",
+  "packageManager": "pnpm@12.5.1",
   "type": "module",
   "scripts": {
     "generate": "tsx generator/index.ts generate",

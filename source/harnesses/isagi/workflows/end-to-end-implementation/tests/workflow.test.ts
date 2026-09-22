@@ -312,7 +312,11 @@ test('implementation always enters documentation discovery before the PR branch'
       harness: 'codex', model: 'gpt-6-astra', effort: 'low', modifiers: [{ kind: 'skill', name: 'brainstorming' }], prompt: harness.spawned[0]?.prompt,
     });
     assert.match(harness.spawned[0]?.prompt ?? '', /Let's brainstorm/);
-    assert.match(harness.spawned[0]?.prompt ?? '', /both new documentation and updates to existing documentation within ADRs/);
+    assert.match(harness.spawned[0]?.prompt ?? '', /Prefer leaving documentation unchanged/);
+    assert.match(harness.spawned[0]?.prompt ?? '', /correct existing documentation made wrong, misleading, irrelevant, or contradictory/);
+    assert.match(harness.spawned[0]?.prompt ?? '', /durable, 10,000-foot architectural understanding/);
+    assert.match(harness.spawned[0]?.prompt ?? '', /Apply the same threshold to ADRs/);
+    assert.match(harness.spawned[0]?.prompt ?? '', /no documentation changes are needed and stop without offering optional additions/);
     assert.match(harness.spawned[0]?.prompt ?? '', /implementation\/decisions.md/);
     result = await workflow.step(harness.ctx, resultState(result), ended);
     assert.equal(resultState(result).stage.kind, 'await_documentation_continue');

@@ -13,8 +13,8 @@ export const fixer = {
 } satisfies AgentProfile;
 
 export const reviewer = {
-  harness: "claude",
-  model: "opus",
+  harness: "codex",
+  model: "gpt-5.6-sol",
   effort: "medium",
 } satisfies AgentProfile;
 

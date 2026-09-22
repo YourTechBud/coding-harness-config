@@ -13,9 +13,9 @@ export const writer = {
 } satisfies AgentProfile;
 
 export const reviewer = {
-  harness: 'claude',
-  model: 'opus',
-  effort: 'medium',
+  harness: 'codex',
+  model: 'gpt-5.6-sol',
+  effort: 'high',
 } satisfies AgentProfile;
 
 export const writerJudgment = {

@@ -231,7 +231,7 @@ Capture decisions, what was created, and where the mocks exist, including releva
 If no UI mocks were needed or created, capture that outcome. Keep the brief simple and report its path when finished.`;
 }
 function documentationDiscoveryPrompt(input) {
-  return `Let's brainstorm which documentation updates would be valuable now that this story has been implemented.
+  return `Let's brainstorm whether this implementation warrants any long-term documentation changes. Prefer leaving documentation unchanged.
 
 ${designContext(input)}
 Implementation plan: ${input.entryPlanPath}
@@ -239,9 +239,11 @@ Implementation decision log: ${input.decisionLogPath}
 
 Read the relevant inputs and existing documentation, and explore the code as needed to understand what was actually implemented.
 
-Keep both new documentation and updates to existing documentation within ADRs and durable, high-level overviews that will remain useful over the longer term. No documentation changes may be necessary.
+Suggest only the smallest changes that correct existing documentation made wrong, misleading, irrelevant, or contradictory by the implementation, or fill a material gap in durable, 10,000-foot architectural understanding. Prefer a targeted correction to an existing document over a new document. New material should help future readers understand the system well beyond this story, rather than recap its implementation or duplicate details available in code, tests, plans, or the decision log.
 
-Start with a concise assessment of worthwhile changes and the questions or options we should discuss. Keep this opening turn focused on discovery; I will steer what we actually write or update.`;
+Apply the same threshold to ADRs: propose one only for a consequential architectural decision whose rationale and trade-offs will matter to future decisions. A completed story or an entry in the implementation decision log is not by itself a reason for an ADR. Preserve historically accurate ADR context; use the repository's amendment or supersession conventions when a decision has changed.
+
+Give a concise assessment. For each proposed change, identify the document or gap and explain the lasting value or specific misleading claim it fixes. If nothing clears this threshold, say that no documentation changes are needed and stop without offering optional additions. Keep this opening turn focused on assessment; I will decide what, if anything, we write or update.`;
 }
 
 // src/checkpoint.ts
