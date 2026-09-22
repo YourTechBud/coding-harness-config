@@ -4,6 +4,6 @@ targets:
   pi:
     frontmatter:
       description: |
-        Use when relevant files or documentation sections are unknown and exploration would significantly reduce how much you need to read. Returns relevant locations and brief explanations of their relevance so you can read the selected material yourself. When relevant files are already known or a quick search is sufficient, read or search directly. Consider using the general sub-agent or a specialized sub-agent for audits, quality assessments, redundancy analysis, or other substantive evaluation.
+        Use for understanding existing code or documentation: locating relevant implementation, explaining how behavior works across files, and verifying claims against evidence. Returns concise answers with supporting references and uncertainty. Prefer Explorer for these tasks even when they require substantial reasoning. Use direct tools for simple reads or narrow searches; use General or a specialized agent for bug diagnosis, quality assessments, or solution development.
       model: openai-codex/gpt-5.6-luna
       thinkingLevel: high
