@@ -16,6 +16,6 @@ Cover what a fresh agent needs to retrieve and maintain the work:
 
 ## Save and Revise
 
-Use the configured representation and include content supported by the conversation. Preserve existing user-written context and material historical reasoning through focused updates, keeping parent relationships and dependencies consistent when stories change or move.
+Use the configured representation and include content supported by the conversation. Before initial saves and later updates, check the proposed artifacts against the relevant discussion: consequential settled choices must survive with their specificity and status intact, including decisions reached after the original story was saved. Apply the story preservation guidance without requiring the user to enumerate which kinds of decisions to document. Preserve existing user-written context and material historical reasoning through focused updates, keeping parent relationships and dependencies consistent when stories change or move.
 
 Record spike findings and their resulting epic and story updates so shaping can continue in another session without reconstructing the investigation. Verify that the requested writes and relationships succeeded before reporting persistence or spike closure as complete.

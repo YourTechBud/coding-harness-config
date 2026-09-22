@@ -22,7 +22,7 @@ Focus on the current epic. Preserve a candidate epic only when the user explicit
 
 ## Stories
 
-Each story belongs to one epic and has one kind: spike or implementation. Capture its outcome, contribution to the epic, observable acceptance criteria, and context needed to work on it in a later session. Preserve decisions, rationale, serious alternatives, constraints, and evidence where losing them would cause misunderstanding or repeat an important discussion.
+Each story belongs to one epic and has one kind: spike or implementation. Capture its outcome, contribution to the epic, observable acceptance criteria, and context needed to work on it in a later session. Stories constrain later implementation by preserving settled choices at the specificity discussed, including experience, user journeys, contracts, commands, and responsibility boundaries where those were agreed. Infer what is settled from the conversation, distinguish suggestions and unresolved questions, and clarify genuine ambiguity with the user. Preserve the rationale, serious alternatives, and evidence needed to understand those choices; capture the consequential guidance rather than the full discussion or a comprehensive design document.
 
 Create only stories whose outcomes and acceptance criteria are supported by current understanding. Defer stories whose shape depends on a spike's findings; independent stories may coexist with that spike. Represent dependencies where another story gates useful work.
 
@@ -46,9 +46,9 @@ An implementation story is a substantial deliverable that produces meaningful va
 
 The purpose of splitting an epic into stories is to keep each story's consequential design comprehensible to the user as a whole before implementation begins. For sizing, the only bottleneck is the user's comprehension; assume highly capable models whose ability to plan and execute is not the bottleneck. Comprehension is easier than planning: models develop the plans and explain them, while the user understands, evaluates, and approves the consequential design.
 
-That understanding centers on architecture, API contracts, database schema, important deep-module interfaces, and code/data flows. Module internals can remain black boxes when their interfaces and behavior provide enough understanding. Use this comprehension boundary to judge story scope with the user; detailed program design can follow during planning before implementation is authorized.
+That understanding centers on architecture, API contracts, database schema, important deep-module interfaces, and code/data flows. Module internals can remain black boxes when their interfaces and behavior provide enough understanding. Use this comprehension boundary to judge story scope with the user; later architecture and program-design planning develops the remaining details within the settled choices captured in the story before implementation is authorized.
 
-Write acceptance criteria as observable pass-or-fail conditions that distinguish success from a materially incomplete result, while leaving the engineering route open. Keep preparatory technical work within the deliverable's implementation. Resolve consequential product and design uncertainty with the user through shaping or spikes.
+Write acceptance criteria as observable pass-or-fail conditions that distinguish success from a materially incomplete result, while leaving undecided engineering choices open. Keep preparatory technical work within the deliverable's implementation. Resolve consequential product and design uncertainty with the user through shaping or spikes.
 
 When implementation reveals consequential uncertainty or a need for new product decisions, return that work to shaping with the user and consider a spike.
 
