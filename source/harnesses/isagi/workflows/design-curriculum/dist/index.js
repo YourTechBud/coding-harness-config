@@ -565,8 +565,8 @@ ${UNATTENDED_FOOTER}`;
 // src/workflow.ts
 var curriculumDesigner = {
   harness: "codex",
-  model: "gpt-6-astra",
-  effort: "low"
+  model: "gpt-6-sol",
+  effort: "high"
 };
 async function step(ctx, state, incoming) {
   switch (state.stage.kind) {

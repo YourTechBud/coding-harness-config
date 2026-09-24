@@ -188,22 +188,22 @@ function extractJsonObject(output) {
 // src/constants.ts
 var uiAgent = {
   harness: "claude",
-  model: "fable",
+  model: "opus",
   effort: "medium"
 };
 var documentationAgent = {
   harness: "codex",
-  model: "gpt-6-astra",
-  effort: "low"
+  model: "gpt-6-sol",
+  effort: "medium"
 };
 var commitAgent = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium"
 };
 var pullRequestAgent = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium"
 };
 

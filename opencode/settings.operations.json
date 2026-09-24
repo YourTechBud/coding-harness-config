@@ -4,8 +4,8 @@
     "path": ["agent", "explore"],
     "mode": "setIfMissing",
     "value": {
-      "model": "openai/gpt-5.4-mini",
-      "variant": "low"
+      "model": "openai/gpt-6-luna",
+      "variant": "high"
     }
   },
   {

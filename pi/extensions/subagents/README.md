@@ -24,4 +24,4 @@ Agent Markdown frontmatter supplies `model` and `thinkingLevel` (or `thinking`).
 
 Children use normal Pi resource discovery, commands, skills, context files, and extensions, with the existing base system prompt plus the agent's instructions. The runtime excludes the extension that owns `task`, including its commands and hooks, and removes `task` from the inherited active tool list. Other extensions still receive normal child-session lifecycle events, including shutdown after each invocation. Sessions share the working directory; parallel implementation tasks should have non-overlapping file scopes.
 
-The canonical `general` agent is selected through its description when the user requests sub-agents and no specialist fits. It uses `openai-codex/gpt-5.6-sol` with low thinking and benefits from a tightly scoped prompt containing intent, outcome, context, and a procedure when useful.
+The canonical `general` agent is selected through its description when the user requests sub-agents and no specialist fits. It uses `openai-codex/gpt-6-sol` with low thinking and benefits from a tightly scoped prompt containing intent, outcome, context, and a procedure when useful.

@@ -98,12 +98,12 @@ var fixer = {
 };
 var reviewer = {
   harness: "codex",
-  model: "gpt-5.6-sol",
-  effort: "medium"
+  model: "gpt-6-sol",
+  effort: "high"
 };
 var routingJudgment = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium"
 };
 

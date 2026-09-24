@@ -122,13 +122,13 @@ var deckBuilder = {
 };
 var guide = {
   harness: "codex",
-  model: "gpt-6-astra",
-  effort: "low"
+  model: "gpt-6-sol",
+  effort: "high"
 };
 var deckArchitect = {
   harness: "claude",
-  model: "fable",
-  effort: "medium"
+  model: "opus",
+  effort: "high"
 };
 
 // src/curriculum-v3.ts

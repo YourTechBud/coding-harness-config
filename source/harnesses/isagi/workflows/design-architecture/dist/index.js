@@ -93,22 +93,22 @@ function u(e) {
 // src/constants.ts
 var reviewer = {
   harness: "codex",
-  model: "gpt-5.6-sol",
+  model: "gpt-6-sol",
   effort: "high"
 };
 var writer = {
   harness: "claude",
-  model: "fable",
-  effort: "medium"
+  model: "opus",
+  effort: "high"
 };
 var writerJudgment = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium"
 };
 var reviewerJudgment = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium"
 };
 

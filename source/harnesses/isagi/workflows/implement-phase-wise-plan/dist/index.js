@@ -112,17 +112,17 @@ var implementerUiHeavy = {
 var implementerProseHeavy = {
   kind: "prose-heavy",
   harness: "codex",
-  model: "gpt-6-astra",
-  effort: "low"
+  model: "gpt-6-sol",
+  effort: "medium"
 };
 var headlessJudgment = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium"
 };
 var commitAgent = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium"
 };
 

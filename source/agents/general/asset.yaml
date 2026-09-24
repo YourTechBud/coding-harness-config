@@ -5,5 +5,5 @@ targets:
     frontmatter:
       description: |
         Only use this agent after the user explicitly asks you to. Use for clearly scoped work requiring reasoning or judgment, including evaluations, analysis, and prototypes. When delegating, explain the goal, why it matters, and the desired outcome—including how the result should be presented. Supply relevant context and constraints, and keep consequential decisions with the user.
-      model: openai-codex/gpt-5.6-sol
+      model: openai-codex/gpt-6-sol
       thinkingLevel: high

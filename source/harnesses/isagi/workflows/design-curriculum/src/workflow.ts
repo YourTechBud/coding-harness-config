@@ -10,8 +10,8 @@ import type { CurriculumAnalysis } from './types.js';
 
 export const curriculumDesigner = {
   harness: 'codex',
-  model: 'gpt-6-astra',
-  effort: 'low',
+  model: 'gpt-6-sol',
+  effort: 'high',
 } as const;
 
 type Designer = {

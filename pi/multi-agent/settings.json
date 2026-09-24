@@ -1,6 +1,6 @@
 {
 	"defaults": {
-		"model": "openai-codex/gpt-5.5",
+		"model": "openai-codex/gpt-6-sol",
 		"thinkingLevel": "high",
 		"tools": ["read", "bash"]
 	},

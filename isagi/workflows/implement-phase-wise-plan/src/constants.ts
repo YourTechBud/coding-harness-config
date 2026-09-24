@@ -26,13 +26,13 @@ export const implementerUiHeavy = {
 export const implementerProseHeavy = {
   kind: "prose-heavy",
   harness: "codex",
-  model: "gpt-6-astra",
-  effort: "low",
+  model: "gpt-6-sol",
+  effort: "medium",
 } satisfies ImplementerProfile;
 
 export const headlessJudgment = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium",
 } satisfies {
   readonly harness: WorkflowAgentHarness;
@@ -42,7 +42,7 @@ export const headlessJudgment = {
 
 export const commitAgent = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium",
 } satisfies {
   readonly harness: WorkflowAgentHarness;

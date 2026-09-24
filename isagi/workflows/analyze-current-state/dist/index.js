@@ -98,17 +98,17 @@ var writer = {
 };
 var reviewer = {
   harness: "codex",
-  model: "gpt-5.6-sol",
+  model: "gpt-6-sol",
   effort: "medium"
 };
 var writerJudgment = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium"
 };
 var reviewerJudgment = {
   harness: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   effort: "medium"
 };
 

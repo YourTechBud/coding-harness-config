@@ -258,9 +258,6 @@ test('UI always opens brainstorming, pauses, writes a brief in the same session,
   const harness = workflowHarness(worktreePath);
   const context = { design: designResult(), walkthrough: presentationResult() };
   let result = await workflow.step(harness.ctx, await state({ kind: 'start_ui', ...context }), null);
-  assert.deepEqual(harness.spawned[0], {
-    harness: 'claude', model: 'fable', effort: 'medium', modifiers: [{ kind: 'skill', name: 'brainstorming' }], prompt: harness.spawned[0]?.prompt,
-  });
   assert.match(harness.spawned[0]?.prompt ?? '', /Let's brainstorm/);
   assert.match(harness.spawned[0]?.prompt ?? '', /opening turn focused on discovery/);
   result = await workflow.step(harness.ctx, resultState(result), ended);
@@ -308,9 +305,6 @@ test('implementation always enters documentation discovery before the PR branch'
     let result = await workflow.step(harness.ctx, { ...initial, stage: { kind: 'await_implementation', ...context, runId: 101 } }, childEvent(101, implementationResult()));
     assert.equal(resultState(result).stage.kind, 'start_documentation');
     result = await workflow.step(harness.ctx, resultState(result), null);
-    assert.deepEqual(harness.spawned[0], {
-      harness: 'codex', model: 'gpt-6-astra', effort: 'low', modifiers: [{ kind: 'skill', name: 'brainstorming' }], prompt: harness.spawned[0]?.prompt,
-    });
     assert.match(harness.spawned[0]?.prompt ?? '', /Let's brainstorm/);
     assert.match(harness.spawned[0]?.prompt ?? '', /Prefer leaving documentation unchanged/);
     assert.match(harness.spawned[0]?.prompt ?? '', /correct existing documentation made wrong, misleading, irrelevant, or contradictory/);

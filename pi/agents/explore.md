@@ -2,7 +2,7 @@
 name: explore
 description: |
   Use for understanding existing code or documentation: locating relevant implementation, explaining how behavior works across files, and verifying claims against evidence. Returns concise answers with supporting references and uncertainty. Prefer Explorer for these tasks even when they require substantial reasoning. Use direct tools for simple reads or narrow searches; use General or a specialized agent for bug diagnosis, quality assessments, or solution development.
-model: openai-codex/gpt-5.6-luna
+model: openai-codex/gpt-6-luna
 thinkingLevel: high
 ---
 

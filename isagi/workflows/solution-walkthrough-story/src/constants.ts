@@ -14,12 +14,12 @@ export const deckBuilder = {
 
 export const guide = {
   harness: 'codex',
-  model: 'gpt-6-astra',
-  effort: 'low',
+  model: 'gpt-6-sol',
+  effort: 'high',
 } satisfies AgentProfile;
 
 export const deckArchitect = {
   harness: 'claude',
-  model: 'fable',
-  effort: 'medium',
+  model: 'opus',
+  effort: 'high',
 } satisfies AgentProfile;

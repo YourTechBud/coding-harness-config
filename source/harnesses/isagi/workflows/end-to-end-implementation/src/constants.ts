@@ -8,24 +8,24 @@ type AgentProfile = {
 
 export const uiAgent = {
   harness: 'claude',
-  model: 'fable',
+  model: 'opus',
   effort: 'medium',
 } satisfies AgentProfile;
 
 export const documentationAgent = {
   harness: 'codex',
-  model: 'gpt-6-astra',
-  effort: 'low',
+  model: 'gpt-6-sol',
+  effort: 'medium',
 } satisfies AgentProfile;
 
 export const commitAgent = {
   harness: 'codex',
-  model: 'gpt-5.6-luna',
+  model: 'gpt-6-luna',
   effort: 'medium',
 } satisfies AgentProfile;
 
 export const pullRequestAgent = {
   harness: 'codex',
-  model: 'gpt-5.6-luna',
+  model: 'gpt-6-luna',
   effort: 'medium',
 } satisfies AgentProfile;

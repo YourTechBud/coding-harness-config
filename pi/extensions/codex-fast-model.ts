@@ -7,9 +7,9 @@ const PROVIDER = "openai-codex";
 const FAST_API = "openai-codex-fast-responses";
 const DEFAULT_FAST_MODELS: FastModelConfig[] = [
 	{
-		base: "gpt-5.5",
-		alias: "gpt-5.5-fast",
-		name: "GPT-5.5 Fast",
+		base: "gpt-6-sol",
+		alias: "gpt-6-sol-fast",
+		name: "GPT-6 Sol Fast",
 		serviceTier: "priority",
 	},
 ];
