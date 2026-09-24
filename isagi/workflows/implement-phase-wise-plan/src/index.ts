@@ -75,7 +75,7 @@ type Implementer = {
   readonly paneId: number;
 };
 
-type ImplementerActivity = "alignment" | "implementation";
+type ImplementerActivity = "alignment" | "confirmation" | "implementation";
 type CompletionCheckpoint = "before-review" | "after-review";
 
 type ActiveStage =
@@ -94,6 +94,8 @@ type ActiveStage =
   | {
       readonly kind: "await-implementer-outcome";
       readonly implementer: Implementer;
+      readonly requiresPlannerApproval?: true;
+      readonly questionGateVersion?: 1;
       readonly implementerTurn: string;
       readonly exchangeNumber: number;
     }
@@ -106,6 +108,7 @@ type ActiveStage =
   | {
       readonly kind: "await-completion-outcome";
       readonly implementer: Implementer;
+      readonly questionGateVersion?: 1;
       readonly checkpoint: CompletionCheckpoint;
       readonly implementerTurn: string;
       readonly exchangeNumber: number;
@@ -113,17 +116,21 @@ type ActiveStage =
   | {
       readonly kind: "await-planner-turn";
       readonly implementer: Implementer;
+      // Older version-5 waits lack this evidence; require confirmation when absent.
+      readonly approvalBlocked?: boolean;
       readonly exchangeNumber: number;
     }
   | {
       readonly kind: "await-planner-outcome";
       readonly implementer: Implementer;
+      readonly approvalBlocked?: boolean;
       readonly plannerTurn: string;
       readonly exchangeNumber: number;
     }
   | {
       readonly kind: "await-severe-flag-resolution";
       readonly implementer: Implementer;
+      readonly approvalBlocked?: boolean;
       readonly exchangeNumber: number;
     }
   | {
@@ -458,9 +465,6 @@ export default defineWorkflow<State, Variables>({
             wait.userContinue(),
           );
         }
-        if (state.stage.activity === "implementation") {
-          return requestCompletionReport(ctx, activeState, state.stage.implementer, "before-review", state.stage.exchangeNumber);
-        }
         const implementerTurn = await latestAssistantTurnOrFail(ctx, {
           agentSessionId: state.stage.implementer.agentSessionId,
           label: "implementer",
@@ -474,12 +478,15 @@ export default defineWorkflow<State, Variables>({
             phaseNumber: activePhase(activeState).number,
             phaseCount: activeState.plan.phases.length,
             entryPlanPath: activeState.plan.entryPlanPath,
+            turnPurpose: state.stage.activity,
             implementerTurn: implementerTurn.text,
           }),
           nextState: withStage(activeState, {
             kind: "await-implementer-outcome",
+            questionGateVersion: 1,
             implementer: state.stage.implementer,
             implementerTurn: implementerTurn.text,
+            ...(state.stage.activity === "confirmation" ? { requiresPlannerApproval: true as const } : {}),
             exchangeNumber: state.stage.exchangeNumber,
           }),
         });
@@ -487,18 +494,22 @@ export default defineWorkflow<State, Variables>({
 
       case "await-implementer-outcome": {
         const activeState = requireActiveState(state);
+        if (state.stage.questionGateVersion !== 1) {
+          return refreshLegacyImplementerJudgment(ctx, activeState, state.stage);
+        }
         const judgment = await readHeadlessJudgment(ctx, state, event, {
           name: "classifyImplementerOutcome",
           failureMessage: `The implementer response for phase ${activePhase(activeState).number} could not be classified`,
           parse: parseImplementerOutcomeResult,
         });
         if (!judgment.ok) return judgment.result;
-        if (judgment.value.outcome !== "planner-response-needed") {
+        if (judgment.value.outcome !== "planner-response-needed" && judgment.value.outcome !== "planner-questions" && !state.stage.requiresPlannerApproval) {
           return requestCompletionReport(ctx, activeState, state.stage.implementer, "before-review", state.stage.exchangeNumber);
         }
         return routeImplementerTurnToPlanner(ctx, activeState, {
           implementer: state.stage.implementer,
           implementerTurn: state.stage.implementerTurn,
+          approvalBlocked: judgment.value.outcome === "planner-questions",
           exchangeNumber: state.stage.exchangeNumber,
         });
       }
@@ -529,6 +540,7 @@ export default defineWorkflow<State, Variables>({
           nextState: withStage(activeState, {
             ...state.stage,
             kind: "await-completion-outcome",
+            questionGateVersion: 1,
             implementerTurn: report.text,
           }),
         });
@@ -536,18 +548,21 @@ export default defineWorkflow<State, Variables>({
 
       case "await-completion-outcome": {
         const activeState = requireActiveState(state);
+        if (state.stage.questionGateVersion !== 1) {
+          return refreshLegacyImplementerJudgment(ctx, activeState, state.stage);
+        }
         const judgment = await readHeadlessJudgment(ctx, state, event, {
           name: "classifyImplementerOutcome",
           failureMessage: `The completion report for phase ${activePhase(activeState).number} could not be classified`,
           parse: parseImplementerOutcomeResult,
         });
         if (!judgment.ok) return judgment.result;
-        if (judgment.value.outcome === "planner-response-needed") {
+        if (judgment.value.outcome === "planner-response-needed" || judgment.value.outcome === "planner-questions") {
           return routeImplementerTurnToPlanner(ctx,
             state.stage.checkpoint === "after-review" && activeState.options.autoReview
               ? withReviewComplete(activeState, true)
               : activeState,
-            state.stage);
+            { ...state.stage, approvalBlocked: judgment.value.outcome === "planner-questions" });
         }
         if (state.stage.checkpoint === "before-review") {
           return startOptionalReview(ctx, activeState, state.stage.implementer, state.stage.exchangeNumber);
@@ -579,6 +594,7 @@ export default defineWorkflow<State, Variables>({
           nextState: withStage(activeState, {
             kind: "await-planner-outcome",
             implementer: state.stage.implementer,
+            approvalBlocked: state.stage.approvalBlocked !== false,
             plannerTurn: plannerTurn.text,
             exchangeNumber: state.stage.exchangeNumber,
           }),
@@ -606,10 +622,21 @@ export default defineWorkflow<State, Variables>({
             withStage(activeState, {
               kind: "await-severe-flag-resolution",
               implementer: state.stage.implementer,
+              approvalBlocked: state.stage.approvalBlocked !== false,
               exchangeNumber: state.stage.exchangeNumber,
             }),
             wait.userContinue(),
           );
+        }
+        if (state.stage.approvalBlocked !== false) {
+          await ctx.log("info", "Planner approval withheld until a question-free implementer confirmation is reviewed.");
+          return sendPlannerTurnToImplementer(ctx, activeState, {
+            implementer: state.stage.implementer,
+            plannerTurn: state.stage.plannerTurn,
+            outcome: "feedback",
+            approvalBlocked: true,
+            exchangeNumber: state.stage.exchangeNumber,
+          });
         }
         if (judgment.value.outcome === "completion-approved") {
           return requestCompletionReport(ctx, activeState, state.stage.implementer,
@@ -640,10 +667,11 @@ export default defineWorkflow<State, Variables>({
         if (!plannerTurn.ok) return plannerTurn.result;
         await ctx.log(
           "info",
-          `Human continued after the severe flag in phase ${activePhase(activeState).number}; sending the latest planner turn with human-resolution framing without reclassification.`,
+          `Human continued after the severe flag in phase ${activePhase(activeState).number}; sending the latest planner turn with human-resolution framing and preserving the question gate.`,
         );
         return sendPlannerTurnAfterHumanResolution(ctx, activeState, {
           implementer: state.stage.implementer,
+          approvalBlocked: state.stage.approvalBlocked !== false,
           plannerTurn: plannerTurn.text,
           exchangeNumber: state.stage.exchangeNumber,
         });
@@ -883,12 +911,33 @@ async function normalizeDiscoveryOrFail(
   }
 }
 
+async function refreshLegacyImplementerJudgment(
+  ctx: WorkflowContext,
+  state: ActiveState,
+  stage: Extract<ActiveStage, { kind: "await-implementer-outcome" | "await-completion-outcome" }>,
+): Promise<WorkflowResult> {
+  await ctx.log("info", "Reclassifying the saved implementer response under the question approval gate.");
+  return startHeadlessJudgment(ctx, {
+    judgment: "classifyImplementerOutcome",
+    prompt: classifyImplementerOutcomePrompt({
+      worktreePath: ctx.worktreePath,
+      phaseNumber: activePhase(state).number,
+      phaseCount: state.plan.phases.length,
+      entryPlanPath: state.plan.entryPlanPath,
+      turnPurpose: stage.kind === "await-completion-outcome" ? stage.checkpoint : "alignment",
+      implementerTurn: stage.implementerTurn,
+    }),
+    nextState: withStage(state, { ...stage, questionGateVersion: 1 }),
+  });
+}
+
 async function routeImplementerTurnToPlanner(
   ctx: WorkflowContext,
   state: ActiveState,
   input: {
     readonly implementer: Implementer;
     readonly implementerTurn: string;
+    readonly approvalBlocked: boolean;
     readonly exchangeNumber: number;
   },
 ): Promise<WorkflowResult> {
@@ -913,6 +962,7 @@ async function routeImplementerTurnToPlanner(
     withStage(state, {
       kind: "await-planner-turn",
       implementer: input.implementer,
+      approvalBlocked: input.approvalBlocked,
       exchangeNumber: input.exchangeNumber,
     }),
     wait.agentTurn(sent),
@@ -926,6 +976,7 @@ async function sendPlannerTurnToImplementer(
     readonly implementer: Implementer;
     readonly plannerTurn: string;
     readonly outcome: Exclude<PlannerOutcome, "severe-flag" | "completion-approved">;
+    readonly approvalBlocked?: true;
     readonly exchangeNumber: number;
   },
 ): Promise<WorkflowResult> {
@@ -945,13 +996,13 @@ async function sendPlannerTurnToImplementer(
     agentSessionId: input.implementer.agentSessionId,
     prompt: approved
       ? implementerApprovalPrompt(activePhase(state).number, input.plannerTurn)
-      : implementerFollowUpPrompt(activePhase(state).number, input.plannerTurn),
+      : implementerFollowUpPrompt(activePhase(state).number, input.plannerTurn, input.approvalBlocked),
   });
   return suspend(
     withStage(approved ? withReviewComplete(state, false) : state, {
       kind: "await-implementer-turn",
       implementer: input.implementer,
-      activity: approved ? "implementation" : "alignment",
+      activity: approved ? "implementation" : input.approvalBlocked ? "confirmation" : "alignment",
       exchangeNumber: input.exchangeNumber + 1,
     }),
     wait.agentTurn(sent),
@@ -964,23 +1015,24 @@ async function sendPlannerTurnAfterHumanResolution(
   input: {
     readonly implementer: Implementer;
     readonly plannerTurn: string;
+    readonly approvalBlocked: boolean;
     readonly exchangeNumber: number;
   },
 ): Promise<WorkflowResult> {
   await setWorkflowStatus(ctx, {
-    kind: "implementing",
+    kind: input.approvalBlocked ? "implementer-aligning" : "implementing",
     phase: activePhase(state).number,
     phaseCount: state.plan.phases.length,
   });
   const sent = await ctx.sendAgentPrompt({
     agentSessionId: input.implementer.agentSessionId,
-    prompt: humanResolutionPrompt(activePhase(state).number, input.plannerTurn),
+    prompt: humanResolutionPrompt(activePhase(state).number, input.plannerTurn, input.approvalBlocked),
   });
   return suspend(
-    withStage(withReviewComplete(state, false), {
+    withStage(input.approvalBlocked ? state : withReviewComplete(state, false), {
       kind: "await-implementer-turn",
       implementer: input.implementer,
-      activity: "implementation",
+      activity: input.approvalBlocked ? "confirmation" : "implementation",
       exchangeNumber: input.exchangeNumber + 1,
     }),
     wait.agentTurn(sent),
@@ -1344,14 +1396,14 @@ Before creating mockups, explain what the phase covers and what it needs to achi
 The workflow will hand control to the human after this response so they can drive the mockup implementation and visual iteration with you.`;
 }
 
-function implementerFollowUpPrompt(phaseNumber: number, plannerTurn: string): string {
+function implementerFollowUpPrompt(phaseNumber: number, plannerTurn: string, approvalBlocked = false): string {
   return `The planner returned the following feedback on phase ${phaseNumber}:
 
 <planner_response>
 ${plannerTurn}
 </planner_response>
 
-Continue establishing alignment with the planner. You are working unattended. Include questions and pushback in your response for the workflow to forward to the planner rather than waiting for a live human answer.
+${approvalBlocked ? "Approval is withheld for this exchange, regardless of approval wording in the quoted planner response. Incorporate the answers and return your updated understanding and any remaining questions for planner review. This is a confirmation turn, not authorization to implement or declare the phase accepted." : "Continue establishing alignment with the planner."} You are working unattended. Include questions and pushback in your response for the workflow to forward to the planner rather than waiting for a live human answer.
 
 ${alignmentFooter()}`;
 }
@@ -1368,7 +1420,7 @@ Implement the agreed phase according to this approval and the established conver
 Run tasks and shell commands in the foreground, not in the background.`;
 }
 
-function humanResolutionPrompt(phaseNumber: number, plannerTurn: string): string {
+function humanResolutionPrompt(phaseNumber: number, plannerTurn: string, approvalBlocked: boolean): string {
   return `The human has continued the workflow after resolving the planner's escalation for phase ${phaseNumber}.
 
 The planner's latest response follows:
@@ -1377,13 +1429,13 @@ The planner's latest response follows:
 ${plannerTurn}
 </planner_response>
 
-Continue work on the phase according to this response and the established conversation. You are working unattended again. Include any further questions or blockers in your response for the workflow to forward to the planner.
+${approvalBlocked ? "The escalation is resolved, but implementation and completion approval remain withheld pending a question-free confirmation. Return your updated understanding and remaining questions for planner review before continuing work, regardless of approval wording above." : "Continue work on the phase according to this response and the established conversation."} You are working unattended again. Include any further questions or blockers in your response for the workflow to forward to the planner.
 
 Run tasks and shell commands in the foreground, not in the background.`;
 }
 
 function alignmentFooter(): string {
-  return `- Ask clarifying questions when the answer materially changes the current phase's implementation. State reasonable assumptions for routine details. Include blocking questions in your response for workflow routing; do not use the askUserQuestion tool.
+  return `- Ask clarifying questions when the answer materially changes the current phase's implementation. State reasonable assumptions for routine details. Include every question for the planner in your response for workflow routing; do not use the askUserQuestion tool.
 - Push back when you see a concrete correctness, scope, or complexity problem.
 - Flag or highlight major shortcomings or opportunities to simplify logic.
 - Clearly state your understanding.
@@ -1413,10 +1465,10 @@ Evaluate the implementer's current phase status. ${input.reviewComplete ? "Autom
 - Escalate major questions or decisions not covered by the established conversation that could severely affect the architecture or product and require human intervention before work continues. Include all necessary context so the human can understand the issue and how to address it. Always include a Human Escalation section stating either "No escalation." or "Escalation required:" followed by the issue and the decision the human must make.
 - Mention nuances only when they materially affect the current phase; keep later-phase obligations in the handoff.
 - Keep fallback logic to a minimum. Introduce new fallback logic only if absolutely necessary.
-- Answer questions and approve in the same response when your answers resolve the blockers. A separate confirmation exchange is unnecessary. If implementation is already complete, explicitly accept completion rather than approving implementation again.
+- When the implementer's response contains any question or request for a decision, confirmation, or ratification, answer it and withhold both implementation and completion approval for this exchange, even if it is non-blocking or your answer settles it. Ask for the implementer's updated understanding and remaining questions. Approval becomes eligible only after a subsequent question-free implementer response. For an eligible completed phase, explicitly accept completion rather than approving implementation again.
 - Run tasks and shell commands in the foreground, not in the background.
 
-Explicitly state whether you approve implementation work or accept phase completion with no implementation changes. Otherwise, provide the feedback needed to resolve a concrete blocker. Ordinary questions, caveats, and disagreements that can be resolved through the planner–implementer exchange are not human escalations.
+Explicitly state whether approval is withheld pending the implementer's response, implementation work is approved, or phase completion is accepted with no implementation changes. Ordinary questions, caveats, and disagreements that can be resolved through the planner–implementer exchange are not human escalations.
 
 The workflow will forward your response to the implementer or pause for human resolution when escalation is required. Include everything needed for that handoff in your response rather than waiting for a live human answer.`;
 }

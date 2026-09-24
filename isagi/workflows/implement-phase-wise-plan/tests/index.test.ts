@@ -147,7 +147,8 @@ test("every non-complete implementer turn returns to the planner, including afte
   assert.match(prompt, /- Escalate major questions or decisions.*severely affect the architecture or product.*Human Escalation.*"No escalation\.".*"Escalation required:"/);
   assert.match(prompt, /Mention nuances only when they materially affect the current phase/);
   assert.match(prompt, /- Keep fallback logic to a minimum.*only if absolutely necessary/);
-  assert.match(prompt, /Answer questions and approve in the same response/);
+  assert.match(prompt, /any question.*withhold both implementation and completion approval/);
+  assert.match(prompt, /Approval becomes eligible only after a subsequent question-free implementer response/);
   assert.match(prompt, /- Run tasks and shell commands in the foreground/);
   assert.equal(prompt.split("\n").filter((line) => line.startsWith("- ")).length, 8);
   assert.doesNotMatch(prompt, /I want you to|I am implementing|repeatedly disagreed/);
@@ -189,6 +190,7 @@ test("planner approval is attributed without the alignment footer", async () => 
       kind: "await-planner-outcome",
       implementer: { agentSessionId: 22, paneId: 32 },
       plannerTurn,
+      approvalBlocked: false,
       exchangeNumber: 1,
     }),
     headlessResult('{"outcome":"approved"}'),
@@ -201,7 +203,82 @@ test("planner approval is attributed without the alignment footer", async () => 
   assert.doesNotMatch(prompt, /Begin implementation only when/);
 });
 
-test("human escalation continuation attributes the latest planner turn without reclassification", async () => {
+for (const approvalBlocked of [true, undefined] as const) {
+  for (const outcome of ["approved", "completion-approved", "feedback"] as const) {
+    test(`planner ${outcome} requires confirmation when question gate is ${String(approvalBlocked)}`, async () => {
+      const harness = workflowHarness();
+      const result = await workflow.step(harness.ctx, activeState({
+        kind: "await-planner-outcome", implementer,
+        ...(approvalBlocked === undefined ? {} : { approvalBlocked }),
+        plannerTurn: "Yes, omit the barrier. I approve implementation and phase completion.",
+        exchangeNumber: 1,
+      }), headlessResult(JSON.stringify({ outcome })));
+      const stage = stageOf(result);
+      assert.equal(stage.kind, "await-implementer-turn");
+      assert.equal(stage.kind === "await-implementer-turn" && stage.activity, "confirmation");
+      assert.match(harness.sentPrompts[0]?.text ?? "", /Approval is withheld.*regardless of approval wording/);
+      assert.match(harness.sentPrompts[0]?.text ?? "", /Yes, omit the barrier/);
+      assert.equal(harness.startedWorkflows.length, 0);
+    });
+  }
+}
+
+for (const checkpoint of ["alignment", "before-review", "after-review"] as const) {
+  test(`${checkpoint} legacy judgments are refreshed before their old completion result can advance`, async () => {
+    const harness = workflowHarness();
+    const report = "Phase complete; a non-blocking question for the planner remains.";
+    const common = { implementer, implementerTurn: report, exchangeNumber: 1, questionGateVersion: undefined };
+    const state = activeState(checkpoint === "alignment"
+      ? { ...common, kind: "await-implementer-outcome" }
+      : { ...common, kind: "await-completion-outcome", checkpoint });
+    const refreshed = await workflow.step(harness.ctx, state, completeOutcome);
+    assert.equal(refreshed.type === "suspend" && refreshed.condition.kind, "headless_agent");
+    assert.equal(harness.headlessLaunchCount, 1);
+    assert.ok(harness.headlessLaunches[0]?.prompt?.includes(report));
+    const pending = await workflow.step(harness.ctx, suspendedState(refreshed),
+      headlessResult('{"outcome":"planner-questions"}'));
+    const stage = stageOf(pending);
+    assert.equal(stage.kind === "await-planner-turn" && stage.approvalBlocked, true);
+    assert.equal(harness.headlessLaunchCount, 1);
+    assert.equal(harness.startedWorkflows.length, 0);
+  });
+
+  test(`${checkpoint} questions block approval until a question-free confirmation is reviewed`, async () => {
+    const harness = workflowHarness({ conversationHistory: [message("assistant", "Yes. I approve.")] });
+    const report = "Phase complete. One non-blocking question: may I drop the barrier?";
+    const stage = checkpoint === "alignment"
+      ? { kind: "await-implementer-outcome" as const, implementer, implementerTurn: report, exchangeNumber: 1 }
+      : { kind: "await-completion-outcome" as const, implementer, implementerTurn: report, checkpoint, exchangeNumber: 1 };
+    const pending = await workflow.step(harness.ctx, activeState(stage, { autoReview: true }),
+      headlessResult('{"outcome":"planner-questions"}'));
+    const pendingStage = stageOf(pending);
+    assert.equal(pendingStage.kind === "await-planner-turn" && pendingStage.approvalBlocked, true);
+    const plannerOutcome = await workflow.step(harness.ctx, suspendedState(pending), endedTurn);
+    const confirming = await workflow.step(harness.ctx, suspendedState(plannerOutcome),
+      headlessResult('{"outcome":"approved"}'));
+    const confirmationOutcome = await workflow.step(harness.ctx, suspendedState(confirming), endedTurn);
+
+    // Another question keeps the gate closed; even a completion claim must return to the planner.
+    const moreQuestions = await workflow.step(harness.ctx, suspendedState(confirmationOutcome),
+      headlessResult('{"outcome":"planner-questions"}'));
+    const questionStage = stageOf(moreQuestions);
+    assert.equal(questionStage.kind === "await-planner-turn" && questionStage.approvalBlocked, true);
+    const questionFree = await workflow.step(harness.ctx, suspendedState(confirmationOutcome), completeOutcome);
+    const clearStage = stageOf(questionFree);
+    assert.equal(clearStage.kind === "await-planner-turn" && clearStage.approvalBlocked, false);
+    const finalPlannerOutcome = await workflow.step(harness.ctx, suspendedState(questionFree), endedTurn);
+    const accepted = await workflow.step(harness.ctx, suspendedState(finalPlannerOutcome),
+      headlessResult('{"outcome":"completion-approved"}'));
+    const acceptedStage = stageOf(accepted);
+    assert.equal(acceptedStage.kind, "await-completion-report");
+    assert.equal(acceptedStage.kind === "await-completion-report" && acceptedStage.checkpoint,
+      checkpoint === "after-review" ? "after-review" : "before-review");
+    assert.equal(harness.startedWorkflows.length, 0);
+  });
+}
+
+for (const approvalBlocked of [false, true, undefined]) {
+  test(`human escalation continuation preserves question gate ${String(approvalBlocked)}`, async () => {
   const severePlannerTurn =
     "## Human Escalation\n\nEscalation required: this changes the persistence boundary; the human must approve that change.";
   const harness = workflowHarness({
@@ -216,6 +293,7 @@ test("human escalation continuation attributes the latest planner turn without r
       kind: "await-planner-outcome",
       implementer: { agentSessionId: 22, paneId: 32 },
       plannerTurn: severePlannerTurn,
+      ...(approvalBlocked === undefined ? {} : { approvalBlocked }),
       exchangeNumber: 2,
     }),
     headlessResult('{"outcome":"severe-flag"}'),
@@ -239,8 +317,13 @@ test("human escalation continuation attributes the latest planner turn without r
   assert.match(prompt, /^The human has continued the workflow/);
   assert.ok(prompt.includes(`<planner_response>\n${severePlannerTurn}\n</planner_response>`));
   assert.match(prompt, /working unattended again/);
+  const resumedStage = stageOf(resumed);
+  assert.equal(resumedStage.kind === "await-implementer-turn" && resumedStage.activity,
+    approvalBlocked === false ? "implementation" : "confirmation");
+  if (approvalBlocked !== false) assert.match(prompt, /approval remain withheld pending a question-free confirmation/);
   assert.equal(harness.headlessLaunchCount, 0);
-});
+  });
+}
 
 test("automatic review and commit inputs default to yes", async () => {
   const launchCtx = {
@@ -370,15 +453,18 @@ function stageOf(result: WorkflowResult) {
   return (result.state as WorkflowState).stage;
 }
 
-for (const activity of ["alignment", "implementation"] as const) {
-  test(`${activity} turn uses its requested purpose to select the completion gate`, async () => {
+for (const activity of ["alignment", "confirmation", "implementation"] as const) {
+  test(`${activity} turn is classified before any completion gate`, async () => {
     const harness = workflowHarness({ conversationHistory: [message("assistant", "Only half implemented.")] });
     const result = await workflow.step(harness.ctx, activeState({
       kind: "await-implementer-turn", implementer, activity, exchangeNumber: 3,
     }), endedTurn);
-    assert.equal(stageOf(result).kind, activity === "implementation" ? "await-completion-report" : "await-implementer-outcome");
-    assert.equal(harness.sentPrompts.length, activity === "implementation" ? 1 : 0);
-    assert.equal(harness.headlessLaunchCount, activity === "implementation" ? 0 : 1);
+    const stage = stageOf(result);
+    assert.equal(stage.kind, "await-implementer-outcome");
+    assert.equal(stage.kind === "await-implementer-outcome" && stage.requiresPlannerApproval === true, activity === "confirmation");
+    assert.equal(harness.sentPrompts.length, 0);
+    assert.equal(harness.headlessLaunchCount, 1);
+    assert.match(harness.headlessLaunches[0]?.prompt ?? "", new RegExp(`Turn purpose: ${activity}`));
   });
 }
 
@@ -521,7 +607,7 @@ for (const humanVerification of [false, true]) {
 test("completion approval before the first review still requires review", async () => {
   const harness = workflowHarness({ conversationHistory: [message("assistant", "Phase complete.")] });
   const checking = await workflow.step(harness.ctx, activeState({
-    kind: "await-planner-outcome", implementer, plannerTurn: "Phase completion approved.", exchangeNumber: 3,
+    kind: "await-planner-outcome", implementer, approvalBlocked: false, plannerTurn: "Phase completion approved.", exchangeNumber: 3,
   }, { autoReview: true }), headlessResult('{"outcome":"completion-approved"}'));
   const judging = await workflow.step(harness.ctx, suspendedState(checking), endedTurn);
   const reviewing = await workflow.step(harness.ctx, suspendedState(judging), completeOutcome);
@@ -559,7 +645,8 @@ test("remaining work after review goes through planner, implementation, complete
     headlessResult('{"outcome":"planner-response-needed"}'));
   const plannerTurn = await workflow.step(harness.ctx, suspendedState(pending), endedTurn);
   const implementing = await workflow.step(harness.ctx, suspendedState(plannerTurn), headlessResult('{"outcome":"approved"}'));
-  const checking = await workflow.step(harness.ctx, suspendedState(implementing), endedTurn);
+  const implementationOutcome = await workflow.step(harness.ctx, suspendedState(implementing), endedTurn);
+  const checking = await workflow.step(harness.ctx, suspendedState(implementationOutcome), completeOutcome);
   assert.equal(stageOf(checking).kind, "await-completion-report");
   const judging = await workflow.step(harness.ctx, suspendedState(checking), endedTurn);
   const reviewing = await workflow.step(harness.ctx, suspendedState(judging), completeOutcome);
@@ -840,7 +927,9 @@ function activeState(
       ],
       currentPhaseIndex: 1,
     },
-    stage,
+    stage: stage.kind === "await-implementer-outcome" || stage.kind === "await-completion-outcome"
+      ? { questionGateVersion: 1, ...stage }
+      : stage,
   } as WorkflowState;
 }
 

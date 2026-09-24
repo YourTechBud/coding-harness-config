@@ -50,6 +50,9 @@ test('implementer outcomes include required human verification and reject extra 
   assert.deepEqual(parseImplementerOutcomeResult('{"outcome":"planner-response-needed"}'), {
     outcome: 'planner-response-needed',
   });
+  assert.deepEqual(parseImplementerOutcomeResult('{"outcome":"planner-questions"}'), {
+    outcome: 'planner-questions',
+  });
   assert.throws(
     () => parseImplementerOutcomeResult('{"outcome":"phase-complete","confidence":1}'),
     /exactly one field/,
@@ -69,7 +72,12 @@ test('implementer outcome prompt requires an explicit request for further verifi
   assert.match(prompt, /explicitly identifies outstanding required human verification/);
   assert.match(prompt, /actual current-phase blocker takes precedence/);
   assert.match(prompt, /Optional verification suggestions and checks reported as completed do not count/);
-  assert.match(prompt, /Non-blocking ratification requests.*do not override completion/);
+  assert.match(prompt, /"planner-questions":.*any question or requests a decision, confirmation, or ratification/);
+  assert.match(prompt, /takes precedence over every completion or readiness claim.*non-blocking, optional.*proposed default/);
+  assert.match(prompt, /"please confirm" without a question mark/);
+  assert.match(prompt, /Historical questions already resolved.*rhetorical questions/);
+  assert.match(prompt, /Reporting readiness and awaiting normal workflow approval.*is not a planner question/);
+  assert.match(prompt, /non-blocking question about where future syntax variants belong" is planner-questions/);
   assert.match(prompt, /Earlier progress notes about work subsequently completed do not reopen it/);
   assert.match(prompt, /required receipt validation is still missing/);
 });

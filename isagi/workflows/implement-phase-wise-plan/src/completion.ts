@@ -35,5 +35,5 @@ List any explicitly required human verification that remains outstanding, includ
 
 If none remains, explicitly state that no required human verification is outstanding. Distinguish optional suggestions from required checks.
 
-This turn is for reporting only; do not implement changes. You are running unattended, so include questions in your response rather than waiting for answers. Only current-phase work or decisions that block completion will return to the planner before final human verification. A clear completion report can include caveats without reopening the phase.`;
+This turn is for reporting only; do not implement changes. You are running unattended, so include questions in your response rather than waiting for answers. Any question or request for planner confirmation returns to the planner before final human verification, including non-blocking questions. Caveats that request no planner response can remain in the handoff without reopening the phase.`;
 }

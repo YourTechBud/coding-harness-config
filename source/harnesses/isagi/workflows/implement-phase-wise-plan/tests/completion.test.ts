@@ -22,7 +22,7 @@ for (const autoReview of [false, true]) {
     assert.match(prompt, /## Anything left in the phase/);
     assert.match(prompt, /## Anything the human needs to verify/);
     assert.match(prompt, /previously identified checks that have not been completed/);
-    assert.match(prompt, /Only current-phase work or decisions that block completion will return to the planner/);
+    assert.match(prompt, /Any question or request for planner confirmation returns to the planner.*including non-blocking questions/);
     assert.match(prompt, /Repeat checks only when changes or unresolved failures make that evidence stale/);
     assert.match(prompt, /reporting only; do not implement changes/);
   });
