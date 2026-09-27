@@ -192,8 +192,8 @@ var uiAgent = {
   effort: "medium"
 };
 var documentationAgent = {
-  harness: "codex",
-  model: "gpt-6-sol",
+  harness: "claude",
+  model: "opus",
   effort: "medium"
 };
 var commitAgent = {

@@ -13,8 +13,8 @@ export const uiAgent = {
 } satisfies AgentProfile;
 
 export const documentationAgent = {
-  harness: 'codex',
-  model: 'gpt-6-sol',
+  harness: 'claude',
+  model: 'opus',
   effort: 'medium',
 } satisfies AgentProfile;
 
