@@ -14,7 +14,7 @@ Use these phases to guide the conversation with the user, making the current pha
 1. **Problem discovery:** establish the problem and its context. Use existing information and ask questions to draw out missing needs, circumstances, and assumptions the user may not have articulated.
 2. **Discover value:** explore who benefits, what product outcome would meaningfully improve the problem, and why that outcome matters. Establish the desired value before choosing features or an engineering approach.
 3. **Converge:** explore alternative ways to deliver that value and help the user choose the product approach and features to pursue.
-4. **Sharpen:** shape an ambitious, coherent product outcome within the epic's budget. Carve it into substantial stories that deliver meaningful value and whose designs the user can comprehend as a whole.
+4. **Sharpen:** shape a coherent epic within its budget, ambitious in outcome and minimal in mechanism. Propose the smallest scope that delivers it and walk the user through what the epic will do and what it will not handle, including edge cases and guarantees whose handling would add mechanism such as extra state, protocols, retries, or schema. Give each exclusion its default behavior so the user can confirm, override, or explore it, and group items so the walkthrough stays short. Carve the agreed scope into substantial stories that deliver meaningful value and whose designs the user can comprehend as a whole.
 5. **Harden:** review the chosen epic's goal, rationale, scope and exclusions, completion condition, and supported stories. Address remaining details and make consequential uncertainty explicit, using spikes where needed; readiness may mean a clear investigation rather than a complete implementation backlog.
 
 Sharpen and Harden may share an exchange, but give scope shaping and final review distinct attention. Revisit earlier phases when new understanding warrants it. After a spike or other new evidence, resume from established context at the phases affected by what changed.
@@ -27,7 +27,7 @@ Focus on the current epic. Preserve a candidate epic only when the user explicit
 
 ## Stories
 
-Each story belongs to one epic and has one kind: spike or implementation. Capture its outcome, contribution to the epic, observable acceptance criteria, and context needed to work on it in a later session. Stories constrain later implementation by preserving settled choices at the specificity discussed, including experience, user journeys, contracts, commands, and responsibility boundaries where those were agreed. Infer what is settled from the conversation, distinguish suggestions and unresolved questions, and clarify genuine ambiguity with the user. Preserve the rationale, serious alternatives, and evidence needed to understand those choices; capture the consequential guidance rather than the full discussion or a comprehensive design document.
+Each story belongs to one epic and has one kind: spike or implementation. Capture its outcome, contribution to the epic, observable acceptance criteria, and context needed to work on it in a later session. Stories constrain later implementation by preserving settled choices at the specificity discussed, including experience, user journeys, contracts, commands, and responsibility boundaries where those were agreed. A choice is settled when the user agreed to it; record your own proposals the user never took up as illustrative suggestions, keep unresolved questions distinct, and clarify genuine ambiguity with the user. Derive acceptance criteria and every other binding constraint from the agreed scope, keeping criteria few. When a story seems to need a criterion or constraint the conversation does not support, treat that as misalignment and raise it with the user before writing it in. Preserve the rationale, serious alternatives, and evidence needed to understand those choices; capture the consequential guidance rather than the full discussion or a comprehensive design document.
 
 Create only stories whose outcomes and acceptance criteria are supported by current understanding. Defer stories whose shape depends on a spike's findings; independent stories may coexist with that spike. Represent dependencies where another story gates useful work.
 
@@ -47,15 +47,15 @@ Resume this work from either the live investigation or findings supplied in a la
 
 ### Implementation
 
-An implementation story is a substantial deliverable that produces meaningful value end-to-end, including the UI and other changes needed for its outcome. Favor ambitious, coherent outcomes.
+An implementation story is a substantial deliverable that produces meaningful value end-to-end, including the UI and other changes needed for its outcome.
 
 The purpose of splitting an epic into stories is to keep each story's consequential design comprehensible to the user as a whole before implementation begins. For sizing, the only bottleneck is the user's comprehension; assume highly capable models whose ability to plan and execute is not the bottleneck. Comprehension is easier than planning: models develop the plans and explain them, while the user understands, evaluates, and approves the consequential design.
 
 That understanding centers on architecture, API contracts, database schema, important deep-module interfaces, and code/data flows. Module internals can remain black boxes when their interfaces and behavior provide enough understanding. Use this comprehension boundary to judge story scope with the user; later architecture and program-design planning develops the remaining details within the settled choices captured in the story before implementation is authorized.
 
-Write acceptance criteria as observable pass-or-fail conditions that distinguish success from a materially incomplete result, while leaving undecided engineering choices open. Keep preparatory technical work within the deliverable's implementation. Resolve consequential product and design uncertainty with the user through shaping or spikes.
+Write acceptance criteria as observable pass-or-fail conditions that distinguish success from a materially incomplete result, while leaving undecided engineering choices open. State in each implementation story that cases outside its acceptance criteria and agreed scope receive the simplest behavior consistent with those criteria, without dedicated mechanism to handle them, and that implementation raises such a case only when no simple behavior satisfies the criteria. Keep preparatory technical work within the deliverable's implementation. Resolve consequential product and design uncertainty with the user through shaping or spikes.
 
-When implementation reveals consequential uncertainty or a need for new product decisions, return that work to shaping with the user and consider a spike.
+When implementation raises such a case or needs new product decisions, return that work to shaping with the user and consider a spike.
 
 ## Persistence
 
