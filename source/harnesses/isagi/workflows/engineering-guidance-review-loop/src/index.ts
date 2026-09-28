@@ -144,7 +144,7 @@ export default defineWorkflow<State, Variables>({
       }
 
       case 'await_initial_review_routing': {
-        const route = await readRoutingJudgment(ctx, incoming);
+        const route = await readRoutingJudgment(ctx, state, state.stage.review, incoming);
         if (!route.ok) return route.result;
         switch (route.value) {
           case 'complete':
@@ -254,7 +254,7 @@ export default defineWorkflow<State, Variables>({
       }
 
       case 'await_rereview_routing': {
-        const route = await readRoutingJudgment(ctx, incoming);
+        const route = await readRoutingJudgment(ctx, state, state.stage.review, incoming);
         if (!route.ok) return route.result;
         switch (route.value) {
           case 'complete':
@@ -348,6 +348,8 @@ async function startRoutingJudgment(
 
 async function readRoutingJudgment(
   ctx: WorkflowContext,
+  state: State,
+  review: string,
   incoming: unknown,
 ): Promise<
   | { readonly ok: true; readonly value: ReviewRoute }
@@ -360,6 +362,15 @@ async function readRoutingJudgment(
     return { ok: true, value };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // Retry replays the saved routing result, which can never succeed; the
+    // judgment is side-effect free, so an explicit Retry runs it again instead.
+    if (isExplicitRetry(ctx) && workflowEvent.getHeadlessAgentResults(incoming)) {
+      await ctx.log(
+        'info',
+        `Explicit Retry discarded the saved routing result (${message}) and will run the routing judgment again.`,
+      );
+      return { ok: false, result: await startRoutingJudgment(ctx, { state, review }) };
+    }
     return {
       ok: false,
       result: await failWorkflow(
@@ -514,6 +525,18 @@ async function failWorkflow(
   await ctx.setUiFeedback({ kind: 'error', phase: 'Review loop failed', message: userMessage });
   await ctx.log('error', diagnostic);
   return fail(diagnostic);
+}
+
+function isExplicitRetry(ctx: WorkflowContext): boolean {
+  // The pinned published SDK predates invocation; the runtime supplies it.
+  // Missing or malformed markers never authorize another operational attempt.
+  const invocation = 'invocation' in ctx ? ctx.invocation : undefined;
+  return (
+    invocation !== null &&
+    typeof invocation === 'object' &&
+    'kind' in invocation &&
+    invocation.kind === 'retry'
+  );
 }
 
 function agentFromSpawn(input: {

@@ -857,6 +857,103 @@ test("Retry with a valid original commit result does not launch recovery", async
   assert.equal(harness.headlessLaunchCount, 0);
 });
 
+const failedJudgmentLaunch = {
+  kind: "headless_agent",
+  results: [{
+    opId: "op-1",
+    status: "failed",
+    output: "Failed to start codex in /workspace: posix_spawnp failed.",
+    error: "process_failed",
+    exitCode: null,
+  }],
+};
+
+test("a failed judgment launch fails normally and runs the judgment again only on explicit Retry", async () => {
+  // Mirrors a wait persisted before the stage recorded its activity.
+  const outcomeState = activeState({
+    kind: "await-implementer-outcome",
+    implementer,
+    implementerTurn: "Aligned on phase 2; ready to implement.",
+    exchangeNumber: 1,
+  });
+
+  for (const invocation of [undefined, { kind: "normal" }, null, "retry"]) {
+    const harness = workflowHarness();
+    const ctx = invocation === undefined ? harness.ctx : { ...harness.ctx, invocation } as WorkflowContext;
+    const failed = await workflow.step(ctx, outcomeState, failedJudgmentLaunch);
+    assert.equal(failed.type, "fail");
+    assert.match(failed.type === "fail" ? failed.reason : "", /Headless judgment did not complete: process_failed/);
+    assert.equal(harness.headlessLaunchCount, 0);
+  }
+
+  const harness = workflowHarness();
+  const retried = await workflow.step(
+    { ...harness.ctx, invocation: { kind: "retry" } } as WorkflowContext,
+    outcomeState,
+    failedJudgmentLaunch,
+  );
+
+  assert.equal(retried.type, "suspend");
+  assert.equal(retried.type === "suspend" ? retried.condition.kind : undefined, "headless_agent");
+  assert.deepEqual(stageOf(retried), outcomeState.stage);
+  assert.equal(harness.headlessLaunchCount, 1);
+  assert.match(harness.headlessLaunches[0]?.prompt ?? "", /Turn purpose: alignment/);
+  assert.match(harness.headlessLaunches[0]?.prompt ?? "", /Aligned on phase 2; ready to implement\./);
+  assert.equal(harness.sentPrompts.length, 0);
+});
+
+test("explicit Retry reruns planner and selection judgments from saved state", async () => {
+  const cases = [
+    {
+      state: activeState({
+        kind: "await-planner-outcome",
+        implementer,
+        approvalBlocked: false,
+        plannerTurn: "Approved. Proceed with phase 2.",
+        exchangeNumber: 1,
+      }),
+      prompt: /Approved\. Proceed with phase 2\./,
+    },
+    {
+      state: activeState({ kind: "await-implementer-selection" }),
+      prompt: /docs\/plan\.md/,
+    },
+  ];
+  for (const { state, prompt } of cases) {
+    const harness = workflowHarness();
+    const retried = await workflow.step(
+      { ...harness.ctx, invocation: { kind: "retry" } } as WorkflowContext,
+      state,
+      failedJudgmentLaunch,
+    );
+    assert.equal(retried.type, "suspend");
+    assert.deepEqual(stageOf(retried), state.stage);
+    assert.equal(harness.headlessLaunchCount, 1);
+    assert.match(harness.headlessLaunches[0]?.prompt ?? "", prompt);
+  }
+});
+
+test("the implementer outcome wait records the turn activity for later Retry", async () => {
+  const harness = workflowHarness({
+    conversationHistory: [message("assistant", "Implementation finished.")],
+  });
+  const result = await workflow.step(
+    harness.ctx,
+    activeState({
+      kind: "await-implementer-turn",
+      implementer,
+      activity: "implementation",
+      exchangeNumber: 3,
+    }),
+    endedTurn,
+  );
+
+  assert.equal(result.type, "suspend");
+  assert.equal(stageOf(result).kind, "await-implementer-outcome");
+  assert.equal((stageOf(result) as { readonly activity?: string }).activity, "implementation");
+  assert.match(harness.headlessLaunches[0]?.prompt ?? "", /Turn purpose: implementation/);
+});
+
 test("the final phase closes its implementer while preserving the planner session", async () => {
   const harness = workflowHarness();
   const state = activeState({

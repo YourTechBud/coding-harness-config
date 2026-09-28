@@ -379,6 +379,50 @@ test("a failed agent turn fails with visible feedback and diagnostics", async ()
   assert.match(harness.logs.at(-1)?.message ?? "", /provider exited/);
 });
 
+test("a failed routing launch fails normally and runs routing again only on explicit Retry", async () => {
+  const review = "Concern: the retry path replays a stale result.";
+  const routingState = state({
+    kind: "await_rereview_routing",
+    reviewer: agent(11, 21),
+    fixer: agent(12, 22),
+    review,
+    reviewRound: 4,
+  });
+  const failedLaunch = {
+    kind: "headless_agent",
+    results: [{
+      opId: "route-1",
+      status: "failed",
+      output: "Failed to start codex in /workspace: posix_spawnp failed.",
+      error: "process_failed",
+      exitCode: null,
+    }],
+  };
+
+  for (const invocation of [undefined, { kind: "normal" }, null, "retry"]) {
+    const harness = workflowHarness();
+    const ctx = invocation === undefined ? harness.ctx : { ...harness.ctx, invocation } as WorkflowContext;
+    const failed = await workflow.step(ctx, routingState, failedLaunch);
+    assert.equal(failed.type, "fail");
+    assert.match(failed.type === "fail" ? failed.reason : "", /Routing judgment did not complete: process_failed/);
+    assert.equal(harness.headlessPrompts.length, 0);
+  }
+
+  const harness = workflowHarness();
+  const retried = await workflow.step(
+    { ...harness.ctx, invocation: { kind: "retry" } } as WorkflowContext,
+    routingState,
+    failedLaunch,
+  );
+
+  assert.equal(retried.type, "suspend");
+  assert.equal(retried.type === "suspend" ? retried.condition.kind : undefined, "headless_agent");
+  assert.deepEqual(suspendedState(retried).stage, routingState.stage);
+  assert.equal(harness.headlessPrompts.length, 1);
+  assert.match(harness.headlessPrompts[0] ?? "", /the retry path replays a stale result/);
+  assert.equal(harness.sent.length, 0);
+});
+
 function workflowHarness(input?: {
   readonly histories?: Record<number, readonly WorkflowConversationMessage[]>;
 }) {

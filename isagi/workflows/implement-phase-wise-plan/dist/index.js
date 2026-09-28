@@ -962,7 +962,7 @@ var index_default = r({
           );
         }
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "discoverPlan",
+          judgment: "discoverPlan",
           failureMessage: "The current plan could not be discovered",
           parse: parseDiscoveryResult
         });
@@ -1026,13 +1026,7 @@ var index_default = r({
           );
         }
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyPhaseImplementationKind",
-          prompt: classifyPhaseImplementationKindPrompt({
-            worktreePath: ctx.worktreePath,
-            phaseNumber: activePhase(activeState).number,
-            phaseCount: activeState.plan.phases.length,
-            entryPlanPath: activeState.plan.entryPlanPath
-          }),
+          ...implementerSelectionJudgment(ctx, activeState),
           nextState: withStage(activeState, {
             kind: "await-implementer-selection"
           })
@@ -1041,7 +1035,7 @@ var index_default = r({
       case "await-implementer-selection": {
         const activeState = requireActiveState(state);
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyPhaseImplementationKind",
+          ...implementerSelectionJudgment(ctx, activeState),
           failureMessage: `The implementer for phase ${activePhase(activeState).number} could not be selected`,
           parse: parsePhaseImplementationKindResult
         });
@@ -1142,12 +1136,7 @@ var index_default = r({
         });
         if (!implementerTurn.ok) return implementerTurn.result;
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyImplementerOutcome",
-          prompt: classifyImplementerOutcomePrompt({
-            worktreePath: ctx.worktreePath,
-            phaseNumber: activePhase(activeState).number,
-            phaseCount: activeState.plan.phases.length,
-            entryPlanPath: activeState.plan.entryPlanPath,
+          ...implementerOutcomeJudgment(ctx, activeState, {
             turnPurpose: state.stage.activity,
             implementerTurn: implementerTurn.text
           }),
@@ -1155,6 +1144,7 @@ var index_default = r({
             kind: "await-implementer-outcome",
             questionGateVersion: 1,
             implementer: state.stage.implementer,
+            activity: state.stage.activity,
             implementerTurn: implementerTurn.text,
             ...state.stage.activity === "confirmation" ? { requiresPlannerApproval: true } : {},
             exchangeNumber: state.stage.exchangeNumber
@@ -1167,7 +1157,10 @@ var index_default = r({
           return refreshLegacyImplementerJudgment(ctx, activeState, state.stage);
         }
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyImplementerOutcome",
+          ...implementerOutcomeJudgment(ctx, activeState, {
+            turnPurpose: implementerOutcomeTurnPurpose(state.stage),
+            implementerTurn: state.stage.implementerTurn
+          }),
           failureMessage: `The implementer response for phase ${activePhase(activeState).number} could not be classified`,
           parse: parseImplementerOutcomeResult
         });
@@ -1196,12 +1189,7 @@ var index_default = r({
         });
         if (!report.ok) return report.result;
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyImplementerOutcome",
-          prompt: classifyImplementerOutcomePrompt({
-            worktreePath: ctx.worktreePath,
-            phaseNumber: activePhase(activeState).number,
-            phaseCount: activeState.plan.phases.length,
-            entryPlanPath: activeState.plan.entryPlanPath,
+          ...implementerOutcomeJudgment(ctx, activeState, {
             turnPurpose: state.stage.checkpoint,
             implementerTurn: report.text
           }),
@@ -1219,7 +1207,10 @@ var index_default = r({
           return refreshLegacyImplementerJudgment(ctx, activeState, state.stage);
         }
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyImplementerOutcome",
+          ...implementerOutcomeJudgment(ctx, activeState, {
+            turnPurpose: state.stage.checkpoint,
+            implementerTurn: state.stage.implementerTurn
+          }),
           failureMessage: `The completion report for phase ${activePhase(activeState).number} could not be classified`,
           parse: parseImplementerOutcomeResult
         });
@@ -1255,12 +1246,7 @@ var index_default = r({
         });
         if (!plannerTurn.ok) return plannerTurn.result;
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyPlannerOutcome",
-          prompt: classifyPlannerOutcomePrompt({
-            phaseNumber: activePhase(activeState).number,
-            phaseCount: activeState.plan.phases.length,
-            plannerTurn: plannerTurn.text
-          }),
+          ...plannerOutcomeJudgment(activeState, plannerTurn.text),
           nextState: withStage(activeState, {
             kind: "await-planner-outcome",
             implementer: state.stage.implementer,
@@ -1273,7 +1259,7 @@ var index_default = r({
       case "await-planner-outcome": {
         const activeState = requireActiveState(state);
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyPlannerOutcome",
+          ...plannerOutcomeJudgment(activeState, state.stage.plannerTurn),
           failureMessage: `The planner response for phase ${activePhase(activeState).number} could not be classified`,
           parse: parsePlannerOutcomeResult
         });
@@ -1566,17 +1552,49 @@ async function normalizeDiscoveryOrFail(ctx, result, worktreePath) {
 async function refreshLegacyImplementerJudgment(ctx, state, stage) {
   await ctx.log("info", "Reclassifying the saved implementer response under the question approval gate.");
   return startHeadlessJudgment(ctx, {
+    ...implementerOutcomeJudgment(ctx, state, {
+      turnPurpose: stage.kind === "await-completion-outcome" ? stage.checkpoint : implementerOutcomeTurnPurpose(stage),
+      implementerTurn: stage.implementerTurn
+    }),
+    nextState: withStage(state, { ...stage, questionGateVersion: 1 })
+  });
+}
+function implementerSelectionJudgment(ctx, state) {
+  return {
+    judgment: "classifyPhaseImplementationKind",
+    prompt: classifyPhaseImplementationKindPrompt({
+      worktreePath: ctx.worktreePath,
+      phaseNumber: activePhase(state).number,
+      phaseCount: state.plan.phases.length,
+      entryPlanPath: state.plan.entryPlanPath
+    })
+  };
+}
+function implementerOutcomeJudgment(ctx, state, input) {
+  return {
     judgment: "classifyImplementerOutcome",
     prompt: classifyImplementerOutcomePrompt({
       worktreePath: ctx.worktreePath,
       phaseNumber: activePhase(state).number,
       phaseCount: state.plan.phases.length,
       entryPlanPath: state.plan.entryPlanPath,
-      turnPurpose: stage.kind === "await-completion-outcome" ? stage.checkpoint : "alignment",
-      implementerTurn: stage.implementerTurn
-    }),
-    nextState: withStage(state, { ...stage, questionGateVersion: 1 })
-  });
+      turnPurpose: input.turnPurpose,
+      implementerTurn: input.implementerTurn
+    })
+  };
+}
+function plannerOutcomeJudgment(state, plannerTurn) {
+  return {
+    judgment: "classifyPlannerOutcome",
+    prompt: classifyPlannerOutcomePrompt({
+      phaseNumber: activePhase(state).number,
+      phaseCount: state.plan.phases.length,
+      plannerTurn
+    })
+  };
+}
+function implementerOutcomeTurnPurpose(stage) {
+  return stage.activity ?? (stage.requiresPlannerApproval ? "confirmation" : "alignment");
 }
 async function routeImplementerTurnToPlanner(ctx, state, input) {
   await setWorkflowStatus(ctx, {
@@ -1819,23 +1837,42 @@ async function readHeadlessJudgment(ctx, state, event, input) {
     const value = input.parse(result.output ?? "");
     await ctx.log(
       "info",
-      `Parsed ${input.name} result: ${JSON.stringify(value)}.`
+      `Parsed ${input.judgment} result: ${JSON.stringify(value)}.`
     );
     return { ok: true, value };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await ctx.log(
       "error",
-      `${input.name} failed in ${state.stage.kind}: ${message}`
+      `${input.judgment} failed in ${state.stage.kind}: ${message}`
     );
     if (rawOutput.length > 0) {
-      await ctx.log("error", `Raw ${input.name} output: ${rawOutput}`);
+      await ctx.log("error", `Raw ${input.judgment} output: ${rawOutput}`);
+    }
+    if (input.prompt !== void 0 && isExplicitRetry(ctx) && s.getHeadlessAgentResults(event)) {
+      await ctx.setUiFeedback({
+        kind: "info",
+        phase: "judgment-retry",
+        message: `Running the ${input.judgment} judgment again`
+      });
+      await ctx.log(
+        "info",
+        `Explicit Retry discarded the saved ${input.judgment} result and will run the judgment again.`
+      );
+      return {
+        ok: false,
+        result: await startHeadlessJudgment(ctx, {
+          judgment: input.judgment,
+          prompt: input.prompt,
+          nextState: state
+        })
+      };
     }
     await setWorkflowStatus(ctx, {
       kind: "failed",
       message: input.failureMessage
     });
-    return { ok: false, result: u(`${input.name} failed: ${message}`) };
+    return { ok: false, result: u(`${input.judgment} failed: ${message}`) };
   }
 }
 async function requireEndedTurn(ctx, event, input) {

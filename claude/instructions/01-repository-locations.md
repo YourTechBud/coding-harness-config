@@ -4,6 +4,6 @@ When the user asks you to refer to one of these projects, use its corresponding 
 
 - Isagi: `$HOME/work/projects/Isagi`
 - Raphael: `$HOME/work/projects/Raphael`
-- Coding Harness Config: `$HOME/ai/coding-harness-config`
+- Coding Harness Config: `$HOME/work/ai/coding-harness-config`
 
 These paths are a reference only; do not read or explore these repositories by default.

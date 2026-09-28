@@ -94,6 +94,8 @@ type ActiveStage =
   | {
       readonly kind: "await-implementer-outcome";
       readonly implementer: Implementer;
+      // Absent on waits persisted before judgment Retry; see implementerOutcomeTurnPurpose.
+      readonly activity?: ImplementerActivity;
       readonly requiresPlannerApproval?: true;
       readonly questionGateVersion?: 1;
       readonly implementerTurn: string;
@@ -282,7 +284,7 @@ export default defineWorkflow<State, Variables>({
           );
         }
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "discoverPlan",
+          judgment: "discoverPlan",
           failureMessage: "The current plan could not be discovered",
           parse: parseDiscoveryResult,
         });
@@ -347,13 +349,7 @@ export default defineWorkflow<State, Variables>({
           );
         }
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyPhaseImplementationKind",
-          prompt: classifyPhaseImplementationKindPrompt({
-            worktreePath: ctx.worktreePath,
-            phaseNumber: activePhase(activeState).number,
-            phaseCount: activeState.plan.phases.length,
-            entryPlanPath: activeState.plan.entryPlanPath,
-          }),
+          ...implementerSelectionJudgment(ctx, activeState),
           nextState: withStage(activeState, {
             kind: "await-implementer-selection",
           }),
@@ -363,7 +359,7 @@ export default defineWorkflow<State, Variables>({
       case "await-implementer-selection": {
         const activeState = requireActiveState(state);
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyPhaseImplementationKind",
+          ...implementerSelectionJudgment(ctx, activeState),
           failureMessage: `The implementer for phase ${activePhase(activeState).number} could not be selected`,
           parse: parsePhaseImplementationKindResult,
         });
@@ -472,12 +468,7 @@ export default defineWorkflow<State, Variables>({
         });
         if (!implementerTurn.ok) return implementerTurn.result;
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyImplementerOutcome",
-          prompt: classifyImplementerOutcomePrompt({
-            worktreePath: ctx.worktreePath,
-            phaseNumber: activePhase(activeState).number,
-            phaseCount: activeState.plan.phases.length,
-            entryPlanPath: activeState.plan.entryPlanPath,
+          ...implementerOutcomeJudgment(ctx, activeState, {
             turnPurpose: state.stage.activity,
             implementerTurn: implementerTurn.text,
           }),
@@ -485,6 +476,7 @@ export default defineWorkflow<State, Variables>({
             kind: "await-implementer-outcome",
             questionGateVersion: 1,
             implementer: state.stage.implementer,
+            activity: state.stage.activity,
             implementerTurn: implementerTurn.text,
             ...(state.stage.activity === "confirmation" ? { requiresPlannerApproval: true as const } : {}),
             exchangeNumber: state.stage.exchangeNumber,
@@ -498,7 +490,10 @@ export default defineWorkflow<State, Variables>({
           return refreshLegacyImplementerJudgment(ctx, activeState, state.stage);
         }
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyImplementerOutcome",
+          ...implementerOutcomeJudgment(ctx, activeState, {
+            turnPurpose: implementerOutcomeTurnPurpose(state.stage),
+            implementerTurn: state.stage.implementerTurn,
+          }),
           failureMessage: `The implementer response for phase ${activePhase(activeState).number} could not be classified`,
           parse: parseImplementerOutcomeResult,
         });
@@ -528,12 +523,7 @@ export default defineWorkflow<State, Variables>({
         });
         if (!report.ok) return report.result;
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyImplementerOutcome",
-          prompt: classifyImplementerOutcomePrompt({
-            worktreePath: ctx.worktreePath,
-            phaseNumber: activePhase(activeState).number,
-            phaseCount: activeState.plan.phases.length,
-            entryPlanPath: activeState.plan.entryPlanPath,
+          ...implementerOutcomeJudgment(ctx, activeState, {
             turnPurpose: state.stage.checkpoint,
             implementerTurn: report.text,
           }),
@@ -552,7 +542,10 @@ export default defineWorkflow<State, Variables>({
           return refreshLegacyImplementerJudgment(ctx, activeState, state.stage);
         }
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyImplementerOutcome",
+          ...implementerOutcomeJudgment(ctx, activeState, {
+            turnPurpose: state.stage.checkpoint,
+            implementerTurn: state.stage.implementerTurn,
+          }),
           failureMessage: `The completion report for phase ${activePhase(activeState).number} could not be classified`,
           parse: parseImplementerOutcomeResult,
         });
@@ -585,12 +578,7 @@ export default defineWorkflow<State, Variables>({
         });
         if (!plannerTurn.ok) return plannerTurn.result;
         return startHeadlessJudgment(ctx, {
-          judgment: "classifyPlannerOutcome",
-          prompt: classifyPlannerOutcomePrompt({
-            phaseNumber: activePhase(activeState).number,
-            phaseCount: activeState.plan.phases.length,
-            plannerTurn: plannerTurn.text,
-          }),
+          ...plannerOutcomeJudgment(activeState, plannerTurn.text),
           nextState: withStage(activeState, {
             kind: "await-planner-outcome",
             implementer: state.stage.implementer,
@@ -604,7 +592,7 @@ export default defineWorkflow<State, Variables>({
       case "await-planner-outcome": {
         const activeState = requireActiveState(state);
         const judgment = await readHeadlessJudgment(ctx, state, event, {
-          name: "classifyPlannerOutcome",
+          ...plannerOutcomeJudgment(activeState, state.stage.plannerTurn),
           failureMessage: `The planner response for phase ${activePhase(activeState).number} could not be classified`,
           parse: parsePlannerOutcomeResult,
         });
@@ -918,17 +906,77 @@ async function refreshLegacyImplementerJudgment(
 ): Promise<WorkflowResult> {
   await ctx.log("info", "Reclassifying the saved implementer response under the question approval gate.");
   return startHeadlessJudgment(ctx, {
+    ...implementerOutcomeJudgment(ctx, state, {
+      turnPurpose: stage.kind === "await-completion-outcome" ? stage.checkpoint : implementerOutcomeTurnPurpose(stage),
+      implementerTurn: stage.implementerTurn,
+    }),
+    nextState: withStage(state, { ...stage, questionGateVersion: 1 }),
+  });
+}
+
+// A judgment's prompt is rebuilt from saved state, so an explicit Retry can run
+// the same judgment again instead of replaying a saved result that cannot succeed.
+type HeadlessJudgmentRequest = {
+  readonly judgment: string;
+  readonly prompt: string;
+};
+
+function implementerSelectionJudgment(
+  ctx: WorkflowContext,
+  state: ActiveState,
+): HeadlessJudgmentRequest {
+  return {
+    judgment: "classifyPhaseImplementationKind",
+    prompt: classifyPhaseImplementationKindPrompt({
+      worktreePath: ctx.worktreePath,
+      phaseNumber: activePhase(state).number,
+      phaseCount: state.plan.phases.length,
+      entryPlanPath: state.plan.entryPlanPath,
+    }),
+  };
+}
+
+function implementerOutcomeJudgment(
+  ctx: WorkflowContext,
+  state: ActiveState,
+  input: {
+    readonly turnPurpose: ImplementerActivity | CompletionCheckpoint;
+    readonly implementerTurn: string;
+  },
+): HeadlessJudgmentRequest {
+  return {
     judgment: "classifyImplementerOutcome",
     prompt: classifyImplementerOutcomePrompt({
       worktreePath: ctx.worktreePath,
       phaseNumber: activePhase(state).number,
       phaseCount: state.plan.phases.length,
       entryPlanPath: state.plan.entryPlanPath,
-      turnPurpose: stage.kind === "await-completion-outcome" ? stage.checkpoint : "alignment",
-      implementerTurn: stage.implementerTurn,
+      turnPurpose: input.turnPurpose,
+      implementerTurn: input.implementerTurn,
     }),
-    nextState: withStage(state, { ...stage, questionGateVersion: 1 }),
-  });
+  };
+}
+
+function plannerOutcomeJudgment(
+  state: ActiveState,
+  plannerTurn: string,
+): HeadlessJudgmentRequest {
+  return {
+    judgment: "classifyPlannerOutcome",
+    prompt: classifyPlannerOutcomePrompt({
+      phaseNumber: activePhase(state).number,
+      phaseCount: state.plan.phases.length,
+      plannerTurn,
+    }),
+  };
+}
+
+// Older waits did not record the activity; only confirmation turns require
+// planner approval, and the rest are classified as alignment.
+function implementerOutcomeTurnPurpose(
+  stage: Extract<ActiveStage, { kind: "await-implementer-outcome" }>,
+): ImplementerActivity {
+  return stage.activity ?? (stage.requiresPlannerApproval ? "confirmation" : "alignment");
 }
 
 async function routeImplementerTurnToPlanner(
@@ -1221,11 +1269,7 @@ function describeUnknown(value: unknown): string {
 
 async function startHeadlessJudgment(
   ctx: WorkflowContext,
-  input: {
-    readonly judgment: string;
-    readonly prompt: string;
-    readonly nextState: State;
-  },
+  input: HeadlessJudgmentRequest & { readonly nextState: State },
 ): Promise<WorkflowResult> {
   await ctx.log("info", `Starting ${input.judgment} headless judgment.`);
   const op = await ctx.runHeadlessAgent({
@@ -1246,7 +1290,10 @@ async function readHeadlessJudgment<Result>(
   state: State,
   event: unknown,
   input: {
-    readonly name: string;
+    readonly judgment: string;
+    // Present when the prompt can be rebuilt from state; plan discovery handles
+    // Retry itself because its prompt needs a fresh planner conversation.
+    readonly prompt?: string;
     readonly failureMessage: string;
     readonly parse: (output: string) => Result;
   },
@@ -1260,23 +1307,48 @@ async function readHeadlessJudgment<Result>(
     const value = input.parse(result.output ?? "");
     await ctx.log(
       "info",
-      `Parsed ${input.name} result: ${JSON.stringify(value)}.`,
+      `Parsed ${input.judgment} result: ${JSON.stringify(value)}.`,
     );
     return { ok: true, value };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await ctx.log(
       "error",
-      `${input.name} failed in ${state.stage.kind}: ${message}`,
+      `${input.judgment} failed in ${state.stage.kind}: ${message}`,
     );
     if (rawOutput.length > 0) {
-      await ctx.log("error", `Raw ${input.name} output: ${rawOutput}`);
+      await ctx.log("error", `Raw ${input.judgment} output: ${rawOutput}`);
+    }
+    // Retry replays the saved result, which can never succeed; judgments are
+    // side-effect free, so an explicit Retry runs the same judgment again.
+    if (
+      input.prompt !== undefined &&
+      isExplicitRetry(ctx) &&
+      workflowEvent.getHeadlessAgentResults(event)
+    ) {
+      await ctx.setUiFeedback({
+        kind: "info",
+        phase: "judgment-retry",
+        message: `Running the ${input.judgment} judgment again`,
+      });
+      await ctx.log(
+        "info",
+        `Explicit Retry discarded the saved ${input.judgment} result and will run the judgment again.`,
+      );
+      return {
+        ok: false,
+        result: await startHeadlessJudgment(ctx, {
+          judgment: input.judgment,
+          prompt: input.prompt,
+          nextState: state,
+        }),
+      };
     }
     await setWorkflowStatus(ctx, {
       kind: "failed",
       message: input.failureMessage,
     });
-    return { ok: false, result: fail(`${input.name} failed: ${message}`) };
+    return { ok: false, result: fail(`${input.judgment} failed: ${message}`) };
   }
 }
 

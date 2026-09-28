@@ -282,7 +282,7 @@ var index_default = r({
         });
       }
       case "await_initial_review_routing": {
-        const route = await readRoutingJudgment(ctx, incoming);
+        const route = await readRoutingJudgment(ctx, state, state.stage.review, incoming);
         if (!route.ok) return route.result;
         switch (route.value) {
           case "complete":
@@ -387,7 +387,7 @@ var index_default = r({
         });
       }
       case "await_rereview_routing": {
-        const route = await readRoutingJudgment(ctx, incoming);
+        const route = await readRoutingJudgment(ctx, state, state.stage.review, incoming);
         if (!route.ok) return route.result;
         switch (route.value) {
           case "complete":
@@ -468,7 +468,7 @@ async function startRoutingJudgment(ctx, input) {
   await ctx.log("info", `Started review routing judgment ${op.opId}.`);
   return a(input.state, o.headlessAgent(op));
 }
-async function readRoutingJudgment(ctx, incoming) {
+async function readRoutingJudgment(ctx, state, review, incoming) {
   try {
     const result = completedSingleHeadlessResult(incoming);
     const value = parseReviewRoute(result.output ?? "");
@@ -476,6 +476,13 @@ async function readRoutingJudgment(ctx, incoming) {
     return { ok: true, value };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (isExplicitRetry(ctx) && s.getHeadlessAgentResults(incoming)) {
+      await ctx.log(
+        "info",
+        `Explicit Retry discarded the saved routing result (${message}) and will run the routing judgment again.`
+      );
+      return { ok: false, result: await startRoutingJudgment(ctx, { state, review }) };
+    }
     return {
       ok: false,
       result: await failWorkflow(
@@ -585,6 +592,10 @@ async function failWorkflow(ctx, userMessage, diagnostic) {
   await ctx.setUiFeedback({ kind: "error", phase: "Review loop failed", message: userMessage });
   await ctx.log("error", diagnostic);
   return u(diagnostic);
+}
+function isExplicitRetry(ctx) {
+  const invocation = "invocation" in ctx ? ctx.invocation : void 0;
+  return invocation !== null && typeof invocation === "object" && "kind" in invocation && invocation.kind === "retry";
 }
 function agentFromSpawn(input) {
   return { agentSessionId: input.agentSessionId, paneId: input.paneId };
