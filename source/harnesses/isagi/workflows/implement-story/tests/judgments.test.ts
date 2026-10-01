@@ -4,7 +4,6 @@ import test from 'node:test';
 import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import {
-  completedSingleHeadlessResult,
   latestAssistantTurnText,
   parsePlannerRoute,
 } from '../src/judgments.js';
@@ -34,17 +33,6 @@ test('parses both planner routes and rejects extra fields', () => {
   assert.throws(
     () => parsePlannerRoute('{"outcome":"ready","confidence":1}'),
     /must contain exactly/,
-  );
-});
-
-test('headless result inspection rejects failed operations', () => {
-  assert.throws(
-    () =>
-      completedSingleHeadlessResult({
-        kind: 'headless_agent',
-        results: [{ opId: 'judge-1', status: 'failed', error: 'provider exited' }],
-      }),
-    /provider exited/,
   );
 });
 

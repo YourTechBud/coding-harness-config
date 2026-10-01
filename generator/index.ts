@@ -175,12 +175,23 @@ async function runCommand(command: string, args: string[], cwd: string): Promise
 }
 
 async function prepareSourceWorkflows(): Promise<void> {
-  const packageDirs = await findPackageDirs(path.join(SOURCE_DIR, "harnesses", "isagi", "workflows"));
+  const isagiDir = path.join(SOURCE_DIR, "harnesses", "isagi");
+  const libraryDirs = await findPackageDirs(path.join(isagiDir, "workflow-libraries"));
+  const packageDirs = await findPackageDirs(path.join(isagiDir, "workflows"));
+  // A workflow bundles the graphs it links from sibling workflows and workflow libraries, whose
+  // sources resolve their own dependencies, so every package is installed before any is checked.
+  await runConcurrent([...libraryDirs, ...packageDirs], async (packageDir) => {
+    console.log(`Installing pnpm dependencies in ${path.relative(REPO_ROOT, packageDir)}`);
+    await runCommand("pnpm", ["install", "--frozen-lockfile"], packageDir);
+  });
+  await runConcurrent(libraryDirs, async (libraryDir) => {
+    for (const script of ["typecheck", "test"]) {
+      console.log(`Running pnpm ${script} in ${path.relative(REPO_ROOT, libraryDir)}`);
+      await runCommand("pnpm", ["run", script], libraryDir);
+    }
+  });
   await runConcurrent(packageDirs, async (packageDir) => {
     const relativePackageDir = path.relative(REPO_ROOT, packageDir);
-    console.log(`Installing pnpm dependencies in ${relativePackageDir}`);
-    await runCommand("pnpm", ["install", "--frozen-lockfile"], packageDir);
-
     for (const script of ["typecheck", "test", "build", "verify"]) {
       console.log(`Running pnpm ${script} in ${relativePackageDir}`);
       await runCommand("pnpm", ["run", script], packageDir);
@@ -190,7 +201,10 @@ async function prepareSourceWorkflows(): Promise<void> {
 
 async function runPostGenerateHooks(outputRoot: string): Promise<void> {
   const extensionDirs = await findPackageDirs(path.join(outputRoot, "pi", "extensions"));
-  const workflowDirs = await findPackageDirs(path.join(outputRoot, "isagi", "workflows"));
+  const workflowDirs = [
+    ...(await findPackageDirs(path.join(outputRoot, "isagi", "workflow-libraries"))),
+    ...(await findPackageDirs(path.join(outputRoot, "isagi", "workflows"))),
+  ];
   const jobs = [
     ...extensionDirs.map((cwd) => ({ cwd, command: "npm", args: ["install"] })),
     ...workflowDirs.map((cwd) => ({ cwd, command: "pnpm", args: ["install", "--frozen-lockfile"] })),

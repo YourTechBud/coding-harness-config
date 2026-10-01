@@ -14,7 +14,7 @@ export const writer = {
 
 export const reviewer = {
   harness: 'codex',
-  model: 'gpt-6-sol',
+  model: 'gpt-6.1-sol',
   effort: 'medium',
 } satisfies AgentProfile;
 

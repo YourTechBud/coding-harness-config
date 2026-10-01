@@ -110,7 +110,11 @@ const HARNESS_CONFIG: Record<HarnessName, HarnessConfig> = {
 		displayName: "Isagi",
 		generatedDir: "isagi",
 		home: () => path.join(os.homedir(), ".isagi"),
-		mappings: [{ sourcePrefix: "workflows", destPrefix: "workflows" }],
+		// Installed workflows link their shared graphs from ../../workflow-libraries.
+		mappings: [
+			{ sourcePrefix: "workflows", destPrefix: "workflows" },
+			{ sourcePrefix: "workflow-libraries", destPrefix: "workflow-libraries" },
+		],
 	},
 };
 

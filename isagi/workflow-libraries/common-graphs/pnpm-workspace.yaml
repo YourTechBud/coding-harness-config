@@ -1,0 +1,8 @@
+packages:
+  - .
+
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - '@yourtechbudstudio/isagi-workflow-sdk@0.1.1'

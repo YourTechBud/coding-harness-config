@@ -1,30 +1,239 @@
-// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.0.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
-function r(e) {
-  return e;
-}
+// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i(e) {
   return {
-    type: "cont",
-    state: e
+    isagiContract: 5,
+    isagiKind: e
   };
 }
-function a(e, t) {
+function s(e) {
   return {
-    type: "suspend",
-    state: e,
-    condition: t
+    ...i("state-field"),
+    reduce: e.reduce
   };
 }
-var o = {
+var c = {
+  replace() {
+    return s({ reduce: (e, t) => t });
+  },
+  add() {
+    return s({ reduce: (e, t) => e + t });
+  },
+  append() {
+    return s({ reduce: (e, t) => [...e, ...Array.isArray(t) ? t : [t]] });
+  },
+  union() {
+    return s({ reduce: (e, t) => {
+      let n = Array.isArray(t) ? t : [t], r = new Set(e), i3 = [...e];
+      for (let e2 of n) r.has(e2) || (r.add(e2), i3.push(e2));
+      return i3;
+    } });
+  },
+  collection(e) {
+    return s({ reduce: (t, n) => {
+      switch (n.op) {
+        case "clear":
+          return [];
+        case "remove": {
+          let r = new Set(n.ids);
+          return t.filter((t2) => !r.has(e(t2)));
+        }
+        case "add": {
+          let r = [...t];
+          for (let t2 of n.values) {
+            let n2 = e(t2), i3 = r.findIndex((t3) => e(t3) === n2);
+            i3 === -1 ? r.push(t2) : r[i3] = t2;
+          }
+          return r;
+        }
+      }
+    } });
+  },
+  optional() {
+    return s({ reduce: (e, t) => "clear" in t ? null : t.set });
+  },
+  custom(e) {
+    return s({ reduce: e });
+  }
+};
+function l(e, t) {
+  return {
+    ...i("operation-node"),
+    title: t?.title,
+    description: t?.description,
+    label: t?.label,
+    run: e
+  };
+}
+function f(e) {
+  return {
+    ...i("edge"),
+    from: e.from,
+    to: e.to,
+    choose: e.choose,
+    title: e.title
+  };
+}
+function p(e) {
+  return {
+    ...i("outcome"),
+    kind: e.kind,
+    reason: e.reason,
+    title: e.title,
+    output: e.output
+  };
+}
+function m(e) {
+  return {
+    ...i("graph"),
+    ...e
+  };
+}
+function h(e) {
+  return {
+    ...i("workflow"),
+    ...e
+  };
+}
+function g(e) {
+  return e && "update" in e ? {
+    ...i("operation-result"),
+    type: "complete",
+    update: e.update
+  } : {
+    ...i("operation-result"),
+    type: "complete"
+  };
+}
+
+// src/graph.ts
+import { mkdirSync } from "node:fs";
+import { resolve as resolve3 } from "node:path";
+
+// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+function i2(e) {
+  return {
+    isagiContract: 5,
+    isagiKind: e
+  };
+}
+function s2(e) {
+  return {
+    ...i2("state-field"),
+    reduce: e.reduce
+  };
+}
+var c2 = {
+  replace() {
+    return s2({ reduce: (e, t) => t });
+  },
+  add() {
+    return s2({ reduce: (e, t) => e + t });
+  },
+  append() {
+    return s2({ reduce: (e, t) => [...e, ...Array.isArray(t) ? t : [t]] });
+  },
+  union() {
+    return s2({ reduce: (e, t) => {
+      let n = Array.isArray(t) ? t : [t], r = new Set(e), i3 = [...e];
+      for (let e2 of n) r.has(e2) || (r.add(e2), i3.push(e2));
+      return i3;
+    } });
+  },
+  collection(e) {
+    return s2({ reduce: (t, n) => {
+      switch (n.op) {
+        case "clear":
+          return [];
+        case "remove": {
+          let r = new Set(n.ids);
+          return t.filter((t2) => !r.has(e(t2)));
+        }
+        case "add": {
+          let r = [...t];
+          for (let t2 of n.values) {
+            let n2 = e(t2), i3 = r.findIndex((t3) => e(t3) === n2);
+            i3 === -1 ? r.push(t2) : r[i3] = t2;
+          }
+          return r;
+        }
+      }
+    } });
+  },
+  optional() {
+    return s2({ reduce: (e, t) => "clear" in t ? null : t.set });
+  },
+  custom(e) {
+    return s2({ reduce: e });
+  }
+};
+function l2(e, t) {
+  return {
+    ...i2("operation-node"),
+    title: t?.title,
+    description: t?.description,
+    label: t?.label,
+    run: e
+  };
+}
+function u(e) {
+  return {
+    ...i2("subgraph-node"),
+    title: e.title,
+    description: e.description,
+    label: e.label,
+    graph: e.graph,
+    parameters: e.parameters,
+    onResult: e.onResult
+  };
+}
+function f2(e) {
+  return {
+    ...i2("edge"),
+    from: e.from,
+    to: e.to,
+    choose: e.choose,
+    title: e.title
+  };
+}
+function p2(e) {
+  return {
+    ...i2("outcome"),
+    kind: e.kind,
+    reason: e.reason,
+    title: e.title,
+    output: e.output
+  };
+}
+function m2(e) {
+  return {
+    ...i2("graph"),
+    ...e
+  };
+}
+function _(e) {
+  return "update" in e ? {
+    ...i2("operation-result"),
+    type: "suspend",
+    update: e.update,
+    wait: e.wait
+  } : {
+    ...i2("operation-result"),
+    type: "suspend",
+    wait: e.wait
+  };
+}
+var y = {
   agentTurn(e) {
     return {
       kind: "agent_turn",
-      agentSessionId: e.agentSessionId,
-      sentAt: e.sentAt
+      target: e
     };
   },
-  userContinue() {
-    return { kind: "user_continue" };
+  userContinue(e) {
+    return e === void 0 ? { kind: "user_continue" } : {
+      kind: "user_continue",
+      label: e
+    };
   },
   userInput(e) {
     return {
@@ -32,174 +241,121 @@ var o = {
       questions: e
     };
   },
-  workflow(e) {
-    let t = Array.isArray(e) ? e : [e];
-    if (t.length === 0) throw Error("Workflow wait requires at least one run id.");
-    return {
-      kind: "workflow",
-      runIds: t
-    };
-  },
   headlessAgent(e) {
     let t = Array.isArray(e) ? e : [e];
     if (t.length === 0) throw Error("Headless agent wait requires at least one operation.");
     return {
       kind: "headless_agent",
-      ops: t
+      operations: t
     };
   }
 };
-var s = {
-  isUserContinue(e) {
-    return c(e) && e.kind === "user_continue";
+
+// ../../workflow-libraries/common-graphs/src/agent-turn.ts
+function ownedPane(agent) {
+  if (agent.paneId === null) throw new Error(`Agent session ${agent.agentSessionId} has no pane owned by this workflow.`);
+  return agent.paneId;
+}
+var AgentTurnGraph = m2({
+  key: "AgentTurn",
+  title: "Agent turn",
+  label: (parameters) => parameters.label,
+  init: (_destination, request) => ({ request, agent: null, turn: null, resubmits: 0, stalled: null, interruption: null }),
+  state: {
+    request: c2.replace(),
+    agent: c2.replace(),
+    turn: c2.replace(),
+    resubmits: c2.replace(),
+    stalled: c2.replace(),
+    interruption: c2.replace()
   },
-  isUserInput(e) {
-    return c(e) && e.kind === "user_input" && c(e.answers);
+  entry: "send",
+  nodes: {
+    send: l2(async (ctx, { request }) => {
+      if (request.feedback) await ctx.setUiFeedback(request.feedback);
+      if (request.session.kind === "spawn") {
+        const { kind: _kind, ...profile } = request.session;
+        const spawned = await ctx.spawnAgentSession({ ...profile, prompt: request.prompt, modifiers: request.modifiers });
+        return _({
+          update: { agent: { agentSessionId: spawned.agentSessionId, paneId: spawned.paneId }, turn: { agentSessionId: spawned.agentSessionId, sentAt: spawned.sentAt } },
+          wait: y.agentTurn(spawned)
+        });
+      }
+      const { agentSessionId, paneId } = request.session;
+      const sent = await ctx.sendAgentPrompt({ agentSessionId, prompt: request.prompt, modifiers: request.modifiers });
+      return _({ update: { agent: { agentSessionId, paneId }, turn: sent }, wait: y.agentTurn(sent) });
+    }, { title: "Send the prompt", label: (state) => state.request.label }),
+    resubmit: l2(async (ctx, state) => {
+      const { label, prompt, modifiers } = state.request;
+      const agent = must(state.agent, "agent");
+      const role = label.toLowerCase();
+      await ctx.setUiFeedback({ kind: "warning", phase: `Retrying ${role}`, message: `The ${role} harness turn failed. Resubmitting its previous message.` });
+      const sent = await ctx.sendAgentPrompt({ agentSessionId: agent.agentSessionId, prompt, modifiers });
+      await ctx.log("warning", `Resubmitted the previous message after harness_error ${state.resubmits + 1}/${state.request.resubmitOnHarnessError ?? 0} to ${role} session ${agent.agentSessionId}.`);
+      return _({ update: { turn: sent, resubmits: state.resubmits + 1 }, wait: y.agentTurn(sent) });
+    }, { title: "Resubmit after a harness error" }),
+    askUser: l2(async (ctx, state) => {
+      const { label } = state.request;
+      const { paneId } = must(state.agent, "agent");
+      const where = paneId === null ? "its pane" : `pane ${paneId}`;
+      await ctx.setUiFeedback({ kind: "warning", phase: `${label} stopped`, message: `Continue the agent in ${where} by hand until it finishes, then select Continue.` });
+      await ctx.log("warning", must(state.stalled, "stalled turn"));
+      return _({ wait: y.userContinue(`${label} stopped. Continue the agent by hand, then Continue.`) });
+    }, { title: "Ask the user to finish the agent" }),
+    recheck: l2(async (_ctx, state) => _({ wait: y.agentTurn(must(state.turn, "turn")) }), { title: "Check the latest turn" })
   },
-  isAgentTurnEnded(e) {
-    return c(e) && e.outcome === "ended" && typeof e.recordedAt == "string";
+  edges: {
+    afterSend: f2({ from: "send", to: ["ended", "resubmit", "askUser", "interrupted"], choose: routeTurn }),
+    afterResubmit: f2({ from: "resubmit", to: ["ended", "resubmit", "askUser", "interrupted"], choose: routeTurn }),
+    afterAskUser: f2({ from: "askUser", to: ["recheck"], choose: () => ({ to: "recheck" }) }),
+    afterRecheck: f2({ from: "recheck", to: ["ended", "resubmit", "askUser", "interrupted"], choose: routeTurn })
   },
-  isAgentTurnFailed(e) {
-    return c(e) && e.outcome === "failed" && typeof e.recordedAt == "string" && typeof e.reason == "string";
-  },
-  requireAgentTurnEnded(e) {
-    if (s.isAgentTurnEnded(e)) return e;
-    throw Error("Expected an ended agent turn event.");
-  },
-  requireAgentTurnFailed(e) {
-    if (s.isAgentTurnFailed(e)) return e;
-    throw Error("Expected a failed agent turn event.");
-  },
-  getAgentTurnResult(e) {
-    return s.isAgentTurnEnded(e) || s.isAgentTurnFailed(e) ? e : null;
-  },
-  getWorkflowResults(e) {
-    return c(e) && e.kind === "workflow" && Array.isArray(e.results) ? e.results : null;
-  },
-  getHeadlessAgentResults(e) {
-    return c(e) && e.kind === "headless_agent" && Array.isArray(e.results) ? e.results : null;
+  outcomes: {
+    ended: p2({ kind: "success", title: "Turn ended", output: (state) => ({ outcome: "ended", agent: must(state.agent, "agent") }) }),
+    interrupted: p2({ kind: "failure", title: "Agent session ended", output: (state) => ({ outcome: "interrupted", agent: must(state.agent, "agent"), reason: must(state.interruption, "interruption") }) })
   }
+});
+function routeTurn(state, event) {
+  const { label } = state.request;
+  if (event.kind !== "agent_turn") throw new Error(`${label} resumed with an unexpected ${event.kind} event.`);
+  const { agentSessionId, paneId } = must(state.agent, "agent");
+  const where = paneId === null ? `session ${agentSessionId}` : `pane ${paneId}`;
+  if (event.outcome === "ended") return { to: "ended", update: { stalled: null } };
+  if (event.outcome === "failed" && event.reason === "harness_error" && state.resubmits < (state.request.resubmitOnHarnessError ?? 0)) return { to: "resubmit" };
+  if (event.outcome === "failed") return { to: "askUser", update: { stalled: `${label} failed in ${where}: ${event.reason}` } };
+  return { to: "interrupted", update: { interruption: `${label} was interrupted in ${where}: ${event.reason}` } };
+}
+function agentTurn(spec) {
+  return u({
+    graph: AgentTurnGraph,
+    title: spec.title,
+    ...spec.label ? { label: spec.label } : {},
+    parameters: spec.parameters,
+    onResult: (state, result) => spec.onResult(state, result.output)
+  });
+}
+function must(value, label) {
+  if (value === null) throw new Error(`Agent turn state is missing its ${label}.`);
+  return value;
+}
+
+// ../../workflow-libraries/common-graphs/src/fail-step.ts
+async function failStep(ctx, feedback, diagnostic) {
+  await ctx.setUiFeedback({ kind: "error", ...feedback });
+  await ctx.log("error", diagnostic);
+  throw new Error(diagnostic);
+}
+
+// src/constants.ts
+var curriculumDesigner = {
+  harness: "codex",
+  model: "gpt-6.1-sol",
+  effort: "high"
 };
-function c(e) {
-  return typeof e == "object" && !!e;
-}
-function l(e) {
-  return {
-    type: "done",
-    value: e
-  };
-}
-function u(e) {
-  return {
-    type: "fail",
-    reason: e
-  };
-}
-
-// src/inputs.ts
-import { existsSync, realpathSync, statSync } from "node:fs";
-import { basename, extname, isAbsolute, relative, resolve } from "node:path";
-function parseInputs(repositoryPath, variables) {
-  const sources = parseSources(variables.sources);
-  for (const source of sources) assertSourceFile(repositoryPath, source.path);
-  const outputDirectory = relativePath(variables.outputDirectory, "outputDirectory", "scratch/story/curriculum");
-  assertInsideRepository(repositoryPath, outputDirectory, "outputDirectory");
-  return {
-    repositoryPath,
-    sources,
-    learningGoal: text(variables.learningGoal, "learningGoal"),
-    audience: {
-      familiarity: text(variables.audienceFamiliarity, "audienceFamiliarity"),
-      depth: text(variables.audienceDepth, "audienceDepth")
-    },
-    teachingBrief: optionalText(variables.teachingBrief) ?? "Choose the clearest storyline for this audience and learning goal.",
-    paths: {
-      outputDirectory,
-      analysisPath: `${outputDirectory}/curriculum-analysis.json`,
-      curriculumPath: `${outputDirectory}/curriculum.json`
-    }
-  };
-}
-function parseSources(value) {
-  const raw = typeof value === "string" ? value.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean) : value;
-  if (!Array.isArray(raw) || raw.length === 0) throw new Error("sources must contain at least one Markdown path.");
-  const sources = raw.map((item, index) => parseSource(item, index));
-  unique(sources.map(({ id }) => id), "source IDs");
-  unique(sources.map(({ path }) => path), "source paths");
-  return sources;
-}
-function parseSource(value, index) {
-  if (typeof value === "string") {
-    const path = relativePath(value, `sources[${index}]`);
-    return { id: sourceId(path), path, description: null };
-  }
-  const record = exactRecord(value, ["id", "path", "description"], `sources[${index}]`);
-  return {
-    id: kebab(record.id, `sources[${index}].id`),
-    path: relativePath(record.path, `sources[${index}].path`),
-    description: nullableText(record.description, `sources[${index}].description`)
-  };
-}
-function assertSourceFile(repositoryPath, path) {
-  assertInsideRepository(repositoryPath, path, "source path");
-  if (extname(path).toLocaleLowerCase("en-US") !== ".md") throw new Error(`Source ${path} must be a Markdown file.`);
-  const absolute = resolve(repositoryPath, path);
-  if (!existsSync(absolute) || !statSync(absolute).isFile()) throw new Error(`Source Markdown file ${path} does not exist.`);
-  const repositoryRealPath = realpathSync(repositoryPath);
-  const sourceRealPath = realpathSync(absolute);
-  const fromRepository = relative(repositoryRealPath, sourceRealPath);
-  if (fromRepository === ".." || fromRepository.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(fromRepository)) throw new Error(`Source ${path} resolves outside the repository.`);
-}
-function assertInsideRepository(repositoryPath, path, label) {
-  const fromRepository = relative(resolve(repositoryPath), resolve(repositoryPath, path));
-  if (fromRepository === ".." || fromRepository.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(fromRepository)) throw new Error(`${label} must stay inside the repository.`);
-}
-function sourceId(path) {
-  const stem = basename(path, extname(path)).toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
-  if (!stem) throw new Error(`Could not derive a source ID from ${path}. Pass an object with an explicit id.`);
-  return stem;
-}
-function relativePath(value, label, fallback) {
-  const path = value === void 0 ? fallback : value;
-  const result = text(path, label);
-  if (isAbsolute(result)) throw new Error(`${label} must be workspace-relative.`);
-  return result.replaceAll("\\", "/").replace(/\/$/u, "");
-}
-function text(value, label) {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  throw new Error(`${label} must be non-empty text.`);
-}
-function optionalText(value) {
-  if (value === void 0 || value === null || value === "") return null;
-  return text(value, "teachingBrief");
-}
-function nullableText(value, label) {
-  if (value === null) return null;
-  return text(value, label);
-}
-function kebab(value, label) {
-  const result = text(value, label);
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(result)) throw new Error(`${label} must be kebab-case ASCII.`);
-  return result;
-}
-function exactRecord(value, keys, label) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
-  const record = value;
-  const actual = Object.keys(record);
-  if (actual.length !== keys.length || keys.some((key) => !Object.hasOwn(record, key))) throw new Error(`${label} must contain exactly: ${keys.join(", ")}.`);
-  return record;
-}
-function unique(values, label) {
-  if (new Set(values).size !== values.length) throw new Error(`${label} must be unique.`);
-}
-
-// src/workflow.ts
-import { mkdirSync } from "node:fs";
-import { resolve as resolve3 } from "node:path";
 
 // src/contracts.ts
-import { existsSync as existsSync2, readFileSync, statSync as statSync2 } from "node:fs";
-import { resolve as resolve2 } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 
 // src/types.ts
 var coverageRoles = ["primary", "supporting", "reference"];
@@ -213,14 +369,14 @@ function readAnalysis(repositoryPath, learningGoal, audience, sources, paths) {
   if (value.learningGoal !== learningGoal) throw new Error("curriculum analysis learningGoal must match the workflow input.");
   const parsedAudience = parseAudience(value.audience, "curriculum analysis audience");
   if (!sameAudience(parsedAudience, audience)) throw new Error("curriculum analysis audience must match the workflow input.");
-  const parsedSources = parseSources2(value.sources, "curriculum analysis sources");
+  const parsedSources = parseSources(value.sources, "curriculum analysis sources");
   if (JSON.stringify(parsedSources) !== JSON.stringify(sources)) throw new Error("curriculum analysis sources must match the workflow inputs.");
   const guidingQuestions = parseGuidingQuestions(value.guidingQuestions, "curriculum analysis guidingQuestions");
   if (guidingQuestions.length === 0) throw new Error("curriculum analysis requires at least one guiding question.");
   const questionIds = new Set(guidingQuestions.map(({ id }) => id));
   const coverageItems = array(value.coverageItems, "curriculum analysis coverageItems").map((item, index) => parseCoverageItem(item, index, sources, questionIds));
   if (coverageItems.length === 0) throw new Error("curriculum analysis requires at least one coverage item.");
-  unique2(coverageItems.map(({ id }) => id), "curriculum coverage item IDs");
+  unique(coverageItems.map(({ id }) => id), "curriculum coverage item IDs");
   const itemIds = new Set(coverageItems.map(({ id }) => id));
   for (const item of coverageItems) {
     for (const prerequisite of item.prerequisiteItemIds) if (!itemIds.has(prerequisite)) throw new Error(`Coverage item ${item.id} references unknown prerequisite ${prerequisite}.`);
@@ -242,10 +398,10 @@ function readCurriculum(repositoryPath, teachingBrief, paths, analysis) {
   const cognitionBudget = parseCognitionBudget(value.cognitionBudget);
   const neighborhoods = array(value.neighborhoods, "curriculum neighborhoods").map((neighborhood, index) => parseNeighborhood(neighborhood, index, analysis));
   if (neighborhoods.length === 0) throw new Error("curriculum requires at least one neighborhood.");
-  unique2(neighborhoods.map(({ id }) => id), "curriculum neighborhood IDs");
+  unique(neighborhoods.map(({ id }) => id), "curriculum neighborhood IDs");
   const omissions = array(value.omissions, "curriculum omissions").map((omission, index) => {
     const parsed = object(omission, `curriculum omission ${index + 1}`);
-    return { itemId: kebab2(parsed.itemId, `curriculum omission ${index + 1} itemId`), reason: text2(parsed.reason, `curriculum omission ${index + 1} reason`) };
+    return { itemId: kebab(parsed.itemId, `curriculum omission ${index + 1} itemId`), reason: text(parsed.reason, `curriculum omission ${index + 1} reason`) };
   });
   validateCurriculum(neighborhoods, omissions, analysis);
   return {
@@ -256,9 +412,9 @@ function readCurriculum(repositoryPath, teachingBrief, paths, analysis) {
     teachingBrief,
     guidingQuestions,
     storyline: {
-      title: text2(storylineValue.title, "curriculum storyline title"),
-      throughline: text2(storylineValue.throughline, "curriculum storyline throughline"),
-      rationale: text2(storylineValue.rationale, "curriculum storyline rationale")
+      title: text(storylineValue.title, "curriculum storyline title"),
+      throughline: text(storylineValue.throughline, "curriculum storyline throughline"),
+      rationale: text(storylineValue.rationale, "curriculum storyline rationale")
     },
     cognitionBudget,
     neighborhoods,
@@ -266,25 +422,25 @@ function readCurriculum(repositoryPath, teachingBrief, paths, analysis) {
   };
 }
 function assertArtifact(repositoryPath, artifactPath) {
-  const absolutePath = resolve2(repositoryPath, artifactPath);
-  if (!existsSync2(absolutePath) || !statSync2(absolutePath).isFile()) throw new Error(`Expected curriculum artifact ${artifactPath} was not created.`);
+  const absolutePath = resolve(repositoryPath, artifactPath);
+  if (!existsSync(absolutePath) || !statSync(absolutePath).isFile()) throw new Error(`Expected curriculum artifact ${artifactPath} was not created.`);
 }
 function parseCoverageItem(value, index, sources, questionIds) {
   const label = `curriculum coverage item ${index + 1}`;
   const item = object(value, label);
   const guidingQuestionIds = strings(item.guidingQuestionIds, `${label} guidingQuestionIds`);
   if (guidingQuestionIds.length === 0) throw new Error(`${label} requires guidingQuestionIds.`);
-  unique2(guidingQuestionIds, `${label} guidingQuestionIds`);
+  unique(guidingQuestionIds, `${label} guidingQuestionIds`);
   for (const questionId of guidingQuestionIds) if (!questionIds.has(questionId)) throw new Error(`${label} references unknown guiding question ${questionId}.`);
   const details = strings(item.details, `${label} details`);
   if (details.length === 0) throw new Error(`${label} requires details.`);
   const sourceReferences = sourceReferencesFor(item.sourceReferences, `${label} sourceReferences`, sources);
   if (sourceReferences.length === 0) throw new Error(`${label} requires sourceReferences.`);
   return {
-    id: kebab2(item.id, `${label} id`),
-    title: text2(item.title, `${label} title`),
-    kind: text2(item.kind, `${label} kind`),
-    significance: text2(item.significance, `${label} significance`),
+    id: kebab(item.id, `${label} id`),
+    title: text(item.title, `${label} title`),
+    kind: text(item.kind, `${label} kind`),
+    significance: text(item.significance, `${label} significance`),
     details,
     guidingQuestionIds,
     prerequisiteItemIds: strings(item.prerequisiteItemIds, `${label} prerequisiteItemIds`),
@@ -295,9 +451,9 @@ function parseCognitionBudget(value) {
   const budget = object(value, "curriculum cognitionBudget");
   const exceptions = array(budget.exceptions, "curriculum cognitionBudget exceptions").map((exception, index) => {
     const parsed = object(exception, `curriculum cognitionBudget exception ${index + 1}`);
-    return { constraint: enumeration(parsed.constraint, cognitionBudgetConstraints, `curriculum cognitionBudget exception ${index + 1} constraint`), reason: text2(parsed.reason, `curriculum cognitionBudget exception ${index + 1} reason`) };
+    return { constraint: enumeration(parsed.constraint, cognitionBudgetConstraints, `curriculum cognitionBudget exception ${index + 1} constraint`), reason: text(parsed.reason, `curriculum cognitionBudget exception ${index + 1} reason`) };
   });
-  unique2(exceptions.map(({ constraint }) => constraint), "curriculum cognitionBudget exception constraints");
+  unique(exceptions.map(({ constraint }) => constraint), "curriculum cognitionBudget exception constraints");
   return {
     outcomeLimit: positiveInteger(budget.outcomeLimit, "curriculum cognitionBudget outcomeLimit"),
     neighborhoodLimit: positiveInteger(budget.neighborhoodLimit, "curriculum cognitionBudget neighborhoodLimit"),
@@ -314,25 +470,25 @@ function parseNeighborhood(value, neighborhoodIndex, analysis) {
     const outcome = object(value2, outcomeLabel);
     const guidingQuestionIds = strings(outcome.guidingQuestionIds, `${outcomeLabel} guidingQuestionIds`);
     if (guidingQuestionIds.length === 0) throw new Error(`${outcomeLabel} requires guidingQuestionIds.`);
-    unique2(guidingQuestionIds, `${outcomeLabel} guidingQuestionIds`);
+    unique(guidingQuestionIds, `${outcomeLabel} guidingQuestionIds`);
     for (const questionId of guidingQuestionIds) if (!knownQuestionIds.has(questionId)) throw new Error(`${outcomeLabel} references unknown guiding question ${questionId}.`);
     const coverage = array(outcome.coverage, `${outcomeLabel} coverage`).map((entry, coverageIndex) => {
       const coverageLabel = `${outcomeLabel} coverage ${coverageIndex + 1}`;
       const parsed = object(entry, coverageLabel);
-      const itemId = kebab2(parsed.itemId, `${coverageLabel} itemId`);
+      const itemId = kebab(parsed.itemId, `${coverageLabel} itemId`);
       if (!knownItemIds.has(itemId)) throw new Error(`${coverageLabel} references unknown coverage item ${itemId}.`);
       return {
         itemId,
         role: enumeration(parsed.role, coverageRoles, `${coverageLabel} role`),
         visibility: enumeration(parsed.visibility, coverageVisibilities, `${coverageLabel} visibility`),
-        rationale: text2(parsed.rationale, `${coverageLabel} rationale`)
+        rationale: text(parsed.rationale, `${coverageLabel} rationale`)
       };
     });
     if (coverage.length === 0) throw new Error(`${outcomeLabel} requires coverage.`);
     return {
-      id: kebab2(outcome.id, `${outcomeLabel} id`),
-      title: text2(outcome.title, `${outcomeLabel} title`),
-      objective: text2(outcome.objective, `${outcomeLabel} objective`),
+      id: kebab(outcome.id, `${outcomeLabel} id`),
+      title: text(outcome.title, `${outcomeLabel} title`),
+      objective: text(outcome.objective, `${outcomeLabel} objective`),
       guidingQuestionIds,
       prerequisiteOutcomeIds: strings(outcome.prerequisiteOutcomeIds, `${outcomeLabel} prerequisiteOutcomeIds`),
       coverage
@@ -340,16 +496,16 @@ function parseNeighborhood(value, neighborhoodIndex, analysis) {
   });
   if (outcomes.length === 0) throw new Error(`${label} requires outcomes.`);
   return {
-    id: kebab2(neighborhood.id, `${label} id`),
-    title: text2(neighborhood.title, `${label} title`),
-    purpose: text2(neighborhood.purpose, `${label} purpose`),
-    narrativeBridge: text2(neighborhood.narrativeBridge, `${label} narrativeBridge`),
+    id: kebab(neighborhood.id, `${label} id`),
+    title: text(neighborhood.title, `${label} title`),
+    purpose: text(neighborhood.purpose, `${label} purpose`),
+    narrativeBridge: text(neighborhood.narrativeBridge, `${label} narrativeBridge`),
     outcomes
   };
 }
 function validateCurriculum(neighborhoods, omissions, analysis) {
   const outcomes = neighborhoods.flatMap((neighborhood) => neighborhood.outcomes);
-  unique2(outcomes.map(({ id }) => id), "curriculum outcome IDs");
+  unique(outcomes.map(({ id }) => id), "curriculum outcome IDs");
   const encounteredOutcomeIds = /* @__PURE__ */ new Set();
   for (const outcome of outcomes) {
     for (const prerequisiteId of outcome.prerequisiteOutcomeIds) if (!encounteredOutcomeIds.has(prerequisiteId)) throw new Error(`Outcome ${outcome.id} prerequisite ${prerequisiteId} must appear earlier.`);
@@ -359,7 +515,7 @@ function validateCurriculum(neighborhoods, omissions, analysis) {
     ...outcomes.flatMap((outcome) => outcome.coverage.map(({ itemId }) => itemId)),
     ...omissions.map(({ itemId }) => itemId)
   ];
-  unique2(accountedItemIds, "accounted curriculum coverage item IDs");
+  unique(accountedItemIds, "accounted curriculum coverage item IDs");
   const expectedItemIds = analysis.coverageItems.map(({ id }) => id);
   if (accountedItemIds.length !== expectedItemIds.length || expectedItemIds.some((id) => !accountedItemIds.includes(id))) throw new Error("curriculum must map or omit every analysis coverage item exactly once.");
   for (const omission of omissions) if (!expectedItemIds.includes(omission.itemId)) throw new Error(`Curriculum omission references unknown coverage item ${omission.itemId}.`);
@@ -368,7 +524,7 @@ function validateCurriculum(neighborhoods, omissions, analysis) {
 }
 function sourceReferencesFor(value, label, sources) {
   return array(value, label).map((reference, index) => {
-    const sourceId2 = typeof reference === "string" ? text2(reference, `${label}[${index}]`) : text2(object(reference, `${label}[${index}]`).sourceId, `${label}[${index}].sourceId`);
+    const sourceId2 = typeof reference === "string" ? text(reference, `${label}[${index}]`) : text(object(reference, `${label}[${index}]`).sourceId, `${label}[${index}].sourceId`);
     if (!sources.some(({ id }) => id === sourceId2)) throw new Error(`${label}[${index}] references unknown source ${sourceId2}.`);
     return { sourceId: sourceId2 };
   });
@@ -376,25 +532,25 @@ function sourceReferencesFor(value, label, sources) {
 function parseGuidingQuestions(value, label) {
   const questions = array(value, label).map((question, index) => {
     const parsed = object(question, `${label}[${index}]`);
-    return { id: kebab2(parsed.id, `${label}[${index}].id`), question: text2(parsed.question, `${label}[${index}].question`), whyItMatters: text2(parsed.whyItMatters, `${label}[${index}].whyItMatters`) };
+    return { id: kebab(parsed.id, `${label}[${index}].id`), question: text(parsed.question, `${label}[${index}].question`), whyItMatters: text(parsed.whyItMatters, `${label}[${index}].whyItMatters`) };
   });
-  unique2(questions.map(({ id }) => id), `${label} IDs`);
+  unique(questions.map(({ id }) => id), `${label} IDs`);
   return questions;
 }
 function parseAudience(value, label) {
   const audience = object(value, label);
-  return { familiarity: text2(audience.familiarity, `${label} familiarity`), depth: text2(audience.depth, `${label} depth`) };
+  return { familiarity: text(audience.familiarity, `${label} familiarity`), depth: text(audience.depth, `${label} depth`) };
 }
-function parseSources2(value, label) {
+function parseSources(value, label) {
   return array(value, label).map((source, index) => {
     const parsed = object(source, `${label}[${index}]`);
-    return { id: kebab2(parsed.id, `${label}[${index}].id`), path: text2(parsed.path, `${label}[${index}].path`), description: nullableText2(parsed.description, `${label}[${index}].description`) };
+    return { id: kebab(parsed.id, `${label}[${index}].id`), path: text(parsed.path, `${label}[${index}].path`), description: nullableText(parsed.description, `${label}[${index}].description`) };
   });
 }
 function readJson(repositoryPath, artifactPath) {
   assertArtifact(repositoryPath, artifactPath);
   try {
-    return JSON.parse(readFileSync(resolve2(repositoryPath, artifactPath), "utf8"));
+    return JSON.parse(readFileSync(resolve(repositoryPath, artifactPath), "utf8"));
   } catch (error) {
     throw new Error(`${artifactPath} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -408,22 +564,22 @@ function array(value, label) {
   return value;
 }
 function strings(value, label) {
-  return array(value, label).map((item, index) => text2(item, `${label}[${index}]`));
+  return array(value, label).map((item, index) => text(item, `${label}[${index}]`));
 }
-function text2(value, label) {
+function text(value, label) {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be non-empty text.`);
   return value;
 }
-function nullableText2(value, label) {
+function nullableText(value, label) {
   if (value === null) return null;
-  return text2(value, label);
+  return text(value, label);
 }
 function positiveInteger(value, label) {
   if (!Number.isInteger(value) || value < 1) throw new Error(`${label} must be a positive integer.`);
   return value;
 }
-function kebab2(value, label) {
-  const result = text2(value, label);
+function kebab(value, label) {
+  const result = text(value, label);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(result)) throw new Error(`${label} must be kebab-case ASCII.`);
   return result;
 }
@@ -433,6 +589,103 @@ function enumeration(value, allowed, label) {
 }
 function sameAudience(left, right) {
   return left.familiarity === right.familiarity && left.depth === right.depth;
+}
+function unique(values, label) {
+  if (new Set(values).size !== values.length) throw new Error(`${label} must be unique.`);
+}
+
+// src/inputs.ts
+import { existsSync as existsSync2, realpathSync, statSync as statSync2 } from "node:fs";
+import { basename, extname, isAbsolute, relative, resolve as resolve2 } from "node:path";
+function parseInputs(repositoryPath, variables) {
+  const sources = parseSources2(variables.sources);
+  for (const source of sources) assertSourceFile(repositoryPath, source.path);
+  const outputDirectory = relativePath(variables.outputDirectory, "outputDirectory", "scratch/story/curriculum");
+  assertInsideRepository(repositoryPath, outputDirectory, "outputDirectory");
+  return {
+    repositoryPath,
+    sources,
+    learningGoal: text2(variables.learningGoal, "learningGoal"),
+    audience: {
+      familiarity: text2(variables.audienceFamiliarity, "audienceFamiliarity"),
+      depth: text2(variables.audienceDepth, "audienceDepth")
+    },
+    teachingBrief: optionalText(variables.teachingBrief) ?? "Choose the clearest storyline for this audience and learning goal.",
+    paths: {
+      outputDirectory,
+      analysisPath: `${outputDirectory}/curriculum-analysis.json`,
+      curriculumPath: `${outputDirectory}/curriculum.json`
+    }
+  };
+}
+function parseSources2(value) {
+  const raw = typeof value === "string" ? value.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean) : value;
+  if (!Array.isArray(raw) || raw.length === 0) throw new Error("sources must contain at least one Markdown path.");
+  const sources = raw.map((item, index) => parseSource(item, index));
+  unique2(sources.map(({ id }) => id), "source IDs");
+  unique2(sources.map(({ path }) => path), "source paths");
+  return sources;
+}
+function parseSource(value, index) {
+  if (typeof value === "string") {
+    const path = relativePath(value, `sources[${index}]`);
+    return { id: sourceId(path), path, description: null };
+  }
+  const record = exactRecord(value, ["id", "path", "description"], `sources[${index}]`);
+  return {
+    id: kebab2(record.id, `sources[${index}].id`),
+    path: relativePath(record.path, `sources[${index}].path`),
+    description: nullableText2(record.description, `sources[${index}].description`)
+  };
+}
+function assertSourceFile(repositoryPath, path) {
+  assertInsideRepository(repositoryPath, path, "source path");
+  if (extname(path).toLocaleLowerCase("en-US") !== ".md") throw new Error(`Source ${path} must be a Markdown file.`);
+  const absolute = resolve2(repositoryPath, path);
+  if (!existsSync2(absolute) || !statSync2(absolute).isFile()) throw new Error(`Source Markdown file ${path} does not exist.`);
+  const repositoryRealPath = realpathSync(repositoryPath);
+  const sourceRealPath = realpathSync(absolute);
+  const fromRepository = relative(repositoryRealPath, sourceRealPath);
+  if (fromRepository === ".." || fromRepository.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(fromRepository)) throw new Error(`Source ${path} resolves outside the repository.`);
+}
+function assertInsideRepository(repositoryPath, path, label) {
+  const fromRepository = relative(resolve2(repositoryPath), resolve2(repositoryPath, path));
+  if (fromRepository === ".." || fromRepository.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(fromRepository)) throw new Error(`${label} must stay inside the repository.`);
+}
+function sourceId(path) {
+  const stem = basename(path, extname(path)).toLocaleLowerCase("en-US").replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
+  if (!stem) throw new Error(`Could not derive a source ID from ${path}. Pass an object with an explicit id.`);
+  return stem;
+}
+function relativePath(value, label, fallback) {
+  const path = value === void 0 ? fallback : value;
+  const result = text2(path, label);
+  if (isAbsolute(result)) throw new Error(`${label} must be workspace-relative.`);
+  return result.replaceAll("\\", "/").replace(/\/$/u, "");
+}
+function text2(value, label) {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  throw new Error(`${label} must be non-empty text.`);
+}
+function optionalText(value) {
+  if (value === void 0 || value === null || value === "") return null;
+  return text2(value, "teachingBrief");
+}
+function nullableText2(value, label) {
+  if (value === null) return null;
+  return text2(value, label);
+}
+function kebab2(value, label) {
+  const result = text2(value, label);
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(result)) throw new Error(`${label} must be kebab-case ASCII.`);
+  return result;
+}
+function exactRecord(value, keys, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
+  const record = value;
+  const actual = Object.keys(record);
+  if (actual.length !== keys.length || keys.some((key) => !Object.hasOwn(record, key))) throw new Error(`${label} must contain exactly: ${keys.join(", ")}.`);
+  return record;
 }
 function unique2(values, label) {
   if (new Set(values).size !== values.length) throw new Error(`${label} must be unique.`);
@@ -562,49 +815,78 @@ Copy guidingQuestions unchanged from the analysis. Budget exceptions use outcome
 ${UNATTENDED_FOOTER}`;
 }
 
-// src/workflow.ts
-var curriculumDesigner = {
-  harness: "codex",
-  model: "gpt-6-sol",
-  effort: "high"
-};
-async function step(ctx, state, incoming) {
-  switch (state.stage.kind) {
-    case "start_analysis": {
+// src/graph.ts
+function designCurriculumParameters(repositoryPath, variables) {
+  const { repositoryPath: _repositoryPath, ...parameters } = parseInputs(repositoryPath, variables);
+  return parameters;
+}
+var DesignCurriculumGraph = m({
+  key: "DesignCurriculum",
+  title: "Design curriculum",
+  init: (destination, parameters) => ({
+    input: { ...parameters, repositoryPath: destination.worktreePath },
+    designer: null,
+    turn: null,
+    analysis: null,
+    created: null,
+    failure: null
+  }),
+  state: {
+    input: c.replace(),
+    designer: c.replace(),
+    turn: c.replace(),
+    analysis: c.replace(),
+    created: c.replace(),
+    failure: c.replace()
+  },
+  entry: "prepareOutput",
+  nodes: {
+    prepareOutput: l(async (_ctx, state) => {
       mkdirSync(resolve3(state.input.repositoryPath, state.input.paths.outputDirectory), { recursive: true });
-      await ctx.setUiFeedback({ phase: "Analyzing curriculum sources" });
-      const designer = await ctx.spawnAgentSession({ ...curriculumDesigner, prompt: analysisPrompt(state.input) });
-      return a(withStage(state, { kind: "await_analysis", designer }), o.agentTurn(designer));
-    }
-    case "await_analysis": {
-      const error = turnError(incoming, "Curriculum analysis", state.stage.designer);
-      if (error) return failed(ctx, "Curriculum analysis failed. Its pane remains open.", error);
+      return g();
+    }, { title: "Prepare the output directory" }),
+    analyzeSources: agentTurn({
+      title: "Analyze the curriculum sources",
+      parameters: (state) => ({
+        label: "Curriculum analysis",
+        session: { kind: "spawn", ...curriculumDesigner },
+        prompt: analysisPrompt(state.input),
+        feedback: { phase: "Analyzing curriculum sources" }
+      }),
+      onResult: (_state, turn) => ({ designer: turn.agent, turn })
+    }),
+    // An invalid artifact fails the step: fix it with the designer, then Retry reads it again.
+    readAnalysis: l(async (ctx, state) => {
       try {
         const analysis = readAnalysis(state.input.repositoryPath, state.input.learningGoal, state.input.audience, state.input.sources, state.input.paths);
-        return i(withStage(state, { kind: "send_curriculum", designer: state.stage.designer, analysis }));
-      } catch (error2) {
-        return failed(ctx, "The curriculum analysis artifact is invalid. Its pane remains open.", errorText(error2));
+        return g({ update: { analysis } });
+      } catch (error) {
+        return failStep(ctx, { phase: "Curriculum design failed", message: "The curriculum analysis artifact is invalid. Its pane remains open." }, errorText(error));
       }
-    }
-    case "send_curriculum": {
-      await ctx.setUiFeedback({ phase: "Designing the curriculum", message: "Organizing outcomes and coverage obligations." });
-      const sent = await ctx.sendAgentPrompt({ agentSessionId: state.stage.designer.agentSessionId, prompt: curriculumPrompt(state.input, state.stage.analysis) });
-      return a(withStage(state, { ...state.stage, kind: "await_curriculum" }), o.agentTurn(sent));
-    }
-    case "await_curriculum": {
-      const error = turnError(incoming, "Curriculum design", state.stage.designer);
-      if (error) return failed(ctx, "Curriculum design failed. Its pane remains open.", error);
+    }, { title: "Read the curriculum analysis" }),
+    designCurriculum: agentTurn({
+      title: "Design the curriculum",
+      parameters: (state) => ({
+        label: "Curriculum design",
+        session: { kind: "existing", ...must2(state.designer, "designer") },
+        prompt: curriculumPrompt(state.input, must2(state.analysis, "analysis")),
+        feedback: { phase: "Designing the curriculum", message: "Organizing outcomes and coverage obligations." }
+      }),
+      onResult: (_state, turn) => ({ turn })
+    }),
+    finish: l(async (ctx, state) => {
+      const analysis = must2(state.analysis, "analysis");
+      let created;
       try {
-        const curriculum = readCurriculum(state.input.repositoryPath, state.input.teachingBrief, state.input.paths, state.stage.analysis);
-        await ctx.closePane(state.stage.designer.paneId);
+        const curriculum = readCurriculum(state.input.repositoryPath, state.input.teachingBrief, state.input.paths, analysis);
         const outcomes = curriculum.neighborhoods.flatMap((neighborhood) => neighborhood.outcomes);
         const coverage = outcomes.flatMap((outcome) => outcome.coverage);
-        return l({
+        created = {
           outcome: "curriculum-created",
           analysisPath: state.input.paths.analysisPath,
           curriculumPath: state.input.paths.curriculumPath,
           sourceCount: state.input.sources.length,
-          coverageItemCount: state.stage.analysis.coverageItems.length,
+          coverageItemCount: analysis.coverageItems.length,
           primaryCoverageCount: coverage.filter(({ role }) => role === "primary").length,
           supportingCoverageCount: coverage.filter(({ role }) => role === "supporting").length,
           referenceCoverageCount: coverage.filter(({ role }) => role === "reference").length,
@@ -614,37 +896,54 @@ async function step(ctx, state, incoming) {
           neighborhoodCount: curriculum.neighborhoods.length,
           outcomeCount: outcomes.length,
           budgetExceptionCount: curriculum.cognitionBudget.exceptions.length
-        });
-      } catch (error2) {
-        return failed(ctx, "The curriculum artifact is invalid. Its pane remains open.", errorText(error2));
+        };
+      } catch (error) {
+        return failStep(ctx, { phase: "Curriculum design failed", message: "The curriculum artifact is invalid. Its pane remains open." }, errorText(error));
       }
-    }
-    default:
-      return assertNever(state.stage);
+      await ctx.closePane(ownedPane(must2(state.designer, "designer")));
+      return g({ update: { created } });
+    }, { title: "Read the curriculum and close the designer" }),
+    reportFailure: l(async (ctx, state) => {
+      const failure = must2(state.failure, "failure");
+      await ctx.setUiFeedback({ kind: "error", phase: "Curriculum design failed", message: failure.message });
+      await ctx.log("error", failure.diagnostic);
+      return g();
+    }, { title: "Report the failure" })
+  },
+  edges: {
+    afterPrepareOutput: f({ from: "prepareOutput", to: ["analyzeSources"], choose: () => ({ to: "analyzeSources" }) }),
+    afterAnalyzeSources: afterAgentTurn("analyzeSources", "readAnalysis", "Curriculum analysis failed because the designer session ended."),
+    afterReadAnalysis: f({ from: "readAnalysis", to: ["designCurriculum"], choose: () => ({ to: "designCurriculum" }) }),
+    afterDesignCurriculum: afterAgentTurn("designCurriculum", "finish", "Curriculum design failed because the designer session ended."),
+    afterFinish: f({ from: "finish", to: ["created"], choose: () => ({ to: "created" }) }),
+    afterReportFailure: f({ from: "reportFailure", to: ["failed"], choose: () => ({ to: "failed" }) })
+  },
+  outcomes: {
+    created: p({ kind: "success", title: "Curriculum created", output: (state) => must2(state.created, "created curriculum") }),
+    failed: p({ kind: "failure", title: "Curriculum design failed", output: (state) => ({ outcome: "failed", reason: must2(state.failure, "failure").diagnostic }) })
   }
+});
+function afterAgentTurn(from, next, message) {
+  return f({
+    from,
+    to: [next, "reportFailure"],
+    choose: (state) => {
+      const turn = must2(state.turn, "agent turn");
+      if (turn.outcome === "interrupted") return { to: "reportFailure", update: { failure: { message, diagnostic: turn.reason } } };
+      return { to: next };
+    }
+  });
 }
-function turnError(incoming, label, designer) {
-  if (s.isAgentTurnFailed(incoming)) return `${label} failed in pane ${designer.paneId}: ${incoming.reason}`;
-  if (!s.isAgentTurnEnded(incoming)) return `${label} resumed with an unexpected event in pane ${designer.paneId}.`;
-  return null;
-}
-async function failed(ctx, message, diagnostic) {
-  await ctx.setUiFeedback({ kind: "error", phase: "Curriculum design failed", message });
-  await ctx.log("error", diagnostic);
-  return u(diagnostic);
-}
-function withStage(state, stage) {
-  return { ...state, stage };
+function must2(value, label) {
+  if (value === null) throw new Error(`Design curriculum state is missing its ${label}.`);
+  return value;
 }
 function errorText(value) {
   return value instanceof Error ? value.message : String(value);
 }
-function assertNever(value) {
-  throw new Error(`Unsupported curriculum workflow stage: ${String(value)}`);
-}
 
 // src/index.ts
-var index_default = r({
+var index_default = h({
   command: () => ({
     title: "Design Curriculum",
     description: "Create a focused curriculum from one or more Markdown sources.",
@@ -657,18 +956,8 @@ var index_default = r({
       { kind: "text", key: "outputDirectory", label: "Curriculum output directory", default: "scratch/story/curriculum" }
     ]
   }),
-  validate: (launchCtx, variables) => {
-    parseInputs(launchCtx.worktreePath, variables);
-  },
-  init: (launchCtx, variables) => ({
-    stateVersion: 1,
-    input: parseInputs(launchCtx.worktreePath, variables),
-    stage: { kind: "start_analysis" }
-  }),
-  step: async (ctx, state, incoming) => {
-    await ctx.log("debug", `Design curriculum stage=${state.stage.kind}.`);
-    return step(ctx, state, incoming);
-  }
+  parse: (origin, inputs) => designCurriculumParameters(origin.worktreePath, inputs),
+  graph: DesignCurriculumGraph
 });
 export {
   index_default as default

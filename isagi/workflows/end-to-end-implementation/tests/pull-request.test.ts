@@ -39,14 +39,14 @@ test('pull-request result requires verified metadata and the exact story link', 
     headBranch: 'story-123',
     state: 'OPEN',
   };
-  assert.deepEqual(readPullRequestResult(event(JSON.stringify(result)), 'pr-1', 'https://github.com/owner/repository/issues/123'), result);
-  assert.throws(() => readPullRequestResult(event(JSON.stringify({ ...result, body: 'No story link.' })), 'pr-1', 'https://github.com/owner/repository/issues/123'), /story-link line/);
-  assert.throws(() => readPullRequestResult(event(JSON.stringify({ ...result, body: `${result.body}\n\nCloses owner/repository#123` })), 'pr-1', 'https://github.com/owner/repository/issues/123'), /exactly once/);
-  assert.throws(() => readPullRequestResult(event(JSON.stringify({ ...result, state: 'CLOSED' })), 'pr-1', 'https://github.com/owner/repository/issues/123'), /must be open/);
-  assert.throws(() => readPullRequestResult(event(JSON.stringify({ ...result, extra: true })), 'pr-1', 'https://github.com/owner/repository/issues/123'), /exactly these fields/);
-  assert.throws(() => readPullRequestResult(event(JSON.stringify(result), 'other-op'), 'pr-1', 'https://github.com/owner/repository/issues/123'), /unexpected operation/);
+  assert.deepEqual(readPullRequestResult(event(JSON.stringify(result)), 'https://github.com/owner/repository/issues/123'), result);
+  assert.throws(() => readPullRequestResult(event(JSON.stringify({ ...result, body: 'No story link.' })), 'https://github.com/owner/repository/issues/123'), /story-link line/);
+  assert.throws(() => readPullRequestResult(event(JSON.stringify({ ...result, body: `${result.body}\n\nCloses owner/repository#123` })), 'https://github.com/owner/repository/issues/123'), /exactly once/);
+  assert.throws(() => readPullRequestResult(event(JSON.stringify({ ...result, state: 'CLOSED' })), 'https://github.com/owner/repository/issues/123'), /must be open/);
+  assert.throws(() => readPullRequestResult(event(JSON.stringify({ ...result, extra: true })), 'https://github.com/owner/repository/issues/123'), /exactly these fields/);
+  assert.throws(() => readPullRequestResult({ operationId: 'pr-1', status: 'failed', error: 'gh failed' }, 'https://github.com/owner/repository/issues/123'), /Pull-request agent did not complete: gh failed/);
 });
 
-function event(output: string, opId = 'pr-1') {
-  return { kind: 'headless_agent', results: [{ opId, status: 'completed', output }] };
+function event(output: string) {
+  return { operationId: 'pr-1', status: 'completed' as const, output };
 }

@@ -22,8 +22,8 @@ function git(path: string, args: string[]): string {
   return execFileSync('git', args, { cwd: path, encoding: 'utf8' }).trim();
 }
 
-function event(record: unknown, opId = 'commit-1') {
-  return { kind: 'headless_agent', results: [{ opId, status: 'completed', output: JSON.stringify(record) }] };
+function event(record: unknown) {
+  return { operationId: 'commit-1', status: 'completed' as const, output: JSON.stringify(record) };
 }
 
 test('clean detection includes staged, unstaged, deleted, and non-ignored untracked changes but ignores mocks', (t) => {
@@ -46,12 +46,12 @@ test('clean detection includes staged, unstaged, deleted, and non-ignored untrac
 
 test('checkpoint validates clean skips and rejects dirty or malformed success reports', (t) => {
   const path = repository(t);
-  assert.match(verifyCheckpoint(event({ outcome: 'clean' }), 'commit-1', path, true), /No commit needed/);
-  assert.throws(() => verifyCheckpoint(event({ outcome: 'clean', extra: true }), 'commit-1', path, true), /Invalid/);
-  assert.throws(() => verifyCheckpoint(event({ outcome: 'clean' }, 'other'), 'commit-1', path, true), /Unexpected/);
-  assert.throws(() => verifyCheckpoint(event({ outcome: 'failed' }), 'commit-1', path, true), /Invalid/);
+  assert.match(verifyCheckpoint(event({ outcome: 'clean' }), path, true), /No commit needed/);
+  assert.throws(() => verifyCheckpoint(event({ outcome: 'clean', extra: true }), path, true), /Invalid/);
+  assert.throws(() => verifyCheckpoint({ operationId: 'commit-1', status: 'failed', error: 'agent crashed' }, path, true), /Commit checkpoint failed: agent crashed/);
+  assert.throws(() => verifyCheckpoint(event({ outcome: 'failed' }), path, true), /Invalid/);
   writeFileSync(join(path, 'uncommitted'), 'work');
-  assert.throws(() => verifyCheckpoint(event({ outcome: 'clean' }), 'commit-1', path, true), /outstanding/);
+  assert.throws(() => verifyCheckpoint(event({ outcome: 'clean' }), path, true), /outstanding/);
 });
 
 test('checkpoint validates the actual commit and draft subject', (t) => {
@@ -62,10 +62,10 @@ test('checkpoint validates the actual commit and draft subject', (t) => {
   git(path, ['commit', '-m', subject]);
   const commit = git(path, ['rev-parse', 'HEAD']);
   const result = { outcome: 'commit-created', commit, subject };
-  assert.match(verifyCheckpoint(event(result), 'commit-1', path, true), /Created/);
-  assert.throws(() => verifyCheckpoint(event({ ...result, commit: 'a'.repeat(40) }), 'commit-1', path, true), /does not match/);
-  assert.throws(() => verifyCheckpoint(event({ ...result, subject: 'docs: overview' }), 'commit-1', path, true), /subject/);
-  assert.throws(() => verifyCheckpoint(event({ ...result, subject: 'draft: different' }), 'commit-1', path, true), /does not match/);
+  assert.match(verifyCheckpoint(event(result), path, true), /Created/);
+  assert.throws(() => verifyCheckpoint(event({ ...result, commit: 'a'.repeat(40) }), path, true), /does not match/);
+  assert.throws(() => verifyCheckpoint(event({ ...result, subject: 'docs: overview' }), path, true), /subject/);
+  assert.throws(() => verifyCheckpoint(event({ ...result, subject: 'draft: different' }), path, true), /does not match/);
 });
 
 test('checkpoint prompts preserve ignored files and distinguish UI and documentation commits', () => {

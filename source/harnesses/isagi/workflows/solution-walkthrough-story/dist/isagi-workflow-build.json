@@ -1,19 +1,25 @@
 {
-  "manifestVersion": 1,
-  "workflowContractVersion": 1,
+  "manifestVersion": 2,
+  "workflowContractVersion": 5,
   "sdk": {
     "name": "@yourtechbudstudio/isagi-workflow-sdk",
-    "version": "0.0.1"
+    "version": "0.1.1"
   },
   "verifier": {
     "name": "@yourtechbudstudio/isagi-workflow-verifier",
-    "version": "0.0.1"
+    "version": "0.1.1"
   },
   "source": {
-    "sha256": "ad7ea55b126ac00bf98f4fc41b8a310d3730ae9921ec683ae3724d91f78bdb0f"
+    "sha256": "960b1fc584ad5c8f182ac234587ed40f7a5538d9e58af95949329bfe12e62d3e"
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "f4ec61ef31b8483b70fae080f8b188afaf9584ed70de553318218870972bc3d9"
+    "sha256": "6ff8e4b8de7985c9309162857261c81d2e5002fa004395336fce6697b197a1a1"
+  },
+  "structure": {
+    "descriptorVersion": 2,
+    "sha256": "516357676c52648d8475be61583e5dc137aec15a72a16b06e55790d9e5242d2a",
+    "rootGraphKey": "SolutionWalkthroughStory",
+    "graphCount": 8
   }
 }

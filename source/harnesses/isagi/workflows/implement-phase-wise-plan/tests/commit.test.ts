@@ -4,7 +4,6 @@ import test from 'node:test';
 import {
   commitPrompt,
   commitRecoveryPrompt,
-  completedSingleCommitResult,
   parseCommitResult,
 } from '../src/commit.js';
 
@@ -142,15 +141,4 @@ test('recovery checks existing work before committing and stops on ambiguous his
   assert.match(prompt, /untrusted diagnostic data/);
   assert.match(prompt, /Allowed subject prefixes: draft:/);
   assert.match(prompt, /bad response/);
-});
-
-test('commit result inspection rejects failed headless operations', () => {
-  assert.throws(
-    () =>
-      completedSingleCommitResult({
-        kind: 'headless_agent',
-        results: [{ opId: 'commit-1', status: 'failed', error: 'git hook failed' }],
-      }),
-    /git hook failed/,
-  );
 });

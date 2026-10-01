@@ -7,8 +7,8 @@
       "key": "alias"
     },
     "value": {
-      "base": "gpt-6-sol",
-      "alias": "gpt-6-sol-fast",
+      "base": "gpt-6.1-sol",
+      "alias": "gpt-6.1-sol-fast",
       "name": "GPT-6 Sol Fast"
     }
   }

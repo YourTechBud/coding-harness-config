@@ -4,273 +4,210 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import type { WorkflowContext, WorkflowLaunchContext, WorkflowResult } from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { OperationContext, WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { AgentTurnParameters, JudgmentParameters } from 'isagi-workflow-common-graphs';
+import { agentTurnEnded, agentTurnInterrupted, assertDestinationsDeclared, judged, rejudged, subgraphParameters, visit, visitSubgraph } from 'isagi-workflow-common-graphs/testing';
+import type { ImplementPhaseWisePlanParameters } from 'isagi-workflow-implement-phase-wise-plan/graph';
 
 import { planner, plannerJudgment } from '../src/constants.js';
+import { ImplementStoryGraph, implementStoryParameters } from '../src/graph.js';
 import workflow from '../src/index.js';
+import { PlanningGraph } from '../src/planning.js';
+import { plannerRoutingPrompt } from '../src/prompts.js';
 
-type State = Parameters<typeof workflow.step>[1];
-type Stage = State['stage'];
-
-const story = 'https://github.com/owner/repository/issues/123';
-const artifacts = {
-  currentStatePath: 'scratch/story/design/current-state.md',
-  architecturePath: 'scratch/story/design/architecture.md',
-  programDesignPath: 'scratch/story/design/program-design.md',
-  uiBriefPath: 'scratch/story/design/ui-brief.md',
-};
-const plan = {
-  planDirectory: 'scratch/story/implementation',
-  entryPlanPath: 'scratch/story/implementation/index.md',
-};
-const plannerAgent = { agentSessionId: 55, paneId: 66 };
+const story = 'https://github.com/owner/repo/issues/42';
+const parameters = implementStoryParameters({ story });
+const { artifacts, plan } = parameters;
+const plannerPane = { agentSessionId: 55, paneId: 66 };
+const origin = { worktreeId: 1, worktreePath: '/workspace', surfaceId: 7 };
+const destination = (worktreePath: string) => ({ worktreeId: 1, worktreePath, surfaceId: 7 });
 
 test('command exposes design inputs, plan paths, and implementation choices', async () => {
-  const manifest = await workflow.command(launchContext('/workspace'));
+  const manifest = await workflow.command(origin);
   assert.equal(manifest.title, 'Implement Story');
   assert.deepEqual((manifest.inputs ?? []).map((input) => input.key), [
-    'story',
-    'currentStatePath',
-    'architecturePath',
-    'programDesignPath',
-    'uiBriefPath',
-    'planDirectory',
-    'entryPlanPath',
-    'humanInTheLoop',
-    'autoReview',
-    'autoCommit',
+    'story', 'currentStatePath', 'architecturePath', 'programDesignPath', 'uiBriefPath', 'planDirectory', 'entryPlanPath', 'humanInTheLoop', 'autoReview', 'autoCommit',
   ]);
 });
 
-test('initial state uses the singular story pack and starts the planner', async () => {
-  assert.deepEqual(await workflow.init(launchContext('/workspace'), { story }), {
-    stateVersion: 1,
-    repositoryPath: '/workspace',
-    story,
-    artifacts,
-    plan,
-    options: { humanInTheLoop: 'yes', autoReview: 'yes', autoCommit: 'yes' },
-    stage: { kind: 'spawn_planner' },
-  });
+test('parameters use the singular story pack and default every implementation choice to yes', async () => {
+  assert.deepEqual(await workflow.parse(origin, { story }), parameters);
+  assert.deepEqual(parameters.options, { humanInTheLoop: 'yes', autoReview: 'yes', autoCommit: 'yes' });
+  assert.equal(plan.entryPlanPath, 'scratch/story/implementation/index.md');
+  assert.throws(() => workflow.parse(origin, {}), /story must be non-empty text/);
 });
 
-test('spawns the existing planner prompt with every explicit artifact path', async () => {
-  const harness = workflowHarness('/workspace');
-  const result = await workflow.step(harness.ctx, await state('/workspace', { kind: 'spawn_planner' }), null);
-  assert.equal(result.type, 'suspend');
-  assert.equal(harness.spawned.length, 1);
-  assert.deepEqual({ harness: harness.spawned[0]?.harness, model: harness.spawned[0]?.model, effort: harness.spawned[0]?.effort }, planner);
-  assert.deepEqual(harness.spawned[0]?.modifiers, [{ kind: 'command', name: 'create-implementation-plan' }]);
-  const prompt = String(harness.spawned[0]?.prompt);
+test('spawns the existing planner prompt with every explicit artifact path', () => {
+  const turn = subgraphParameters<AgentTurnParameters>(PlanningGraph, 'writePlan', PlanningGraph.init(destination('/workspace'), { story, artifacts, plan }));
+  assert.deepEqual(turn.session, { kind: 'spawn', ...planner });
+  assert.deepEqual(turn.modifiers, [{ kind: 'command', name: 'create-implementation-plan' }]);
+  const prompt = turn.prompt ?? '';
   assert.match(prompt, /omit mock-UI phases and repository documentation work/);
   assert.match(prompt, /Write index.md last/);
   assert.match(prompt, /stop for human reconciliation/);
   assert.match(prompt, /removal or replacement with production implementation/);
-  for (const path of [...Object.values(artifacts), plan.planDirectory, plan.entryPlanPath]) assert.match(prompt, new RegExp(escapeRegex(path)));
-  assert.deepEqual(result.type === 'suspend' ? result.condition : undefined, { kind: 'agent_turn', agentSessionId: 55, sentAt: '2026-08-20T00:00:00.000Z' });
+  for (const path of [...Object.values(artifacts), plan.planDirectory, plan.entryPlanPath]) assert.ok(prompt.includes(path), path);
 });
 
-test('routes a completed planner turn through the existing judgment when the index exists', async (t) => {
-  const repositoryPath = temporaryRepository();
-  t.after(() => rmSync(repositoryPath, { recursive: true, force: true }));
-  writePlan(repositoryPath);
-  const harness = workflowHarness(repositoryPath);
-  harness.history.set(55, [message('user', 'Create the plan.'), message('assistant', `Created ${plan.entryPlanPath}.`)]);
-  const result = await workflow.step(harness.ctx, await state(repositoryPath, { kind: 'await_planner', planner: plannerAgent }), agentEnded());
-  assert.equal(result.type, 'suspend');
-  assert.deepEqual({ harness: harness.headless[0]?.harness, model: harness.headless[0]?.model, effort: harness.headless[0]?.effort }, plannerJudgment);
-  assert.match(String(harness.headless[0]?.prompt), /scratch\/story\/implementation\/index\.md/);
+test('a completed planner turn is judged when the index exists, and a valid plan is ready', async () => {
+  await withRepository(async (repositoryPath) => {
+    writePlan(repositoryPath, { phases: true });
+    const harness = workflowHarness([message('assistant', 'The implementation plan is complete.')]);
+    const read = await visit(PlanningGraph, 'readResponse', harness.ctx, planned(repositoryPath));
+    assert.equal(read.to, 'judge');
+    const judgment = subgraphParameters<JudgmentParameters>(PlanningGraph, 'judge', read.state);
+    assert.deepEqual(judgment.profile, plannerJudgment);
+    assert.equal(judgment.prompt, plannerRoutingPrompt({ plannerResponse: 'The implementation plan is complete.', entryPlanPath: plan.entryPlanPath }));
+    const validated = await visit(PlanningGraph, 'validate', harness.ctx, visitSubgraph(PlanningGraph, 'judge', read.state, judged('ready')).state);
+    assert.equal(validated.to, 'ready');
+    assert.deepEqual(PlanningGraph.outcomes.ready!.output(validated.state), { outcome: 'ready', planner: plannerPane });
+  });
 });
 
-test('a valid plan immediately advances to phase-wise implementation', async () => {
-  const repositoryPath = temporaryRepository();
-  try {
-    writePlan(repositoryPath);
-    const harness = workflowHarness(repositoryPath);
-    const result = await workflow.step(
-      harness.ctx,
-      await state(repositoryPath, { kind: 'await_planner_judgment', planner: plannerAgent, plannerResponse: 'Plan complete.' }),
-      headlessEvent('ready'),
-    );
-    assert.equal(result.type, 'cont');
-    assert.deepEqual(resultState(result).stage, { kind: 'start_implementation', planner: plannerAgent });
-  } finally {
-    rmSync(repositoryPath, { recursive: true, force: true });
-  }
+test('a missing index pauses before judgment, and Continue trusts a human-created index', async () => {
+  await withRepository(async (repositoryPath) => {
+    const harness = workflowHarness([]);
+    const missing = await visit(PlanningGraph, 'readResponse', harness.ctx, planned(repositoryPath));
+    assert.equal(missing.to, 'reconcile');
+    const paused = await visit(PlanningGraph, 'reconcile', harness.ctx, missing.state, { kind: 'user_continue' });
+    assert.equal(harness.feedback.at(-1)?.phase, 'Planner needs human reconciliation');
+    assert.match(harness.feedback.at(-1)?.message ?? '', /is missing\. Work with the planner/);
+    assert.equal((await visit(PlanningGraph, 'recheckPlan', harness.ctx, paused.state)).to, 'reconcile');
+    writePlan(repositoryPath, { phases: false });
+    assert.equal((await visit(PlanningGraph, 'recheckPlan', harness.ctx, paused.state)).to, 'ready');
+  });
 });
 
-test('missing index pauses before judgment and Continue trusts a human-created index', async (t) => {
-  const repositoryPath = temporaryRepository();
-  t.after(() => rmSync(repositoryPath, { recursive: true, force: true }));
-  const harness = workflowHarness(repositoryPath);
-  let result = await workflow.step(harness.ctx, await state(repositoryPath, { kind: 'await_planner', planner: plannerAgent }), agentEnded());
-  assert.equal(result.type, 'suspend');
-  assert.equal(resultState(result).stage.kind, 'await_planner_reconciliation');
-  assert.deepEqual(result.type === 'suspend' && result.condition, { kind: 'user_continue' });
-  assert.equal(harness.headless.length, 0);
-  result = await workflow.step(harness.ctx, resultState(result), { kind: 'user_continue' });
-  assert.equal(resultState(result).stage.kind, 'await_planner_reconciliation');
-  assert.match(harness.logs.at(-1)?.message ?? '', /still missing/);
-  mkdirSync(join(repositoryPath, plan.planDirectory), { recursive: true });
-  writeFileSync(join(repositoryPath, plan.entryPlanPath), '# Human reconciled plan');
-  result = await workflow.step(harness.ctx, resultState(result), { kind: 'user_continue' });
-  assert.equal(resultState(result).stage.kind, 'start_implementation');
-  assert.equal(harness.headless.length, 0);
+test('a failed judgment, or a ready judgment with missing phase files, pauses for reconciliation', async () => {
+  await withRepository(async (repositoryPath) => {
+    writePlan(repositoryPath, { phases: false });
+    const harness = workflowHarness([]);
+    const responded = { ...planned(repositoryPath), plannerResponse: 'I could not finish the plan.' };
+    const failed = await visit(PlanningGraph, 'validate', harness.ctx, { ...responded, route: 'failed' as const });
+    assert.equal(failed.to, 'reconcile');
+    assert.match(failed.state.reconcile ?? '', /Planner response:\nI could not finish the plan\./);
+    const incomplete = await visit(PlanningGraph, 'validate', harness.ctx, { ...responded, route: 'ready' as const });
+    assert.equal(incomplete.to, 'reconcile');
+    assert.match(incomplete.state.reconcile ?? '', /contains no phase files/);
+  });
 });
 
-test('failed judgment pauses even when an index exists', async (t) => {
-  const repositoryPath = temporaryRepository();
-  t.after(() => rmSync(repositoryPath, { recursive: true, force: true }));
-  writePlan(repositoryPath);
-  const harness = workflowHarness(repositoryPath);
-  const result = await workflow.step(harness.ctx, await state(repositoryPath, { kind: 'await_planner_judgment', planner: plannerAgent, plannerResponse: 'Concern remains.' }), headlessEvent('failed'));
-  assert.equal(resultState(result).stage.kind, 'await_planner_reconciliation');
-  assert.deepEqual(harness.closed, []);
+test('a missing planner response fails the step, and a rejudge reads the response again', async () => {
+  await withRepository(async (repositoryPath) => {
+    writePlan(repositoryPath, { phases: true });
+    await assert.rejects(visit(PlanningGraph, 'readResponse', workflowHarness([]).ctx, planned(repositoryPath)), /Planner session 55 has no complete assistant turn to inspect\./);
+    const read = await visit(PlanningGraph, 'readResponse', workflowHarness([message('assistant', 'Done.')]).ctx, planned(repositoryPath));
+    assert.equal(visitSubgraph(PlanningGraph, 'judge', read.state, rejudged()).to, 'readResponse');
+  });
 });
 
-test('ready judgment with missing artifacts pauses for reconciliation', async () => {
-  const harness = workflowHarness('/workspace');
-  const result = await workflow.step(harness.ctx, await state('/workspace', { kind: 'await_planner_judgment', planner: plannerAgent, plannerResponse: 'Done.' }), headlessEvent('ready'));
-  assert.equal(resultState(result).stage.kind, 'await_planner_reconciliation');
+test('a dead planner session fails planning', () => {
+  const died = visitSubgraph(PlanningGraph, 'writePlan', PlanningGraph.init(destination('/workspace'), { story, artifacts, plan }), agentTurnInterrupted(plannerPane, 'session_died'));
+  assert.equal(died.to, 'failed');
+  assert.deepEqual(PlanningGraph.outcomes.failed!.output(died.state), { outcome: 'failed', failure: { message: 'Implementation-plan writer failed', diagnostic: 'Implementation-plan writer turn failed: session_died' } });
 });
 
-test('agent execution and malformed judgment failures remain workflow failures', async () => {
-  const harness = workflowHarness('/workspace');
-  const failed = await workflow.step(harness.ctx, await state('/workspace', { kind: 'await_planner', planner: plannerAgent }), { outcome: 'failed', reason: 'transport failed', recordedAt: 'now' });
-  assert.equal(failed.type, 'fail');
-  const malformed = await workflow.step(harness.ctx, await state('/workspace', { kind: 'await_planner_judgment', planner: plannerAgent, plannerResponse: 'Done.' }), { kind: 'headless_agent', results: [{ opId: 'op-1', status: 'completed', output: 'invalid' }] });
-  assert.equal(malformed.type, 'fail');
-});
-
-test('starts phase-wise implementation with the planner session', async () => {
-  const harness = workflowHarness('/workspace');
-  const result = await workflow.step(harness.ctx, await state('/workspace', { kind: 'start_implementation', planner: plannerAgent }), null);
-  assert.equal(result.type, 'suspend');
-  assert.deepEqual(harness.started[0], {
-    workflowKey: 'implement-phase-wise-plan',
-    variables: { humanInTheLoop: 'yes', autoReview: 'yes', autoCommit: 'yes' },
-    context: { agentSessionId: plannerAgent.agentSessionId },
+test('starts phase-wise implementation with the planner session and boolean options', () => {
+  const ready = visitSubgraph(ImplementStoryGraph, 'createPlan', ImplementStoryGraph.init(destination('/workspace'), { ...parameters, options: { humanInTheLoop: 'no', autoReview: 'yes', autoCommit: 'no' } }), { outcomeId: 'ready', outcomeKind: 'success', output: { outcome: 'ready', planner: plannerPane } });
+  assert.equal(ready.to, 'implementPlan');
+  assert.deepEqual(subgraphParameters<ImplementPhaseWisePlanParameters>(ImplementStoryGraph, 'implementPlan', ready.state), {
+    options: { humanInTheLoop: false, autoReview: true, autoCommit: false },
+    plannerSessionId: 55,
   });
 });
 
 test('completion preserves the planner pane and returns it to the user', async () => {
-  const harness = workflowHarness('/workspace');
-  const result = await workflow.step(
-    harness.ctx,
-    await state('/workspace', { kind: 'await_implementation', planner: plannerAgent, runId: 101 }),
-    implementedPlanEvent(101),
-  );
-  assert.equal(result.type, 'done');
-  assert.deepEqual(harness.closed, []);
-  assert.deepEqual(result.type === 'done' ? result.value : undefined, {
+  const harness = workflowHarness([]);
+  const implemented = visitSubgraph(ImplementStoryGraph, 'implementPlan', withPlanner(), phaseWiseResult(2, 2));
+  assert.equal(implemented.to, 'finish');
+  const finished = await visit(ImplementStoryGraph, 'finish', harness.ctx, implemented.state);
+  assert.equal(harness.closedPanes.length, 0);
+  assert.deepEqual(harness.feedback, [{ phase: 'Story implemented', message: `Completed 2 phases from ${plan.entryPlanPath}. Planner remains open in pane 66.` }]);
+  assert.deepEqual(ImplementStoryGraph.outcomes.implemented!.output(finished.state), {
     outcome: 'story-implemented',
     story,
     artifacts,
     plan,
     plannerAgentSessionId: 55,
     plannerPaneId: 66,
-    implementation: {
-      entryPlanPath: plan.entryPlanPath,
-      decisionLogPath: 'scratch/story/implementation/decisions.md',
-      phaseCount: 2,
-      completedPhaseCount: 2,
-    },
+    implementation: { entryPlanPath: plan.entryPlanPath, decisionLogPath: 'scratch/story/implementation/decisions.md', phaseCount: 2, completedPhaseCount: 2 },
   });
 });
 
-test('a failed implementation leaves the planner open for diagnosis', async () => {
-  const harness = workflowHarness('/workspace');
-  const result = await workflow.step(
-    harness.ctx,
-    await state('/workspace', { kind: 'await_implementation', planner: plannerAgent, runId: 101 }),
-    { kind: 'workflow', results: [{ runId: 101, status: 'failed', error: 'phase failed' }] },
-  );
-  assert.equal(result.type, 'fail');
-  assert.deepEqual(harness.closed, []);
-  assert.match(harness.logs.at(-1)?.message ?? '', /phase failed/);
+test('a failed or incomplete implementation is reported and leaves the planner open for diagnosis', async () => {
+  const harness = workflowHarness([]);
+  const failed = visitSubgraph(ImplementStoryGraph, 'implementPlan', withPlanner(), { outcomeId: 'failed', outcomeKind: 'failure', output: { outcome: 'failed', reason: 'Commit failed for phase 2' } });
+  assert.equal(failed.to, 'reportFailure');
+  await visit(ImplementStoryGraph, 'reportFailure', harness.ctx, failed.state);
+  assert.deepEqual(harness.feedback, [{ kind: 'error', phase: 'Implement story failed', message: 'Story implementation failed' }]);
+  assert.deepEqual(harness.logs, ['implement-phase-wise-plan failed: Commit failed for phase 2']);
+  assert.equal(harness.closedPanes.length, 0);
+
+  assert.match(visitSubgraph(ImplementStoryGraph, 'implementPlan', withPlanner(), phaseWiseResult(1, 2)).state.failure?.diagnostic ?? '', /completed 1 of 2 phases/);
+  assert.match(visitSubgraph(ImplementStoryGraph, 'implementPlan', withPlanner(), phaseWiseResult(2, 2, 'other/index.md')).state.failure?.diagnostic ?? '', /instead of scratch\/story\/implementation\/index\.md/);
 });
 
-function launchContext(worktreePath: string): WorkflowLaunchContext {
-  return { worktreeId: 1, worktreePath, surfaceId: 7 };
+test('every node has one edge and every destination is declared', () => {
+  assertDestinationsDeclared(ImplementStoryGraph);
+  assertDestinationsDeclared(PlanningGraph);
+});
+
+function planned(repositoryPath: string) {
+  return visitSubgraph(PlanningGraph, 'writePlan', PlanningGraph.init(destination(repositoryPath), { story, artifacts, plan }), agentTurnEnded(plannerPane)).state;
 }
 
-async function state(worktreePath: string, stage: Stage): Promise<State> {
-  return { ...await workflow.init(launchContext(worktreePath), { story }), stage } satisfies State;
+function withPlanner() {
+  return { ...ImplementStoryGraph.init(destination('/workspace'), parameters), planner: plannerPane };
 }
 
-function resultState(result: WorkflowResult): State {
-  assert.ok(result.type === 'cont' || result.type === 'suspend');
-  return result.state as State;
-}
-
-function headlessEvent(outcome: 'ready' | 'failed') {
-  return { kind: 'headless_agent', results: [{ opId: 'op-1', status: 'completed', output: JSON.stringify({ outcome }) }] };
-}
-
-function implementedPlanEvent(runId: number) {
+function phaseWiseResult(completedPhaseCount: number, phaseCount: number, entryPlanPath = plan.entryPlanPath) {
   return {
-    kind: 'workflow',
-    results: [{
-      runId,
-      status: 'done',
-      result: {
-        entryPlanPath: plan.entryPlanPath,
-        decisionLogPath: 'scratch/story/implementation/decisions.md',
-        phases: [{ number: 1 }, { number: 2 }],
-        completedPhaseCount: 2,
-      },
-    }],
+    outcomeId: 'implemented',
+    outcomeKind: 'success' as const,
+    output: {
+      outcome: 'plan-implemented' as const,
+      entryPlanPath,
+      decisionLogPath: 'scratch/story/implementation/decisions.md',
+      phases: Array.from({ length: phaseCount }, (_, index) => ({ number: index + 1, slug: `phase-0${index + 1}-work`, type: 'implementation' as const })),
+      completedPhaseCount,
+    },
   };
 }
 
-function temporaryRepository(): string {
-  return mkdtempSync(join(tmpdir(), 'implement-story-'));
-}
-
-function writePlan(repositoryPath: string): void {
+function writePlan(repositoryPath: string, input: { readonly phases: boolean }): void {
   const directory = join(repositoryPath, plan.planDirectory);
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(repositoryPath, plan.entryPlanPath), '# Plan\n');
-  writeFileSync(join(directory, 'phase-01-example.md'), '# Phase\n');
+  if (input.phases) writeFileSync(join(directory, 'phase-01-work.md'), '# Phase 1\n');
 }
 
-function message(role: 'user' | 'assistant', text: string) {
-  return { role, parts: [{ type: 'text' as const, text, state: 'done' as const }] };
+async function withRepository(run: (repositoryPath: string) => Promise<void>): Promise<void> {
+  const repositoryPath = mkdtempSync(join(tmpdir(), 'implement-story-'));
+  try {
+    await run(repositoryPath);
+  } finally {
+    rmSync(repositoryPath, { recursive: true, force: true });
+  }
 }
 
-function agentEnded() {
-  return { outcome: 'ended', recordedAt: '2026-08-20T00:00:00.000Z' };
+function message(role: 'user' | 'assistant', text: string): WorkflowConversationMessage {
+  return { role, parts: [{ type: 'text', text, state: 'done' }] };
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function workflowHarness(worktreePath: string) {
-  const spawned: Array<Record<string, unknown>> = [];
-  const headless: Array<Record<string, unknown>> = [];
-  const started: Array<{ readonly workflowKey: string; readonly variables: Record<string, unknown> | undefined; readonly context: unknown }> = [];
-  const closed: number[] = [];
-  const logs: Array<{ readonly level: string; readonly message: string }> = [];
-  const history = new Map<number, ReturnType<typeof message>[]>();
-  const ctx = {
-    worktreePath,
-    spawnAgentSession: async (input: Record<string, unknown>) => {
-      spawned.push(input);
-      return { agentSessionId: 55, paneId: 66, sentAt: '2026-08-20T00:00:00.000Z' };
-    },
-    getConversationHistory: async (agentSessionId: number) => history.get(agentSessionId) ?? [],
-    runHeadlessAgent: async (input: Record<string, unknown>) => {
-      headless.push(input);
-      return { opId: 'op-1', launch: { ...input, harness: String(input.harness), timeoutMs: 180000 } };
-    },
-    startWorkflow: async (workflowKey: string, variables?: Record<string, unknown>, context?: unknown) => {
-      started.push({ workflowKey, variables, context });
-      return 101;
-    },
-    closePane: async (paneId: number) => { closed.push(paneId); },
-    setUiFeedback: async () => undefined,
-    log: async (level: string, message: string) => { logs.push({ level, message }); },
-  } as unknown as WorkflowContext;
-  return { ctx, spawned, headless, started, closed, logs, history };
+function workflowHarness(history: readonly WorkflowConversationMessage[]) {
+  const feedback: Array<Parameters<OperationContext['setUiFeedback']>[0]> = [];
+  const logs: string[] = [];
+  const closedPanes: number[] = [];
+  const ctx: OperationContext = {
+    destination: destination('/workspace'),
+    execution: { runId: 1, graphInvocationId: 1, executionId: 1, attempt: 'initial' },
+    spawnAgentSession: async () => { throw new Error('Agent turns run in the AgentTurn graph.'); },
+    sendAgentPrompt: async () => { throw new Error('Agent turns run in the AgentTurn graph.'); },
+    closePane: async (paneId) => { closedPanes.push(paneId); },
+    getConversationHistory: async () => history,
+    runHeadlessAgent: async () => { throw new Error('Judgments run in their own graph.'); },
+    log: async (_level, text) => { logs.push(text); },
+    setUiFeedback: async (value) => { feedback.push(value); },
+  };
+  return { ctx, feedback, logs, closedPanes };
 }

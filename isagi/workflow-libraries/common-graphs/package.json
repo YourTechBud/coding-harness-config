@@ -1,0 +1,23 @@
+{
+  "name": "isagi-workflow-common-graphs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@yourtechbudstudio/isagi-workflow-sdk": "0.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "tsx": "4.21.0",
+    "typescript": "7.0.2"
+  },
+  "packageManager": "pnpm@11.4.0"
+}

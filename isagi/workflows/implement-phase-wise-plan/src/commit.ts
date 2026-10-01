@@ -1,7 +1,3 @@
-import {
-  event as workflowEvent,
-  type WorkflowHeadlessResult,
-} from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import type { PlanPhase } from './judgments.js';
 
@@ -87,22 +83,6 @@ ${JSON.stringify(input.previousResult) ?? 'null'}
 On verified success, return exactly one JSON object with exactly these fields, no markdown or commentary:
 {"outcome":"commit-existing","commit":"<full commit hash>","subject":"<exact subject with an allowed prefix>"}
 Use outcome commit-created instead only if you created the commit during this recovery. On failure, report the reason without a success object.`;
-}
-
-export function completedSingleCommitResult(event: unknown): WorkflowHeadlessResult {
-  const results = workflowEvent.getHeadlessAgentResults(event);
-  if (!results) {
-    throw new Error('Workflow resumed with a non-headless commit event.');
-  }
-  if (results.length !== 1) {
-    throw new Error(`Expected exactly one commit result, received ${results.length}.`);
-  }
-  const result = results[0];
-  if (!result || result.status !== 'completed') {
-    const error = result?.error ? `: ${result.error}` : '';
-    throw new Error(`Commit agent did not complete${error}.`);
-  }
-  return result;
 }
 
 export function parseCommitResult(output: string, phase: PlanPhase, recovery = false): CommitResult {

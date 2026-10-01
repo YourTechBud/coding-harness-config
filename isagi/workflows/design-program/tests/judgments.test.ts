@@ -4,7 +4,6 @@ import test from 'node:test';
 import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import {
-  completedSingleHeadlessResult,
   latestAssistantTurnText,
   parseReviewerRoute,
   parseWriterRoute,
@@ -68,17 +67,6 @@ test('reviewer judgment gives explicit escalation precedence and the required fo
   assert.match(prompt, /any Blocker or Concern/);
   assert.match(prompt, /No re-review needed/);
   assert.equal(prompt.endsWith(PROMPT_FOOTER), true);
-});
-
-test('headless result inspection rejects failed judgments', () => {
-  assert.throws(
-    () =>
-      completedSingleHeadlessResult({
-        kind: 'headless_agent',
-        results: [{ opId: 'judge-1', status: 'failed', error: 'provider exited' }],
-      }),
-    /provider exited/,
-  );
 });
 
 function message(role: 'user' | 'assistant', text: string): WorkflowConversationMessage {

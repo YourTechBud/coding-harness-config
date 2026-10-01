@@ -1,19 +1,25 @@
 {
-  "manifestVersion": 1,
-  "workflowContractVersion": 1,
+  "manifestVersion": 2,
+  "workflowContractVersion": 5,
   "sdk": {
     "name": "@yourtechbudstudio/isagi-workflow-sdk",
-    "version": "0.0.1"
+    "version": "0.1.1"
   },
   "verifier": {
     "name": "@yourtechbudstudio/isagi-workflow-verifier",
-    "version": "0.0.1"
+    "version": "0.1.1"
   },
   "source": {
-    "sha256": "8558e06ac9b8519909db15f665fd3bd31106f30a1c9447cb794a499d3ed7c6cb"
+    "sha256": "40a62afaf736c4dc16c166ca27ae8ac4acb68876ce169ae038c896a5936fc5ce"
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "d9a2fc60aa37161fcd162e3f103ddbb971ab13ec40dc8495f92fda3bcf866a2c"
+    "sha256": "888706b51d25538a27ab6b47d3f7260f389992f5080d3edfb0dfd1e551e7c6bf"
+  },
+  "structure": {
+    "descriptorVersion": 2,
+    "sha256": "984eafc7f699d5867f79dc6a69db257b56f671ee57afe949d9c9127382feef40",
+    "rootGraphKey": "DesignArchitecture",
+    "graphCount": 6
   }
 }

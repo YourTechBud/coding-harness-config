@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { event as workflowEvent } from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { HeadlessOperationResult } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 function git(worktreePath: string, args: string[]): string {
   return execFileSync('git', args, { cwd: worktreePath, encoding: 'utf8' }).trim();
@@ -25,10 +25,7 @@ Return exactly one JSON object without markdown or commentary:
 - If already clean: {"outcome":"clean"}`;
 }
 
-export function verifyCheckpoint(incoming: unknown, opId: string, worktreePath: string, draft: boolean): string {
-  const results = workflowEvent.getHeadlessAgentResults(incoming);
-  if (!results || results.length !== 1 || results[0]?.opId !== opId) throw new Error('Unexpected commit checkpoint result.');
-  const result = results[0];
+export function verifyCheckpoint(result: HeadlessOperationResult, worktreePath: string, draft: boolean): string {
   if (result.status !== 'completed') throw new Error(`Commit checkpoint failed: ${result.error ?? 'agent failed'}`);
   const record = JSON.parse(result.output ?? '') as Record<string, unknown> | null;
   if (!record || typeof record !== 'object' || Array.isArray(record)) throw new Error('Invalid commit checkpoint response.');

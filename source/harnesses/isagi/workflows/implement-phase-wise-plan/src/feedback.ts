@@ -1,4 +1,4 @@
-import type { WorkflowContext, WorkflowUiFeedback } from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { OperationContext, WorkflowUiFeedback } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 export type WorkflowStatus =
   | { readonly kind: 'discovering-plan' }
@@ -16,7 +16,6 @@ export type WorkflowStatus =
   | { readonly kind: 'implementing'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'severe-flag'; readonly phase: number }
   | { readonly kind: 'completion-check'; readonly phase: number; readonly phaseCount: number; readonly checkpoint: 'before-review' | 'after-review' }
-  | { readonly kind: 'auto-review'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'phase-review'; readonly phase: number; readonly phaseCount: number }
   | { readonly kind: 'human-verification'; readonly phase: number; readonly phaseCount: number }
   | {
@@ -31,7 +30,7 @@ export type WorkflowStatus =
   | { readonly kind: 'complete' }
   | { readonly kind: 'failed'; readonly message: string };
 
-export function setWorkflowStatus(ctx: WorkflowContext, status: WorkflowStatus): Promise<void> {
+export function setWorkflowStatus(ctx: Pick<OperationContext, 'setUiFeedback'>, status: WorkflowStatus): Promise<void> {
   return ctx.setUiFeedback(renderWorkflowStatus(status));
 }
 
@@ -95,12 +94,6 @@ export function renderWorkflowStatus(status: WorkflowStatus): WorkflowUiFeedback
         kind: 'info',
         phase: status.checkpoint === 'before-review' ? 'phase-completeness' : 'phase-final-check',
         message: `Checking phase ${status.phase} of ${status.phaseCount}: ${status.checkpoint === 'before-review' ? 'remaining implementation work' : 'remaining work and required human verification'}.`,
-      };
-    case 'auto-review':
-      return {
-        kind: 'info',
-        phase: 'phase-auto-review',
-        message: `Reviewing phase ${status.phase} of ${status.phaseCount}`,
       };
     case 'phase-review':
       return {

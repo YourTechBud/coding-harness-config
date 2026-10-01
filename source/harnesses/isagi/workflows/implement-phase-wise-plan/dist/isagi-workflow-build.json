@@ -1,19 +1,25 @@
 {
-  "manifestVersion": 1,
-  "workflowContractVersion": 1,
+  "manifestVersion": 2,
+  "workflowContractVersion": 5,
   "sdk": {
     "name": "@yourtechbudstudio/isagi-workflow-sdk",
-    "version": "0.0.1"
+    "version": "0.1.1"
   },
   "verifier": {
     "name": "@yourtechbudstudio/isagi-workflow-verifier",
-    "version": "0.0.1"
+    "version": "0.1.1"
   },
   "source": {
-    "sha256": "3f69fa7aadaf6b74489baa004ec15c49a22f01f08d0e8a81b1a31262b91f3382"
+    "sha256": "be4e7fca1bf0d38fcdf342ef4dfe29c8a60a157dad531e13dca7a1f743d0c6a5"
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "906e49b4e26523d723b9744e552f924ce72ad0d626f6afa96c0f17a02d8b3b76"
+    "sha256": "f96c5b9be85eacf19e61d35cb0d13b902363280c564955eb6592f42a8688794c"
+  },
+  "structure": {
+    "descriptorVersion": 2,
+    "sha256": "9c34e7ca0e29129bb66131088f877a0fd8980c51ae1d15c3d468ad7b81e3e534",
+    "rootGraphKey": "ImplementPhaseWisePlan",
+    "graphCount": 16
   }
 }

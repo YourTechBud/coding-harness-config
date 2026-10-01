@@ -36,12 +36,7 @@ test('severe flag feedback is an actionable warning', () => {
   });
 });
 
-test('review and commit statuses describe the post-phase work', () => {
-  assert.deepEqual(renderWorkflowStatus({ kind: 'auto-review', phase: 2, phaseCount: 4 }), {
-    kind: 'info',
-    phase: 'phase-auto-review',
-    message: 'Reviewing phase 2 of 4',
-  });
+test('commit status describes the post-phase work', () => {
   assert.deepEqual(renderWorkflowStatus({ kind: 'commit', phase: 2, phaseCount: 4 }), {
     kind: 'info',
     phase: 'phase-commit',

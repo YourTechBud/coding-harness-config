@@ -9,18 +9,21 @@ importers:
   .:
     dependencies:
       '@yourtechbudstudio/isagi-workflow-sdk':
-        specifier: 0.0.1
-        version: 0.0.1
+        specifier: 0.1.1
+        version: 0.1.1
     devDependencies:
       '@types/node':
         specifier: 24.10.1
         version: 24.10.1
       '@yourtechbudstudio/isagi-workflow-verifier':
-        specifier: 0.0.1
-        version: 0.0.1(@yourtechbudstudio/isagi-workflow-sdk@0.0.1)
+        specifier: 0.1.1
+        version: 0.1.1(@yourtechbudstudio/isagi-workflow-sdk@0.1.1)
       esbuild:
         specifier: 0.28.0
         version: 0.28.0
+      isagi-workflow-common-graphs:
+        specifier: link:../../workflow-libraries/common-graphs
+        version: link:../../workflow-libraries/common-graphs
       tsx:
         specifier: 4.21.0
         version: 4.21.0
@@ -465,16 +468,16 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@yourtechbudstudio/isagi-workflow-sdk@0.0.1':
-    resolution: {integrity: sha512-UeqNfizFq6KXkjGmuPoiIWZZAQnlO7H7/9TYERwaP1ePM69n77xYO8gY6NmbAec9x2+Ue5ygfDk1hzQHXQLa4g==}
+  '@yourtechbudstudio/isagi-workflow-sdk@0.1.1':
+    resolution: {integrity: sha512-0sAJvhtdqIIblGgmz+Ir5Cktk7PQ8+nTlRUJTvAW3QWdJb+XzM2Za9vTYT5bqkPzlL8VDWq3M4tlXYdwsO93Fw==}
     engines: {node: '>=22'}
 
-  '@yourtechbudstudio/isagi-workflow-verifier@0.0.1':
-    resolution: {integrity: sha512-LGCibiJtWYCCe5S5sRw5guFZPMAsihSrq2/aVnAugTv2+XQU9I/6Vp76JzV0kJbktucQ0Zgsk0rE2xuTg0gGLQ==}
+  '@yourtechbudstudio/isagi-workflow-verifier@0.1.1':
+    resolution: {integrity: sha512-e9GIVAN2fAszY4iG5ryULIx4ycpI5n/t6lkCzN4a0wxGe4UgxSrM7lfzCtsAiZp1lvPn9uJGausL1CaQ49a9sA==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
-      '@yourtechbudstudio/isagi-workflow-sdk': 0.0.1
+      '@yourtechbudstudio/isagi-workflow-sdk': 0.1.1
 
   esbuild@0.27.7:
     resolution: {integrity: sha512-IxpibTjyVnmrIQo5aqNpCgoACA/dTKLTlhMHihVHhdkxKyPO1uBBthumT0rdHmcsk9uMonIWS0m4FljWzILh3w==}
@@ -732,11 +735,11 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  '@yourtechbudstudio/isagi-workflow-sdk@0.0.1': {}
+  '@yourtechbudstudio/isagi-workflow-sdk@0.1.1': {}
 
-  '@yourtechbudstudio/isagi-workflow-verifier@0.0.1(@yourtechbudstudio/isagi-workflow-sdk@0.0.1)':
+  '@yourtechbudstudio/isagi-workflow-verifier@0.1.1(@yourtechbudstudio/isagi-workflow-sdk@0.1.1)':
     dependencies:
-      '@yourtechbudstudio/isagi-workflow-sdk': 0.0.1
+      '@yourtechbudstudio/isagi-workflow-sdk': 0.1.1
 
   esbuild@0.27.7:
     optionalDependencies:

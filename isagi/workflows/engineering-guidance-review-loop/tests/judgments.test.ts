@@ -4,7 +4,6 @@ import test from 'node:test';
 import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import {
-  completedSingleHeadlessResult,
   latestAssistantTurnText,
   parseReviewRoute,
   reviewRoutingPrompt,
@@ -51,17 +50,6 @@ test('routing prompt maps every edge without assuming a workflow phase', () => {
   assert.match(prompt, /Do not infer escalation from a held finding/);
   assert.ok(prompt.indexOf('Return "human-decision"') < prompt.indexOf('Return "complete"'));
   assert.doesNotMatch(prompt, /Has the implementer already responded/);
-});
-
-test('headless result inspection rejects failed routing operations', () => {
-  assert.throws(
-    () =>
-      completedSingleHeadlessResult({
-        kind: 'headless_agent',
-        results: [{ opId: 'route-1', status: 'failed', error: 'provider exited' }],
-      }),
-    /provider exited/,
-  );
 });
 
 function message(role: 'user' | 'assistant', text: string): WorkflowConversationMessage {

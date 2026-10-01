@@ -1,7 +1,4 @@
-import {
-  event as workflowEvent,
-  type WorkflowHeadlessResult,
-} from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { HeadlessOperationResult } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 export type PullRequestResult = {
   readonly outcome: 'pull-request-submitted';
@@ -54,8 +51,8 @@ Return exactly one JSON object with exactly these fields and no markdown or comm
 {"outcome":"pull-request-submitted","number":123,"url":"https://github.com/owner/repository/pull/123","title":"Concise pull request title","body":"Complete pull request description","baseBranch":"main","headBranch":"feature-branch","state":"OPEN"}`;
 }
 
-export function readPullRequestResult(event: unknown, opId: string, story: string): PullRequestResult {
-  const result = completedPullRequestResult(event, opId);
+export function readPullRequestResult(result: HeadlessOperationResult, story: string): PullRequestResult {
+  if (result.status !== 'completed') throw new Error(`Pull-request agent did not complete${result.error ? `: ${result.error}` : ''}.`);
   const value = JSON.parse(extractJsonObject(result.output ?? '')) as unknown;
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Pull-request result must be a JSON object.');
   const record = value as Record<string, unknown>;
@@ -92,15 +89,6 @@ export function storyLinkLine(story: string): string {
   return `Related story: ${story}`;
 }
 
-function completedPullRequestResult(event: unknown, opId: string): WorkflowHeadlessResult {
-  const results = workflowEvent.getHeadlessAgentResults(event);
-  if (!results) throw new Error('Workflow resumed with a non-headless pull-request event.');
-  if (results.length !== 1) throw new Error(`Expected exactly one pull-request result, received ${results.length}.`);
-  const result = results[0];
-  if (!result || result.opId !== opId) throw new Error('Pull-request wait resumed with an unexpected operation.');
-  if (result.status !== 'completed') throw new Error(`Pull-request agent did not complete${result.error ? `: ${result.error}` : ''}.`);
-  return result;
-}
 
 function extractJsonObject(output: string): string {
   const first = output.indexOf('{');

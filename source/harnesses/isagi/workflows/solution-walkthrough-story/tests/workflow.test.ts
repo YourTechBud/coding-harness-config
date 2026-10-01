@@ -1,20 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { WorkflowLaunchContext } from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { WorkflowOrigin } from '@yourtechbudstudio/isagi-workflow-sdk';
 
+import { SolutionWalkthroughGraph } from '../src/graph.js';
 import workflow from '../src/index.js';
 import { walkthroughPaths } from '../src/paths.js';
 import { reviewDirectory, sources } from './fixtures.js';
 
-const launchCtx: WorkflowLaunchContext = {
+const origin: WorkflowOrigin = {
   worktreeId: 1,
   worktreePath: '/workspace',
   surfaceId: 7,
 };
 
 test('command exposes only the canonical walkthrough inputs', async () => {
-  const manifest = await workflow.command(launchCtx);
+  const manifest = await workflow.command(origin);
   assert.deepEqual((manifest.inputs ?? []).map((input) => input.key), [
     'story',
     'currentStatePath',
@@ -27,30 +28,28 @@ test('command exposes only the canonical walkthrough inputs', async () => {
   ]);
 });
 
-test('init creates the version-one canonical presentation state', async () => {
-  const variables = {
+test('parse and init create the canonical presentation state', async () => {
+  const parameters = await workflow.parse(origin, {
     story: ' Story 42 ',
     ...sources,
     reviewDirectory,
     familiarity: 'familiar',
     technicalDepth: 'implementation',
     deliveryMechanism: 'presentation',
-  };
-  await workflow.validate(launchCtx, variables);
-  assert.deepEqual(await workflow.init(launchCtx, variables), {
-    stateVersion: 1,
-    repositoryPath: '/workspace',
+  });
+  assert.deepEqual(parameters, {
     story: 'Story 42',
     sources,
-    paths: walkthroughPaths(reviewDirectory),
+    reviewDirectory,
     audienceProfile: { familiarity: 'familiar', technicalDepth: 'implementation' },
     deliveryMechanism: 'presentation',
-    stage: { kind: 'start_curriculum_workflow' },
   });
+  const state = SolutionWalkthroughGraph.init({ worktreeId: 2, worktreePath: '/destination', surfaceId: 9 }, parameters);
+  assert.deepEqual(state.context.paths, walkthroughPaths(reviewDirectory));
 });
 
 test('delivery mechanism accepts only presentation and Socratic walkthrough', async () => {
-  const socratic = await workflow.init(launchCtx, { story: 'Story', deliveryMechanism: 'socratic-walkthrough' });
+  const socratic = await workflow.parse(origin, { story: 'Story', deliveryMechanism: 'socratic-walkthrough' });
   assert.equal(socratic.deliveryMechanism, 'socratic-walkthrough');
-  await assert.rejects(async () => workflow.validate(launchCtx, { story: 'Story', deliveryMechanism: 'guided-tutorial' }));
+  assert.throws(() => workflow.parse(origin, { story: 'Story', deliveryMechanism: 'guided-tutorial' }), /deliveryMechanism must be one of/);
 });

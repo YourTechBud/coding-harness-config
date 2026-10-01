@@ -1,24 +1,144 @@
-// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.0.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
-function r(e) {
-  return e;
-}
-function a(e, t) {
+// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+function i(e) {
   return {
-    type: "suspend",
-    state: e,
-    condition: t
+    isagiContract: 5,
+    isagiKind: e
   };
 }
-var o = {
+function s(e) {
+  return {
+    ...i("state-field"),
+    reduce: e.reduce
+  };
+}
+var c = {
+  replace() {
+    return s({ reduce: (e, t) => t });
+  },
+  add() {
+    return s({ reduce: (e, t) => e + t });
+  },
+  append() {
+    return s({ reduce: (e, t) => [...e, ...Array.isArray(t) ? t : [t]] });
+  },
+  union() {
+    return s({ reduce: (e, t) => {
+      let n = Array.isArray(t) ? t : [t], r = new Set(e), i3 = [...e];
+      for (let e2 of n) r.has(e2) || (r.add(e2), i3.push(e2));
+      return i3;
+    } });
+  },
+  collection(e) {
+    return s({ reduce: (t, n) => {
+      switch (n.op) {
+        case "clear":
+          return [];
+        case "remove": {
+          let r = new Set(n.ids);
+          return t.filter((t2) => !r.has(e(t2)));
+        }
+        case "add": {
+          let r = [...t];
+          for (let t2 of n.values) {
+            let n2 = e(t2), i3 = r.findIndex((t3) => e(t3) === n2);
+            i3 === -1 ? r.push(t2) : r[i3] = t2;
+          }
+          return r;
+        }
+      }
+    } });
+  },
+  optional() {
+    return s({ reduce: (e, t) => "clear" in t ? null : t.set });
+  },
+  custom(e) {
+    return s({ reduce: e });
+  }
+};
+function l(e, t) {
+  return {
+    ...i("operation-node"),
+    title: t?.title,
+    description: t?.description,
+    label: t?.label,
+    run: e
+  };
+}
+function u(e) {
+  return {
+    ...i("subgraph-node"),
+    title: e.title,
+    description: e.description,
+    label: e.label,
+    graph: e.graph,
+    parameters: e.parameters,
+    onResult: e.onResult
+  };
+}
+function f(e) {
+  return {
+    ...i("edge"),
+    from: e.from,
+    to: e.to,
+    choose: e.choose,
+    title: e.title
+  };
+}
+function p(e) {
+  return {
+    ...i("outcome"),
+    kind: e.kind,
+    reason: e.reason,
+    title: e.title,
+    output: e.output
+  };
+}
+function m(e) {
+  return {
+    ...i("graph"),
+    ...e
+  };
+}
+function h(e) {
+  return {
+    ...i("workflow"),
+    ...e
+  };
+}
+function g(e) {
+  return e && "update" in e ? {
+    ...i("operation-result"),
+    type: "complete",
+    update: e.update
+  } : {
+    ...i("operation-result"),
+    type: "complete"
+  };
+}
+function _(e) {
+  return "update" in e ? {
+    ...i("operation-result"),
+    type: "suspend",
+    update: e.update,
+    wait: e.wait
+  } : {
+    ...i("operation-result"),
+    type: "suspend",
+    wait: e.wait
+  };
+}
+var y = {
   agentTurn(e) {
     return {
       kind: "agent_turn",
-      agentSessionId: e.agentSessionId,
-      sentAt: e.sentAt
+      target: e
     };
   },
-  userContinue() {
-    return { kind: "user_continue" };
+  userContinue(e) {
+    return e === void 0 ? { kind: "user_continue" } : {
+      kind: "user_continue",
+      label: e
+    };
   },
   userInput(e) {
     return {
@@ -26,12 +146,146 @@ var o = {
       questions: e
     };
   },
-  workflow(e) {
+  headlessAgent(e) {
     let t = Array.isArray(e) ? e : [e];
-    if (t.length === 0) throw Error("Workflow wait requires at least one run id.");
+    if (t.length === 0) throw Error("Headless agent wait requires at least one operation.");
     return {
-      kind: "workflow",
-      runIds: t
+      kind: "headless_agent",
+      operations: t
+    };
+  }
+};
+
+// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+function i2(e) {
+  return {
+    isagiContract: 5,
+    isagiKind: e
+  };
+}
+function s2(e) {
+  return {
+    ...i2("state-field"),
+    reduce: e.reduce
+  };
+}
+var c2 = {
+  replace() {
+    return s2({ reduce: (e, t) => t });
+  },
+  add() {
+    return s2({ reduce: (e, t) => e + t });
+  },
+  append() {
+    return s2({ reduce: (e, t) => [...e, ...Array.isArray(t) ? t : [t]] });
+  },
+  union() {
+    return s2({ reduce: (e, t) => {
+      let n = Array.isArray(t) ? t : [t], r = new Set(e), i3 = [...e];
+      for (let e2 of n) r.has(e2) || (r.add(e2), i3.push(e2));
+      return i3;
+    } });
+  },
+  collection(e) {
+    return s2({ reduce: (t, n) => {
+      switch (n.op) {
+        case "clear":
+          return [];
+        case "remove": {
+          let r = new Set(n.ids);
+          return t.filter((t2) => !r.has(e(t2)));
+        }
+        case "add": {
+          let r = [...t];
+          for (let t2 of n.values) {
+            let n2 = e(t2), i3 = r.findIndex((t3) => e(t3) === n2);
+            i3 === -1 ? r.push(t2) : r[i3] = t2;
+          }
+          return r;
+        }
+      }
+    } });
+  },
+  optional() {
+    return s2({ reduce: (e, t) => "clear" in t ? null : t.set });
+  },
+  custom(e) {
+    return s2({ reduce: e });
+  }
+};
+function l2(e, t) {
+  return {
+    ...i2("operation-node"),
+    title: t?.title,
+    description: t?.description,
+    label: t?.label,
+    run: e
+  };
+}
+function u2(e) {
+  return {
+    ...i2("subgraph-node"),
+    title: e.title,
+    description: e.description,
+    label: e.label,
+    graph: e.graph,
+    parameters: e.parameters,
+    onResult: e.onResult
+  };
+}
+function f2(e) {
+  return {
+    ...i2("edge"),
+    from: e.from,
+    to: e.to,
+    choose: e.choose,
+    title: e.title
+  };
+}
+function p2(e) {
+  return {
+    ...i2("outcome"),
+    kind: e.kind,
+    reason: e.reason,
+    title: e.title,
+    output: e.output
+  };
+}
+function m2(e) {
+  return {
+    ...i2("graph"),
+    ...e
+  };
+}
+function _2(e) {
+  return "update" in e ? {
+    ...i2("operation-result"),
+    type: "suspend",
+    update: e.update,
+    wait: e.wait
+  } : {
+    ...i2("operation-result"),
+    type: "suspend",
+    wait: e.wait
+  };
+}
+var y2 = {
+  agentTurn(e) {
+    return {
+      kind: "agent_turn",
+      target: e
+    };
+  },
+  userContinue(e) {
+    return e === void 0 ? { kind: "user_continue" } : {
+      kind: "user_continue",
+      label: e
+    };
+  },
+  userInput(e) {
+    return {
+      kind: "user_input",
+      questions: e
     };
   },
   headlessAgent(e) {
@@ -39,73 +293,186 @@ var o = {
     if (t.length === 0) throw Error("Headless agent wait requires at least one operation.");
     return {
       kind: "headless_agent",
-      ops: t
+      operations: t
     };
   }
 };
-var s = {
-  isUserContinue(e) {
-    return c(e) && e.kind === "user_continue";
+var b = {
+  isAgentTurn(e) {
+    return e.kind === "agent_turn";
   },
-  isUserInput(e) {
-    return c(e) && e.kind === "user_input" && c(e.answers);
+  isHeadless(e) {
+    return e.kind === "headless_agent";
   },
-  isAgentTurnEnded(e) {
-    return c(e) && e.outcome === "ended" && typeof e.recordedAt == "string";
+  requireHeadless(e, t) {
+    if (e.kind !== "headless_agent") throw Error(`Expected a headless agent event; received "${e.kind}".`);
+    let n = e.results.find((e2) => e2.operationId === t);
+    if (!n) throw Error(`The headless agent event carries no result for operation "${t}".`);
+    return n;
   },
-  isAgentTurnFailed(e) {
-    return c(e) && e.outcome === "failed" && typeof e.recordedAt == "string" && typeof e.reason == "string";
-  },
-  requireAgentTurnEnded(e) {
-    if (s.isAgentTurnEnded(e)) return e;
-    throw Error("Expected an ended agent turn event.");
-  },
-  requireAgentTurnFailed(e) {
-    if (s.isAgentTurnFailed(e)) return e;
-    throw Error("Expected a failed agent turn event.");
-  },
-  getAgentTurnResult(e) {
-    return s.isAgentTurnEnded(e) || s.isAgentTurnFailed(e) ? e : null;
-  },
-  getWorkflowResults(e) {
-    return c(e) && e.kind === "workflow" && Array.isArray(e.results) ? e.results : null;
-  },
-  getHeadlessAgentResults(e) {
-    return c(e) && e.kind === "headless_agent" && Array.isArray(e.results) ? e.results : null;
+  isSubgraph(e) {
+    return e.kind === "subgraph";
   }
 };
-function c(e) {
-  return typeof e == "object" && !!e;
+
+// ../../workflow-libraries/common-graphs/src/agent-turn.ts
+var AgentTurnGraph = m2({
+  key: "AgentTurn",
+  title: "Agent turn",
+  label: (parameters) => parameters.label,
+  init: (_destination, request) => ({ request, agent: null, turn: null, resubmits: 0, stalled: null, interruption: null }),
+  state: {
+    request: c2.replace(),
+    agent: c2.replace(),
+    turn: c2.replace(),
+    resubmits: c2.replace(),
+    stalled: c2.replace(),
+    interruption: c2.replace()
+  },
+  entry: "send",
+  nodes: {
+    send: l2(async (ctx, { request }) => {
+      if (request.feedback) await ctx.setUiFeedback(request.feedback);
+      if (request.session.kind === "spawn") {
+        const { kind: _kind, ...profile } = request.session;
+        const spawned = await ctx.spawnAgentSession({ ...profile, prompt: request.prompt, modifiers: request.modifiers });
+        return _2({
+          update: { agent: { agentSessionId: spawned.agentSessionId, paneId: spawned.paneId }, turn: { agentSessionId: spawned.agentSessionId, sentAt: spawned.sentAt } },
+          wait: y2.agentTurn(spawned)
+        });
+      }
+      const { agentSessionId, paneId } = request.session;
+      const sent = await ctx.sendAgentPrompt({ agentSessionId, prompt: request.prompt, modifiers: request.modifiers });
+      return _2({ update: { agent: { agentSessionId, paneId }, turn: sent }, wait: y2.agentTurn(sent) });
+    }, { title: "Send the prompt", label: (state) => state.request.label }),
+    resubmit: l2(async (ctx, state) => {
+      const { label, prompt, modifiers } = state.request;
+      const agent = must(state.agent, "agent");
+      const role = label.toLowerCase();
+      await ctx.setUiFeedback({ kind: "warning", phase: `Retrying ${role}`, message: `The ${role} harness turn failed. Resubmitting its previous message.` });
+      const sent = await ctx.sendAgentPrompt({ agentSessionId: agent.agentSessionId, prompt, modifiers });
+      await ctx.log("warning", `Resubmitted the previous message after harness_error ${state.resubmits + 1}/${state.request.resubmitOnHarnessError ?? 0} to ${role} session ${agent.agentSessionId}.`);
+      return _2({ update: { turn: sent, resubmits: state.resubmits + 1 }, wait: y2.agentTurn(sent) });
+    }, { title: "Resubmit after a harness error" }),
+    askUser: l2(async (ctx, state) => {
+      const { label } = state.request;
+      const { paneId } = must(state.agent, "agent");
+      const where = paneId === null ? "its pane" : `pane ${paneId}`;
+      await ctx.setUiFeedback({ kind: "warning", phase: `${label} stopped`, message: `Continue the agent in ${where} by hand until it finishes, then select Continue.` });
+      await ctx.log("warning", must(state.stalled, "stalled turn"));
+      return _2({ wait: y2.userContinue(`${label} stopped. Continue the agent by hand, then Continue.`) });
+    }, { title: "Ask the user to finish the agent" }),
+    recheck: l2(async (_ctx, state) => _2({ wait: y2.agentTurn(must(state.turn, "turn")) }), { title: "Check the latest turn" })
+  },
+  edges: {
+    afterSend: f2({ from: "send", to: ["ended", "resubmit", "askUser", "interrupted"], choose: routeTurn }),
+    afterResubmit: f2({ from: "resubmit", to: ["ended", "resubmit", "askUser", "interrupted"], choose: routeTurn }),
+    afterAskUser: f2({ from: "askUser", to: ["recheck"], choose: () => ({ to: "recheck" }) }),
+    afterRecheck: f2({ from: "recheck", to: ["ended", "resubmit", "askUser", "interrupted"], choose: routeTurn })
+  },
+  outcomes: {
+    ended: p2({ kind: "success", title: "Turn ended", output: (state) => ({ outcome: "ended", agent: must(state.agent, "agent") }) }),
+    interrupted: p2({ kind: "failure", title: "Agent session ended", output: (state) => ({ outcome: "interrupted", agent: must(state.agent, "agent"), reason: must(state.interruption, "interruption") }) })
+  }
+});
+function routeTurn(state, event) {
+  const { label } = state.request;
+  if (event.kind !== "agent_turn") throw new Error(`${label} resumed with an unexpected ${event.kind} event.`);
+  const { agentSessionId, paneId } = must(state.agent, "agent");
+  const where = paneId === null ? `session ${agentSessionId}` : `pane ${paneId}`;
+  if (event.outcome === "ended") return { to: "ended", update: { stalled: null } };
+  if (event.outcome === "failed" && event.reason === "harness_error" && state.resubmits < (state.request.resubmitOnHarnessError ?? 0)) return { to: "resubmit" };
+  if (event.outcome === "failed") return { to: "askUser", update: { stalled: `${label} failed in ${where}: ${event.reason}` } };
+  return { to: "interrupted", update: { interruption: `${label} was interrupted in ${where}: ${event.reason}` } };
 }
-function l(e) {
-  return {
-    type: "done",
-    value: e
-  };
+function agentTurn(spec) {
+  return u2({
+    graph: AgentTurnGraph,
+    title: spec.title,
+    ...spec.label ? { label: spec.label } : {},
+    parameters: spec.parameters,
+    onResult: (state, result) => spec.onResult(state, result.output)
+  });
 }
-function u(e) {
-  return {
-    type: "fail",
-    reason: e
-  };
+function must(value, label) {
+  if (value === null) throw new Error(`Agent turn state is missing its ${label}.`);
+  return value;
 }
 
-// src/constants.ts
-var fixer = {
-  harness: "claude",
-  model: "opus",
-  effort: "medium"
-};
-var reviewer = {
-  harness: "codex",
-  model: "gpt-6-sol",
-  effort: "high"
-};
-var routingJudgment = {
-  harness: "codex",
-  model: "gpt-6-luna",
-  effort: "medium"
-};
+// ../../workflow-libraries/common-graphs/src/judgment.ts
+var MAX_ATTEMPTS = 3;
+function createJudgmentGraph(spec) {
+  return m2({
+    key: spec.key,
+    title: spec.title,
+    label: (parameters) => `Route the ${parameters.label}`,
+    init: (_destination, request) => ({ request, operationId: null, attempts: 0, error: null, route: null }),
+    state: {
+      request: c2.replace(),
+      operationId: c2.replace(),
+      attempts: c2.replace(),
+      error: c2.replace(),
+      route: c2.replace()
+    },
+    entry: "judge",
+    nodes: {
+      judge: l2(async (ctx, state) => {
+        const { label, profile, prompt, feedback } = state.request;
+        if (feedback) await ctx.setUiFeedback(feedback);
+        const handle = await ctx.runHeadlessAgent({ ...profile, prompt });
+        await ctx.log("info", `Started ${label} routing judgment ${handle.operationId} (attempt ${state.attempts + 1}/${MAX_ATTEMPTS}).`);
+        return _2({ update: { operationId: handle.operationId, attempts: state.attempts + 1 }, wait: y2.headlessAgent(handle) });
+      }, { title: "Run the judgment" }),
+      askUser: l2(async (ctx, state) => {
+        const { label } = state.request;
+        await ctx.setUiFeedback({ kind: "warning", phase: `The ${label} response could not be routed`, message: `The ${label} judgment failed ${MAX_ATTEMPTS} times. Check the logs, then select Continue to read the latest response and judge it again.` });
+        await ctx.log("warning", `${label} routing failed: ${state.error ?? "unknown error"}`);
+        return _2({ wait: y2.userContinue(`The ${label} response could not be routed. Continue to judge it again.`) });
+      }, { title: "Ask the user before judging again" })
+    },
+    edges: {
+      afterJudge: f2({
+        from: "judge",
+        to: ["judged", "judge", "askUser"],
+        choose: (state, event) => routeJudgment(state, event, spec.parse)
+      }),
+      afterAskUser: f2({ from: "askUser", to: ["rejudge"], choose: () => ({ to: "rejudge" }) })
+    },
+    outcomes: {
+      judged: p2({
+        kind: "success",
+        title: "Judged",
+        output: (state) => {
+          if (state.route === null) throw new Error("Judgment state is missing its route.");
+          return { outcome: "judged", route: state.route };
+        }
+      }),
+      rejudge: p2({ kind: "success", title: "Judge again", output: () => ({ outcome: "rejudge" }) })
+    }
+  });
+}
+function routeJudgment(state, event, parse) {
+  if (state.operationId === null) throw new Error("Judgment state is missing its operation.");
+  const result = b.requireHeadless(event, state.operationId);
+  let error;
+  if (result.status === "completed") {
+    try {
+      return { to: "judged", update: { route: parse(result.output ?? ""), error: null } };
+    } catch (parseError) {
+      error = parseError instanceof Error ? parseError.message : String(parseError);
+    }
+  } else {
+    error = `Judgment did not complete${result.error ? `: ${result.error}` : ""}.`;
+  }
+  return { to: state.attempts < MAX_ATTEMPTS ? "judge" : "askUser", update: { error } };
+}
+
+// ../../workflow-libraries/common-graphs/src/fail-step.ts
+async function failStep(ctx, feedback, diagnostic) {
+  await ctx.setUiFeedback({ kind: "error", ...feedback });
+  await ctx.log("error", diagnostic);
+  throw new Error(diagnostic);
+}
 
 // src/judgments.ts
 function latestAssistantTurnText(history) {
@@ -147,19 +514,6 @@ Apply this precedence:
 
 A Nit is never a disagreement. Do not treat an empty Nit section or a passing mention of the severity definition as an actual Nit finding. An Architectural Reflection is not a disagreement by itself. Do not include confidence, commentary, markdown, or extra JSON fields.`;
 }
-function completedSingleHeadlessResult(event) {
-  const results = s.getHeadlessAgentResults(event);
-  if (!results) throw new Error("Workflow resumed with a non-headless routing event.");
-  if (results.length !== 1) {
-    throw new Error(`Expected exactly one routing result, received ${results.length}.`);
-  }
-  const result = results[0];
-  if (!result || result.status !== "completed") {
-    const detail = result?.error ? `: ${result.error}` : "";
-    throw new Error(`Routing judgment did not complete${detail}.`);
-  }
-  return result;
-}
 function parseReviewRoute(output) {
   const value = JSON.parse(extractJsonObject(output));
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -186,6 +540,39 @@ function extractJsonObject(output) {
   }
   return output.slice(first, last + 1);
 }
+
+// src/graphs/common.ts
+var ReviewRoutingGraph = createJudgmentGraph({
+  key: "EngineeringGuidanceReviewRouting",
+  title: "Route the review",
+  parse: parseReviewRoute
+});
+async function readLatestTurn(ctx, agentSessionId, role) {
+  const text = latestAssistantTurnText(await ctx.getConversationHistory(agentSessionId));
+  if (text) return text;
+  return failStep(ctx, { phase: "Review loop failed", message: `No ${role} response was found` }, `${role} session ${agentSessionId} has no complete assistant turn to inspect.`);
+}
+function must2(value, label) {
+  if (value === null) throw new Error(`Engineering guidance review state is missing its ${label}.`);
+  return value;
+}
+
+// src/constants.ts
+var fixer = {
+  harness: "claude",
+  model: "opus",
+  effort: "medium"
+};
+var reviewer = {
+  harness: "codex",
+  model: "gpt-6.1-sol",
+  effort: "high"
+};
+var routingJudgment = {
+  harness: "codex",
+  model: "gpt-6-luna",
+  effort: "medium"
+};
 
 // src/prompts.ts
 function reviewToFixerPrompt(review) {
@@ -222,8 +609,247 @@ You have final authority on when this loop ends. If all Blockers and Concerns ar
 Don't run tasks or shell commands in the background. You can run them in the foreground.`;
 }
 
+// src/graphs/fix-round.ts
+var FixRoundGraph = m({
+  key: "EngineeringGuidanceReviewFix",
+  title: "Fix round",
+  init: (_destination, parameters) => ({ ...parameters, turn: null, response: null, failure: null }),
+  state: {
+    fixer: c.replace(),
+    review: c.replace(),
+    readResponse: c.replace(),
+    turn: c.replace(),
+    response: c.replace(),
+    failure: c.replace()
+  },
+  entry: "askFixer",
+  nodes: {
+    askFixer: agentTurn({
+      title: "Fix the review findings",
+      parameters: (state) => ({
+        label: "Fixer",
+        session: state.fixer === null ? { kind: "spawn", ...fixer } : { kind: "existing", ...state.fixer },
+        prompt: reviewToFixerPrompt(state.review),
+        feedback: { phase: "Fixing review findings" }
+      }),
+      onResult: (_state, turn) => ({ turn, fixer: turn.agent })
+    }),
+    readResponse: l(async (ctx, state) => {
+      return g({ update: { response: await readLatestTurn(ctx, must2(state.fixer, "fixer").agentSessionId, "fixer") } });
+    }, { title: "Read the fixer's response" })
+  },
+  edges: {
+    afterAskFixer: f({
+      from: "askFixer",
+      to: ["readResponse", "fixed", "failed"],
+      choose: (state) => {
+        const turn = must2(state.turn, "fixer turn");
+        if (turn.outcome === "interrupted") return { to: "failed", update: { failure: { message: "Fixer turn failed", diagnostic: `Fixer turn failed: ${turn.reason}` } } };
+        return { to: state.readResponse ? "readResponse" : "fixed" };
+      }
+    }),
+    afterReadResponse: f({ from: "readResponse", to: ["fixed"], choose: () => ({ to: "fixed" }) })
+  },
+  outcomes: {
+    fixed: p({ kind: "success", title: "Fixed", output: (state) => ({ outcome: "fixed", fixer: must2(state.fixer, "fixer"), response: state.response }) }),
+    failed: p({ kind: "failure", title: "Fix failed", output: (state) => ({ outcome: "failed", failure: must2(state.failure, "failure") }) })
+  }
+});
+
+// src/graphs/review-round.ts
+var ReviewRoundGraph = m({
+  key: "EngineeringGuidanceReviewRound",
+  title: "Review round",
+  label: (parameters) => parameters.reviewer === null ? "Initial review" : `Re-review round ${parameters.reviewRound}`,
+  init: (_destination, parameters) => ({ ...parameters, turn: null, review: null, route: null, failure: null }),
+  state: {
+    context: c.replace(),
+    reviewer: c.replace(),
+    fixerResponse: c.replace(),
+    reviewRound: c.replace(),
+    turn: c.replace(),
+    review: c.replace(),
+    route: c.replace(),
+    failure: c.replace()
+  },
+  entry: "askReviewer",
+  nodes: {
+    askReviewer: agentTurn({
+      title: "Review the changes",
+      parameters: (state) => state.reviewer === null ? {
+        label: "Reviewer",
+        session: { kind: "spawn", ...reviewer },
+        modifiers: [{ kind: "command", name: "perform-engineering-guidance-review" }],
+        prompt: state.context,
+        feedback: { phase: "Starting reviewer" }
+      } : {
+        label: "Reviewer",
+        session: { kind: "existing", ...state.reviewer },
+        prompt: fixerToReviewerPrompt(must2(state.fixerResponse, "fixer response")),
+        feedback: { phase: "Re-reviewing fixes" }
+      },
+      onResult: (_state, turn) => ({ turn, reviewer: turn.agent })
+    }),
+    readReview: l(async (ctx, state) => {
+      return g({ update: { review: await readLatestTurn(ctx, must2(state.reviewer, "reviewer").agentSessionId, "reviewer") } });
+    }, { title: "Read the review" }),
+    routeReview: u({
+      graph: ReviewRoutingGraph,
+      title: "Route the review",
+      parameters: (state) => ({
+        label: "reviewer",
+        profile: routingJudgment,
+        prompt: reviewRoutingPrompt({ review: must2(state.review, "review") }),
+        feedback: { phase: "Routing reviewer feedback" }
+      }),
+      // A rejudge reads the reviewer's latest turn again before routing it.
+      onResult: (_state, { output }) => ({ route: output.outcome === "judged" ? output.route : null })
+    }),
+    awaitHumanDecision: l(async (ctx, state) => {
+      await ctx.setUiFeedback({ kind: "warning", phase: "Waiting for your decision", message: "The reviewer raised a human escalation. Resolve it, then continue the workflow." });
+      await ctx.log("warning", state.fixerResponse === null ? "Reviewer raised a human escalation before the first fixer turn; waiting for user resolution." : `Reviewer raised a human escalation in review round ${state.reviewRound}; waiting for user resolution.`);
+      return _({ wait: y.userContinue() });
+    }, { title: "Wait for the human decision" }),
+    readResolvedReview: l(async (ctx, state) => {
+      const review = await readLatestTurn(ctx, must2(state.reviewer, "reviewer").agentSessionId, "reviewer");
+      await ctx.log("info", state.fixerResponse === null ? "User continued after the initial disagreement; sending the reviewer session's latest complete turn to the fixer." : `User continued review round ${state.reviewRound}; sending the reviewer session's latest complete turn to the fixer.`);
+      return g({ update: { review, route: "continue" } });
+    }, { title: "Read the reviewer's latest turn" })
+  },
+  edges: {
+    afterAskReviewer: f({
+      from: "askReviewer",
+      to: ["readReview", "failed"],
+      choose: (state) => {
+        const turn = must2(state.turn, "reviewer turn");
+        if (turn.outcome === "interrupted") return { to: "failed", update: { failure: { message: "Reviewer turn failed", diagnostic: `Reviewer turn failed: ${turn.reason}` } } };
+        return { to: "readReview" };
+      }
+    }),
+    afterReadReview: f({ from: "readReview", to: ["routeReview"], choose: () => ({ to: "routeReview" }) }),
+    afterRouteReview: f({
+      from: "routeReview",
+      to: ["reviewed", "awaitHumanDecision", "readReview"],
+      choose: (state) => {
+        if (state.route === null) return { to: "readReview" };
+        return { to: state.route === "human-decision" ? "awaitHumanDecision" : "reviewed" };
+      }
+    }),
+    afterAwaitHumanDecision: f({
+      from: "awaitHumanDecision",
+      to: ["readResolvedReview"],
+      choose: (_state, event) => {
+        if (event.kind !== "user_continue") throw new Error(`The human-decision pause resumed with an unexpected ${event.kind} event.`);
+        return { to: "readResolvedReview" };
+      }
+    }),
+    afterReadResolvedReview: f({ from: "readResolvedReview", to: ["reviewed"], choose: () => ({ to: "reviewed" }) })
+  },
+  outcomes: {
+    reviewed: p({
+      kind: "success",
+      title: "Reviewed",
+      output: (state) => {
+        const route = must2(state.route, "route");
+        return {
+          outcome: "reviewed",
+          reviewer: must2(state.reviewer, "reviewer"),
+          review: must2(state.review, "review"),
+          verdict: route === "complete" ? "complete" : "fix",
+          afterFixer: route === "final-fixer" ? "complete" : "rereview"
+        };
+      }
+    }),
+    failed: p({ kind: "failure", title: "Review failed", output: (state) => ({ outcome: "failed", failure: must2(state.failure, "failure") }) })
+  }
+});
+
+// src/graph.ts
+var EngineeringGuidanceReviewGraph = m({
+  key: "EngineeringGuidanceReview",
+  title: "Engineering guidance review loop",
+  init: (_destination, parameters) => ({
+    context: parameters.context,
+    reviewer: null,
+    fixer: parameters.fixerSessionId === null ? null : { agentSessionId: parameters.fixerSessionId, paneId: null },
+    review: null,
+    verdict: null,
+    afterFixer: null,
+    fixerResponse: null,
+    reviewRound: 1,
+    failure: null
+  }),
+  state: {
+    context: c.replace(),
+    reviewer: c.replace(),
+    fixer: c.replace(),
+    review: c.replace(),
+    verdict: c.replace(),
+    afterFixer: c.replace(),
+    fixerResponse: c.replace(),
+    reviewRound: c.replace(),
+    failure: c.replace()
+  },
+  entry: "review",
+  nodes: {
+    review: u({
+      graph: ReviewRoundGraph,
+      title: "Review",
+      label: (state) => state.reviewer === null ? "Initial review" : `Re-review round ${state.reviewRound}`,
+      parameters: (state) => ({ context: state.context, reviewer: state.reviewer, fixerResponse: state.fixerResponse, reviewRound: state.reviewRound }),
+      onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { reviewer: output.reviewer, review: output.review, verdict: output.verdict, afterFixer: output.afterFixer }
+    }),
+    fix: u({
+      graph: FixRoundGraph,
+      title: "Fix",
+      label: (state) => `Fix round ${state.reviewRound}`,
+      parameters: (state) => ({ fixer: state.fixer, review: must2(state.review, "review"), readResponse: state.afterFixer === "rereview" }),
+      onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { fixer: output.fixer, fixerResponse: output.response }
+    }),
+    finish: l(async (ctx, state) => {
+      await ctx.setUiFeedback({ phase: "Review loop complete" });
+      if (state.fixer?.paneId != null) await ctx.closePane(state.fixer.paneId);
+      const reviewerPane = must2(state.reviewer, "reviewer").paneId;
+      if (reviewerPane !== null) await ctx.closePane(reviewerPane);
+      await ctx.log("info", `Engineering guidance review loop completed after ${state.reviewRound} review rounds.`);
+      return g();
+    }, { title: "Close the workflow panes" }),
+    reportFailure: l(async (ctx, state) => {
+      const failure = must2(state.failure, "failure");
+      await ctx.setUiFeedback({ kind: "error", phase: "Review loop failed", message: failure.message });
+      await ctx.log("error", failure.diagnostic);
+      return g();
+    }, { title: "Report the failure" })
+  },
+  edges: {
+    afterReview: f({
+      from: "review",
+      to: ["reportFailure", "finish", "fix"],
+      choose: (state) => {
+        if (state.failure) return { to: "reportFailure" };
+        return { to: state.verdict === "complete" ? "finish" : "fix" };
+      }
+    }),
+    afterFix: f({
+      from: "fix",
+      to: ["reportFailure", "finish", "review"],
+      choose: (state) => {
+        if (state.failure) return { to: "reportFailure" };
+        if (state.afterFixer === "complete") return { to: "finish" };
+        return { to: "review", update: { reviewRound: state.reviewRound + 1 } };
+      }
+    }),
+    afterFinish: f({ from: "finish", to: ["succeeded"], choose: () => ({ to: "succeeded" }) }),
+    afterReportFailure: f({ from: "reportFailure", to: ["failed"], choose: () => ({ to: "failed" }) })
+  },
+  outcomes: {
+    succeeded: p({ kind: "success", title: "Review loop complete", output: (state) => ({ outcome: "workflow-executed-successfully", reviewCount: state.reviewRound }) }),
+    failed: p({ kind: "failure", title: "Review loop failed", output: (state) => ({ outcome: "failed", reason: must2(state.failure, "failure").diagnostic }) })
+  }
+});
+
 // src/index.ts
-var index_default = r({
+var index_default = h({
   command: () => ({
     title: "Engineering Guidance Review Loop",
     description: "Route a code review between a reviewer and fixer until the reviewer closes it.",
@@ -236,379 +862,16 @@ var index_default = r({
       }
     ]
   }),
-  validate: (_launchCtx, variables) => {
-    parseContext(variables.context);
-  },
-  init: (launchCtx, variables) => ({
-    stateVersion: 1,
-    context: parseContext(variables.context),
-    ...launchCtx.agentSessionId == null ? {} : { fixerSessionId: launchCtx.agentSessionId },
-    stage: { kind: "spawn_reviewer" }
+  // The launching agent, when there is one, becomes the fixer.
+  parse: (origin, inputs) => ({
+    context: parseContext(inputs.context),
+    fixerSessionId: origin.agentSessionId ?? null
   }),
-  step: async (ctx, state, incoming) => {
-    await ctx.log("debug", `Engineering guidance review loop stage=${state.stage.kind}.`);
-    switch (state.stage.kind) {
-      case "spawn_reviewer": {
-        await ctx.setUiFeedback({ phase: "Starting reviewer" });
-        const spawned = await ctx.spawnAgentSession({
-          harness: reviewer.harness,
-          model: reviewer.model,
-          effort: reviewer.effort,
-          modifiers: [{ kind: "command", name: "perform-engineering-guidance-review" }],
-          prompt: state.context
-        });
-        const reviewerAgent = agentFromSpawn(spawned);
-        await ctx.log(
-          "info",
-          `Spawned reviewer in pane ${reviewerAgent.paneId}: harness=${reviewer.harness}, model=${reviewer.model}, effort=${reviewer.effort}, agentSessionId=${reviewerAgent.agentSessionId}.`
-        );
-        return a(
-          withStage(state, { kind: "await_initial_review", reviewer: reviewerAgent }),
-          o.agentTurn(spawned)
-        );
-      }
-      case "await_initial_review": {
-        const ended = await requireEndedTurn(ctx, incoming, "Reviewer");
-        if (!ended.ok) return ended.result;
-        const review = await latestTurnOrFail(ctx, state.stage.reviewer, "reviewer");
-        if (!review.ok) return review.result;
-        return startRoutingJudgment(ctx, {
-          state: withStage(state, {
-            kind: "await_initial_review_routing",
-            reviewer: state.stage.reviewer,
-            review: review.text
-          }),
-          review: review.text
-        });
-      }
-      case "await_initial_review_routing": {
-        const route = await readRoutingJudgment(ctx, state, state.stage.review, incoming);
-        if (!route.ok) return route.result;
-        switch (route.value) {
-          case "complete":
-            return finishReviewLoop(ctx, state.stage.reviewer, void 0, 1);
-          case "continue":
-          case "final-fixer":
-            return spawnFixerForReview(ctx, state, {
-              reviewer: state.stage.reviewer,
-              review: state.stage.review,
-              reviewRound: 1,
-              afterFixer: route.value === "final-fixer" ? "complete" : "rereview"
-            });
-          case "human-decision": {
-            await ctx.setUiFeedback({
-              kind: "warning",
-              phase: "Waiting for your decision",
-              message: "The reviewer raised a human escalation. Resolve it, then continue the workflow."
-            });
-            await ctx.log(
-              "warning",
-              "Reviewer raised a human escalation before the first fixer turn; waiting for user resolution."
-            );
-            return a(
-              withStage(state, {
-                kind: "await_initial_disagreement_resolution",
-                reviewer: state.stage.reviewer
-              }),
-              o.userContinue()
-            );
-          }
-          default:
-            return assertNever(route.value);
-        }
-      }
-      case "await_initial_disagreement_resolution": {
-        if (!s.isUserContinue(incoming)) {
-          return failWorkflow(
-            ctx,
-            "The review decision could not be resumed",
-            "The initial disagreement pause resumed with an unexpected event."
-          );
-        }
-        const latestReview = await latestTurnOrFail(ctx, state.stage.reviewer, "reviewer");
-        if (!latestReview.ok) return latestReview.result;
-        await ctx.log(
-          "info",
-          "User continued after the initial disagreement; sending the reviewer session's latest complete turn to the fixer."
-        );
-        return spawnFixerForReview(ctx, state, {
-          reviewer: state.stage.reviewer,
-          review: latestReview.text,
-          reviewRound: 1,
-          afterFixer: "rereview"
-        });
-      }
-      case "await_fixer_turn": {
-        const ended = await requireEndedTurn(ctx, incoming, "Fixer");
-        if (!ended.ok) return ended.result;
-        if (state.stage.afterFixer === "complete") {
-          return finishReviewLoop(
-            ctx,
-            state.stage.reviewer,
-            state.stage.fixer,
-            state.stage.reviewRound
-          );
-        }
-        const fixerResponse = await latestTurnOrFail(ctx, state.stage.fixer, "fixer");
-        if (!fixerResponse.ok) return fixerResponse.result;
-        await ctx.setUiFeedback({ phase: "Re-reviewing fixes" });
-        const sent = await ctx.sendAgentPrompt({
-          agentSessionId: state.stage.reviewer.agentSessionId,
-          prompt: fixerToReviewerPrompt(fixerResponse.text)
-        });
-        await ctx.log(
-          "info",
-          `Sent fixer response from review round ${state.stage.reviewRound} to reviewer session ${state.stage.reviewer.agentSessionId}.`
-        );
-        return a(
-          withStage(state, {
-            kind: "await_rereview",
-            reviewer: state.stage.reviewer,
-            fixer: state.stage.fixer,
-            reviewRound: state.stage.reviewRound + 1
-          }),
-          o.agentTurn(sent)
-        );
-      }
-      case "await_rereview": {
-        const ended = await requireEndedTurn(ctx, incoming, "Reviewer");
-        if (!ended.ok) return ended.result;
-        const review = await latestTurnOrFail(ctx, state.stage.reviewer, "reviewer");
-        if (!review.ok) return review.result;
-        return startRoutingJudgment(ctx, {
-          state: withStage(state, {
-            kind: "await_rereview_routing",
-            reviewer: state.stage.reviewer,
-            fixer: state.stage.fixer,
-            review: review.text,
-            reviewRound: state.stage.reviewRound
-          }),
-          review: review.text
-        });
-      }
-      case "await_rereview_routing": {
-        const route = await readRoutingJudgment(ctx, state, state.stage.review, incoming);
-        if (!route.ok) return route.result;
-        switch (route.value) {
-          case "complete":
-            return finishReviewLoop(
-              ctx,
-              state.stage.reviewer,
-              state.stage.fixer,
-              state.stage.reviewRound
-            );
-          case "continue":
-          case "final-fixer":
-            return sendReviewToFixer(ctx, state, {
-              reviewer: state.stage.reviewer,
-              fixer: state.stage.fixer,
-              review: state.stage.review,
-              reviewRound: state.stage.reviewRound,
-              afterFixer: route.value === "final-fixer" ? "complete" : "rereview"
-            });
-          case "human-decision": {
-            await ctx.setUiFeedback({
-              kind: "warning",
-              phase: "Waiting for your decision",
-              message: "The reviewer raised a human escalation. Resolve it, then continue the workflow."
-            });
-            await ctx.log(
-              "warning",
-              `Reviewer raised a human escalation in review round ${state.stage.reviewRound}; waiting for user resolution.`
-            );
-            return a(
-              withStage(state, {
-                kind: "await_disagreement_resolution",
-                reviewer: state.stage.reviewer,
-                fixer: state.stage.fixer,
-                reviewRound: state.stage.reviewRound
-              }),
-              o.userContinue()
-            );
-          }
-          default:
-            return assertNever(route.value);
-        }
-      }
-      case "await_disagreement_resolution": {
-        if (!s.isUserContinue(incoming)) {
-          return failWorkflow(
-            ctx,
-            "The review decision could not be resumed",
-            "The disagreement pause resumed with an unexpected event."
-          );
-        }
-        const latestReview = await latestTurnOrFail(ctx, state.stage.reviewer, "reviewer");
-        if (!latestReview.ok) return latestReview.result;
-        await ctx.log(
-          "info",
-          `User continued review round ${state.stage.reviewRound}; sending the reviewer session's latest complete turn to the fixer.`
-        );
-        return sendReviewToFixer(ctx, state, {
-          reviewer: state.stage.reviewer,
-          fixer: state.stage.fixer,
-          review: latestReview.text,
-          reviewRound: state.stage.reviewRound,
-          afterFixer: "rereview"
-        });
-      }
-      default:
-        return assertNever(state.stage);
-    }
-  }
+  graph: EngineeringGuidanceReviewGraph
 });
-async function startRoutingJudgment(ctx, input) {
-  await ctx.setUiFeedback({ phase: "Routing reviewer feedback" });
-  const op = await ctx.runHeadlessAgent({
-    harness: routingJudgment.harness,
-    model: routingJudgment.model,
-    effort: routingJudgment.effort,
-    prompt: reviewRoutingPrompt({ review: input.review })
-  });
-  await ctx.log("info", `Started review routing judgment ${op.opId}.`);
-  return a(input.state, o.headlessAgent(op));
-}
-async function readRoutingJudgment(ctx, state, review, incoming) {
-  try {
-    const result = completedSingleHeadlessResult(incoming);
-    const value = parseReviewRoute(result.output ?? "");
-    await ctx.log("info", `Review routing outcome=${value}.`);
-    return { ok: true, value };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (isExplicitRetry(ctx) && s.getHeadlessAgentResults(incoming)) {
-      await ctx.log(
-        "info",
-        `Explicit Retry discarded the saved routing result (${message}) and will run the routing judgment again.`
-      );
-      return { ok: false, result: await startRoutingJudgment(ctx, { state, review }) };
-    }
-    return {
-      ok: false,
-      result: await failWorkflow(
-        ctx,
-        "The reviewer response could not be routed",
-        `Review routing failed: ${message}`
-      )
-    };
-  }
-}
-async function spawnFixerForReview(ctx, state, input) {
-  await ctx.setUiFeedback({ phase: "Fixing review findings" });
-  if (state.fixerSessionId !== void 0) {
-    return sendReviewToFixer(ctx, state, {
-      ...input,
-      fixer: { agentSessionId: state.fixerSessionId }
-    });
-  }
-  const spawned = await ctx.spawnAgentSession({
-    harness: fixer.harness,
-    model: fixer.model,
-    effort: fixer.effort,
-    prompt: reviewToFixerPrompt(input.review)
-  });
-  const fixerAgent = agentFromSpawn(spawned);
-  await ctx.log(
-    "info",
-    `Spawned fixer in pane ${fixerAgent.paneId}: harness=${fixer.harness}, model=${fixer.model}, effort=${fixer.effort}, agentSessionId=${fixerAgent.agentSessionId}.`
-  );
-  return a(
-    withStage(state, {
-      kind: "await_fixer_turn",
-      reviewer: input.reviewer,
-      fixer: fixerAgent,
-      reviewRound: input.reviewRound,
-      afterFixer: input.afterFixer
-    }),
-    o.agentTurn(spawned)
-  );
-}
-async function sendReviewToFixer(ctx, state, input) {
-  await ctx.setUiFeedback({ phase: "Fixing review findings" });
-  const sent = await ctx.sendAgentPrompt({
-    agentSessionId: input.fixer.agentSessionId,
-    prompt: reviewToFixerPrompt(input.review)
-  });
-  await ctx.log(
-    "info",
-    `Sent review round ${input.reviewRound} to fixer session ${input.fixer.agentSessionId}.`
-  );
-  return a(
-    withStage(state, {
-      kind: "await_fixer_turn",
-      reviewer: input.reviewer,
-      fixer: input.fixer,
-      reviewRound: input.reviewRound,
-      afterFixer: input.afterFixer
-    }),
-    o.agentTurn(sent)
-  );
-}
-async function finishReviewLoop(ctx, reviewerAgent, fixerAgent, reviewCount) {
-  await ctx.setUiFeedback({ phase: "Review loop complete" });
-  if (fixerAgent?.paneId !== void 0) await ctx.closePane(fixerAgent.paneId);
-  await ctx.closePane(reviewerAgent.paneId);
-  await ctx.log(
-    "info",
-    `Engineering guidance review loop completed after ${reviewCount} review rounds.`
-  );
-  return l({ outcome: "workflow-executed-successfully", reviewCount });
-}
-async function requireEndedTurn(ctx, incoming, role) {
-  if (s.isAgentTurnEnded(incoming)) return { ok: true };
-  if (s.isAgentTurnFailed(incoming)) {
-    return {
-      ok: false,
-      result: await failWorkflow(
-        ctx,
-        `${role} turn failed`,
-        `${role} turn failed: ${incoming.reason}`
-      )
-    };
-  }
-  return {
-    ok: false,
-    result: await failWorkflow(
-      ctx,
-      `${role} turn could not be resumed`,
-      `${role} turn wait resumed with an unexpected event.`
-    )
-  };
-}
-async function latestTurnOrFail(ctx, agent, role) {
-  const history = await ctx.getConversationHistory(agent.agentSessionId);
-  const text = latestAssistantTurnText(history);
-  if (text) return { ok: true, text };
-  return {
-    ok: false,
-    result: await failWorkflow(
-      ctx,
-      `No ${role} response was found`,
-      `${role} session ${agent.agentSessionId} has no complete assistant turn to inspect.`
-    )
-  };
-}
-async function failWorkflow(ctx, userMessage, diagnostic) {
-  await ctx.setUiFeedback({ kind: "error", phase: "Review loop failed", message: userMessage });
-  await ctx.log("error", diagnostic);
-  return u(diagnostic);
-}
-function isExplicitRetry(ctx) {
-  const invocation = "invocation" in ctx ? ctx.invocation : void 0;
-  return invocation !== null && typeof invocation === "object" && "kind" in invocation && invocation.kind === "retry";
-}
-function agentFromSpawn(input) {
-  return { agentSessionId: input.agentSessionId, paneId: input.paneId };
-}
-function withStage(state, stage) {
-  return { ...state, stage };
-}
 function parseContext(value) {
   if (typeof value === "string" && value.trim().length > 0) return value;
   throw new Error("context must be non-empty free-form text.");
-}
-function assertNever(value) {
-  throw new Error(`Unsupported workflow value: ${String(value)}`);
 }
 export {
   index_default as default

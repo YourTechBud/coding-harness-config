@@ -1,9 +1,8 @@
 import { defineWorkflow } from '@yourtechbudstudio/isagi-workflow-sdk';
 
-import { parseInputs, type Variables } from './inputs.js';
-import { step, type State } from './workflow.js';
+import { DesignCurriculumGraph, designCurriculumParameters } from './graph.js';
 
-export default defineWorkflow<State, Variables>({
+export default defineWorkflow({
   command: () => ({
     title: 'Design Curriculum',
     description: 'Create a focused curriculum from one or more Markdown sources.',
@@ -16,16 +15,6 @@ export default defineWorkflow<State, Variables>({
       { kind: 'text', key: 'outputDirectory', label: 'Curriculum output directory', default: 'scratch/story/curriculum' },
     ],
   }),
-  validate: (launchCtx, variables) => {
-    parseInputs(launchCtx.worktreePath, variables);
-  },
-  init: (launchCtx, variables): State => ({
-    stateVersion: 1,
-    input: parseInputs(launchCtx.worktreePath, variables),
-    stage: { kind: 'start_analysis' },
-  }),
-  step: async (ctx, state, incoming) => {
-    await ctx.log('debug', `Design curriculum stage=${state.stage.kind}.`);
-    return step(ctx, state, incoming);
-  },
+  parse: (origin, inputs) => designCurriculumParameters(origin.worktreePath, inputs),
+  graph: DesignCurriculumGraph,
 });

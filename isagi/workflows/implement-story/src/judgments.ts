@@ -1,8 +1,4 @@
-import {
-  event as workflowEvent,
-  type WorkflowConversationMessage,
-  type WorkflowHeadlessResult,
-} from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 export type PlannerRoute = 'failed' | 'ready';
 
@@ -35,20 +31,6 @@ export function latestAssistantTurnText(
     .join('\n\n')
     .trim();
   return turn.length > 0 ? turn : null;
-}
-
-export function completedSingleHeadlessResult(event: unknown): WorkflowHeadlessResult {
-  const results = workflowEvent.getHeadlessAgentResults(event);
-  if (!results) throw new Error('Workflow resumed with a non-headless judgment event.');
-  if (results.length !== 1) {
-    throw new Error(`Expected exactly one judgment result, received ${results.length}.`);
-  }
-  const result = results[0];
-  if (!result || result.status !== 'completed') {
-    const detail = result?.error ? `: ${result.error}` : '';
-    throw new Error(`Judgment did not complete${detail}.`);
-  }
-  return result;
 }
 
 export function parsePlannerRoute(output: string): PlannerRoute {

@@ -1,11 +1,12 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { WorkflowContext, WorkflowResult } from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { OperationContext } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import type { ArchitectedDeckPlan } from '../src/curriculum-v3.js';
+import type { WalkthroughContext } from '../src/graphs/context.js';
 import { walkthroughPaths } from '../src/paths.js';
-import type { Stage, State } from '../src/workflow.js';
 import type { ArtifactPaths } from '../src/types.js';
 
 export const reviewDirectory = 'review';
@@ -16,17 +17,17 @@ export const sources: ArtifactPaths = {
   programDesignPath: 'design/program-design.md',
 };
 
-export function state(repositoryPath: string, stage: Stage, deliveryMechanism: State['deliveryMechanism'] = 'presentation'): State {
+export function context(): WalkthroughContext {
   return {
-    stateVersion: 1,
-    repositoryPath,
     story: 'Story 42',
     sources,
     paths: walkthroughPaths(reviewDirectory),
     audienceProfile: { familiarity: 'new', technicalDepth: 'system-design' },
-    deliveryMechanism,
-    stage,
   };
+}
+
+export function destination(repositoryPath: string) {
+  return { worktreeId: 1, worktreePath: repositoryPath, surfaceId: 7 };
 }
 
 export function plan(): ArchitectedDeckPlan {
@@ -145,49 +146,28 @@ export function write(repositoryPath: string, relativePath: string, text: string
 }
 
 export function workflowHarness(repositoryPath: string) {
-  const spawned: Array<Parameters<WorkflowContext['spawnAgentSession']>[0]> = [];
   const closedPanes: number[] = [];
-  const feedback: Array<Parameters<WorkflowContext['setUiFeedback']>[0]> = [];
-  const workflows: Array<{ readonly key: string; readonly variables: Record<string, unknown> }> = [];
-  const ctx: WorkflowContext = {
-    worktreePath: repositoryPath,
-    spawnAgentSession: async (input) => {
-      spawned.push(input);
-      const index = spawned.length;
-      return { agentSessionId: 10 + index, paneId: 20 + index, sentAt: `2026-08-21T00:00:0${index}.000Z` };
-    },
-    sendAgentPrompt: async (input) => ({ agentSessionId: input.agentSessionId, sentAt: '2026-08-21T00:00:00.000Z' }),
+  const feedback: Array<Parameters<OperationContext['setUiFeedback']>[0]> = [];
+  const logs: string[] = [];
+  const ctx: OperationContext = {
+    destination: destination(repositoryPath),
+    execution: { runId: 1, graphInvocationId: 1, executionId: 1, attempt: 'initial' },
+    spawnAgentSession: async () => { throw new Error('Agent turns run in the AgentTurn graph.'); },
+    sendAgentPrompt: async () => { throw new Error('Agent turns run in the AgentTurn graph.'); },
     closePane: async (paneId) => { closedPanes.push(paneId); },
     getConversationHistory: async () => [],
-    runHeadlessAgent: async (input) => ({
-      opId: 'unused',
-      launch: {
-        prompt: input.prompt ?? '',
-        harness: input.harness,
-        model: input.model,
-        effort: input.effort,
-        timeoutMs: input.timeoutMs ?? 900_000,
-      },
-    }),
-    startWorkflow: async (key, variables = {}) => {
-      workflows.push({ key, variables });
-      return 100 + workflows.length;
-    },
-    log: async () => {},
+    runHeadlessAgent: async () => { throw new Error('Unexpected headless agent.'); },
+    log: async (_level, message) => { logs.push(message); },
     setUiFeedback: async (input) => { feedback.push(input); },
   };
-  return { ctx, spawned, closedPanes, feedback, workflows };
+  return { ctx, closedPanes, feedback, logs };
 }
 
-export function ended() {
-  return { outcome: 'ended' as const, recordedAt: '2026-08-21T00:00:00.000Z' };
-}
-
-export function resultState(result: WorkflowResult): State {
-  if (result.type !== 'cont' && result.type !== 'suspend') throw new Error(`Expected state result, got ${result.type}.`);
-  return result.state as State;
-}
-
-export function resultStage(result: WorkflowResult): Stage {
-  return resultState(result).stage;
+export async function withRepository(run: (repositoryPath: string) => Promise<void>): Promise<void> {
+  const repositoryPath = mkdtempSync(join(tmpdir(), 'walkthrough-'));
+  try {
+    await run(repositoryPath);
+  } finally {
+    rmSync(repositoryPath, { recursive: true, force: true });
+  }
 }

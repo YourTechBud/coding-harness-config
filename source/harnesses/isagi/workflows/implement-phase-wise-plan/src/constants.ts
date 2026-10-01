@@ -26,7 +26,7 @@ export const implementerUiHeavy = {
 export const implementerProseHeavy = {
   kind: "prose-heavy",
   harness: "codex",
-  model: "gpt-6-sol",
+  model: "gpt-6.1-sol",
   effort: "medium",
 } satisfies ImplementerProfile;
 

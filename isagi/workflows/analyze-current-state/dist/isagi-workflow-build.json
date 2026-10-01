@@ -1,19 +1,25 @@
 {
-  "manifestVersion": 1,
-  "workflowContractVersion": 1,
+  "manifestVersion": 2,
+  "workflowContractVersion": 5,
   "sdk": {
     "name": "@yourtechbudstudio/isagi-workflow-sdk",
-    "version": "0.0.1"
+    "version": "0.1.1"
   },
   "verifier": {
     "name": "@yourtechbudstudio/isagi-workflow-verifier",
-    "version": "0.0.1"
+    "version": "0.1.1"
   },
   "source": {
-    "sha256": "b8208320454a8f46c7e31f22033688082abbff2117ae291d9a925098a839cb3d"
+    "sha256": "7d4fc512bcc98fa1993f14f0c4be36d1485dc124253a776e6bb9a47838453298"
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "a6e5906e0e6fd3efed60fed3aebe668b1548beee3889947d27440e1f93443808"
+    "sha256": "559a1001f5b6f76a5906606e622ab7b280827cbb2f9851e4b2c8fbed4b1e9ed7"
+  },
+  "structure": {
+    "descriptorVersion": 2,
+    "sha256": "3f5174026a7e3255d3b1557cbcf271ad43df55a76fffba654b816bf71cbacdc3",
+    "rootGraphKey": "AnalyzeCurrentState",
+    "graphCount": 6
   }
 }

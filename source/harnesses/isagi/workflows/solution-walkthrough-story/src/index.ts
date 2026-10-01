@@ -1,16 +1,11 @@
 import { defineWorkflow } from '@yourtechbudstudio/isagi-workflow-sdk';
 
-import { walkthroughPaths } from './paths.js';
+import { SolutionWalkthroughGraph, type SolutionWalkthroughParameters } from './graph.js';
 import {
   deliveryMechanisms,
   familiarityLevels,
   technicalDepthLevels,
-  type ArtifactPaths,
-  type DeliveryMechanism,
-  type Familiarity,
-  type TechnicalDepth,
 } from './types.js';
-import { step, type State } from './workflow.js';
 
 type Variables = {
   readonly story?: unknown;
@@ -23,7 +18,7 @@ type Variables = {
   readonly deliveryMechanism?: unknown;
 };
 
-export default defineWorkflow<State, Variables>({
+export default defineWorkflow({
   command: () => ({
     title: 'Solution Walkthrough Story',
     description: 'Reuse or create the curriculum and deck plan, then build a presentation or start a Socratic walkthrough.',
@@ -66,39 +61,11 @@ export default defineWorkflow<State, Variables>({
       },
     ],
   }),
-  validate: (_launchCtx, variables) => {
-    parseVariables(variables);
-  },
-  init: (launchCtx, variables): State => {
-    const parsed = parseVariables(variables);
-    return {
-      stateVersion: 1,
-      repositoryPath: launchCtx.worktreePath,
-      story: parsed.story,
-      sources: parsed.sources,
-      paths: walkthroughPaths(parsed.reviewDirectory),
-      audienceProfile: {
-        familiarity: parsed.familiarity,
-        technicalDepth: parsed.technicalDepth,
-      },
-      deliveryMechanism: parsed.deliveryMechanism,
-      stage: { kind: 'start_curriculum_workflow' },
-    };
-  },
-  step: async (ctx, state, incoming) => {
-    await ctx.log('debug', `Solution walkthrough stage=${state.stage.kind}.`);
-    return step(ctx, state, incoming);
-  },
+  parse: (_origin, inputs) => parseVariables(inputs),
+  graph: SolutionWalkthroughGraph,
 });
 
-function parseVariables(variables: Variables): {
-  readonly story: string;
-  readonly sources: ArtifactPaths;
-  readonly reviewDirectory: string;
-  readonly familiarity: Familiarity;
-  readonly technicalDepth: TechnicalDepth;
-  readonly deliveryMechanism: DeliveryMechanism;
-} {
+function parseVariables(variables: Variables): SolutionWalkthroughParameters {
   return {
     story: parseText(variables.story, 'story'),
     sources: {
@@ -107,8 +74,10 @@ function parseVariables(variables: Variables): {
       programDesignPath: parsePath(variables.programDesignPath, 'programDesignPath', 'scratch/story/design/program-design.md'),
     },
     reviewDirectory: parsePath(variables.reviewDirectory, 'reviewDirectory', 'scratch/story/walkthrough'),
-    familiarity: parseEnum(variables.familiarity, 'familiarity', familiarityLevels, 'new'),
-    technicalDepth: parseEnum(variables.technicalDepth, 'technicalDepth', technicalDepthLevels, 'system-design'),
+    audienceProfile: {
+      familiarity: parseEnum(variables.familiarity, 'familiarity', familiarityLevels, 'new'),
+      technicalDepth: parseEnum(variables.technicalDepth, 'technicalDepth', technicalDepthLevels, 'system-design'),
+    },
     deliveryMechanism: parseEnum(variables.deliveryMechanism, 'deliveryMechanism', deliveryMechanisms, 'presentation'),
   };
 }

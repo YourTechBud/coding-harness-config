@@ -1,8 +1,4 @@
-import {
-  event as workflowEvent,
-  type WorkflowConversationMessage,
-  type WorkflowHeadlessResult,
-} from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import { withPromptFooter } from './prompts.js';
 
@@ -74,20 +70,6 @@ Apply this precedence:
 3. Return "revise" for every other response, including any Blocker or Concern, incomplete corrections, held findings, new findings, ambiguous closure language, and requests for another review round.
 
 Every outcome is valid on every invocation. Return no confidence, commentary, markdown, or extra JSON fields.`);
-}
-
-export function completedSingleHeadlessResult(event: unknown): WorkflowHeadlessResult {
-  const results = workflowEvent.getHeadlessAgentResults(event);
-  if (!results) throw new Error('Workflow resumed with a non-headless judgment event.');
-  if (results.length !== 1) {
-    throw new Error(`Expected exactly one judgment result, received ${results.length}.`);
-  }
-  const result = results[0];
-  if (!result || result.status !== 'completed') {
-    const detail = result?.error ? `: ${result.error}` : '';
-    throw new Error(`Judgment did not complete${detail}.`);
-  }
-  return result;
 }
 
 export function parseWriterRoute(output: string): WriterRoute {

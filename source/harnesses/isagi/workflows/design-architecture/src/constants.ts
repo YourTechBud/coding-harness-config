@@ -8,7 +8,7 @@ export type AgentProfile = {
 
 export const reviewer = {
   harness: 'codex',
-  model: 'gpt-6-sol',
+  model: 'gpt-6.1-sol',
   effort: 'high',
 } satisfies AgentProfile;
 

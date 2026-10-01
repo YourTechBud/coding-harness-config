@@ -1,8 +1,4 @@
-import {
-  event as workflowEvent,
-  type WorkflowConversationMessage,
-  type WorkflowHeadlessResult,
-} from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 export type ReviewRoute = 'complete' | 'continue' | 'final-fixer' | 'human-decision';
 
@@ -55,20 +51,6 @@ Apply this precedence:
 4. Return "continue" for every other response, including Blockers, Concerns, incomplete fixes, new findings, ordinary feedback, questions, Nits without an explicit closure signal, and ambiguous closure language.
 
 A Nit is never a disagreement. Do not treat an empty Nit section or a passing mention of the severity definition as an actual Nit finding. An Architectural Reflection is not a disagreement by itself. Do not include confidence, commentary, markdown, or extra JSON fields.`;
-}
-
-export function completedSingleHeadlessResult(event: unknown): WorkflowHeadlessResult {
-  const results = workflowEvent.getHeadlessAgentResults(event);
-  if (!results) throw new Error('Workflow resumed with a non-headless routing event.');
-  if (results.length !== 1) {
-    throw new Error(`Expected exactly one routing result, received ${results.length}.`);
-  }
-  const result = results[0];
-  if (!result || result.status !== 'completed') {
-    const detail = result?.error ? `: ${result.error}` : '';
-    throw new Error(`Routing judgment did not complete${detail}.`);
-  }
-  return result;
 }
 
 export function parseReviewRoute(output: string): ReviewRoute {

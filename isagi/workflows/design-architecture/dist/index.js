@@ -1,24 +1,152 @@
-// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.0.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
-function r(e) {
-  return e;
-}
-function a(e, t) {
+// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+function i(e) {
   return {
-    type: "suspend",
-    state: e,
-    condition: t
+    isagiContract: 5,
+    isagiKind: e
   };
 }
-var o = {
+function h(e) {
+  return {
+    ...i("workflow"),
+    ...e
+  };
+}
+
+// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+function i2(e) {
+  return {
+    isagiContract: 5,
+    isagiKind: e
+  };
+}
+function s(e) {
+  return {
+    ...i2("state-field"),
+    reduce: e.reduce
+  };
+}
+var c = {
+  replace() {
+    return s({ reduce: (e, t) => t });
+  },
+  add() {
+    return s({ reduce: (e, t) => e + t });
+  },
+  append() {
+    return s({ reduce: (e, t) => [...e, ...Array.isArray(t) ? t : [t]] });
+  },
+  union() {
+    return s({ reduce: (e, t) => {
+      let n = Array.isArray(t) ? t : [t], r = new Set(e), i3 = [...e];
+      for (let e2 of n) r.has(e2) || (r.add(e2), i3.push(e2));
+      return i3;
+    } });
+  },
+  collection(e) {
+    return s({ reduce: (t, n) => {
+      switch (n.op) {
+        case "clear":
+          return [];
+        case "remove": {
+          let r = new Set(n.ids);
+          return t.filter((t2) => !r.has(e(t2)));
+        }
+        case "add": {
+          let r = [...t];
+          for (let t2 of n.values) {
+            let n2 = e(t2), i3 = r.findIndex((t3) => e(t3) === n2);
+            i3 === -1 ? r.push(t2) : r[i3] = t2;
+          }
+          return r;
+        }
+      }
+    } });
+  },
+  optional() {
+    return s({ reduce: (e, t) => "clear" in t ? null : t.set });
+  },
+  custom(e) {
+    return s({ reduce: e });
+  }
+};
+function l(e, t) {
+  return {
+    ...i2("operation-node"),
+    title: t?.title,
+    description: t?.description,
+    label: t?.label,
+    run: e
+  };
+}
+function u(e) {
+  return {
+    ...i2("subgraph-node"),
+    title: e.title,
+    description: e.description,
+    label: e.label,
+    graph: e.graph,
+    parameters: e.parameters,
+    onResult: e.onResult
+  };
+}
+function f(e) {
+  return {
+    ...i2("edge"),
+    from: e.from,
+    to: e.to,
+    choose: e.choose,
+    title: e.title
+  };
+}
+function p(e) {
+  return {
+    ...i2("outcome"),
+    kind: e.kind,
+    reason: e.reason,
+    title: e.title,
+    output: e.output
+  };
+}
+function m(e) {
+  return {
+    ...i2("graph"),
+    ...e
+  };
+}
+function g(e) {
+  return e && "update" in e ? {
+    ...i2("operation-result"),
+    type: "complete",
+    update: e.update
+  } : {
+    ...i2("operation-result"),
+    type: "complete"
+  };
+}
+function _(e) {
+  return "update" in e ? {
+    ...i2("operation-result"),
+    type: "suspend",
+    update: e.update,
+    wait: e.wait
+  } : {
+    ...i2("operation-result"),
+    type: "suspend",
+    wait: e.wait
+  };
+}
+var y = {
   agentTurn(e) {
     return {
       kind: "agent_turn",
-      agentSessionId: e.agentSessionId,
-      sentAt: e.sentAt
+      target: e
     };
   },
-  userContinue() {
-    return { kind: "user_continue" };
+  userContinue(e) {
+    return e === void 0 ? { kind: "user_continue" } : {
+      kind: "user_continue",
+      label: e
+    };
   },
   userInput(e) {
     return {
@@ -26,74 +154,510 @@ var o = {
       questions: e
     };
   },
-  workflow(e) {
-    let t = Array.isArray(e) ? e : [e];
-    if (t.length === 0) throw Error("Workflow wait requires at least one run id.");
-    return {
-      kind: "workflow",
-      runIds: t
-    };
-  },
   headlessAgent(e) {
     let t = Array.isArray(e) ? e : [e];
     if (t.length === 0) throw Error("Headless agent wait requires at least one operation.");
     return {
       kind: "headless_agent",
-      ops: t
+      operations: t
     };
   }
 };
-var s = {
-  isUserContinue(e) {
-    return c(e) && e.kind === "user_continue";
+var b = {
+  isAgentTurn(e) {
+    return e.kind === "agent_turn";
   },
-  isUserInput(e) {
-    return c(e) && e.kind === "user_input" && c(e.answers);
+  isHeadless(e) {
+    return e.kind === "headless_agent";
   },
-  isAgentTurnEnded(e) {
-    return c(e) && e.outcome === "ended" && typeof e.recordedAt == "string";
+  requireHeadless(e, t) {
+    if (e.kind !== "headless_agent") throw Error(`Expected a headless agent event; received "${e.kind}".`);
+    let n = e.results.find((e2) => e2.operationId === t);
+    if (!n) throw Error(`The headless agent event carries no result for operation "${t}".`);
+    return n;
   },
-  isAgentTurnFailed(e) {
-    return c(e) && e.outcome === "failed" && typeof e.recordedAt == "string" && typeof e.reason == "string";
-  },
-  requireAgentTurnEnded(e) {
-    if (s.isAgentTurnEnded(e)) return e;
-    throw Error("Expected an ended agent turn event.");
-  },
-  requireAgentTurnFailed(e) {
-    if (s.isAgentTurnFailed(e)) return e;
-    throw Error("Expected a failed agent turn event.");
-  },
-  getAgentTurnResult(e) {
-    return s.isAgentTurnEnded(e) || s.isAgentTurnFailed(e) ? e : null;
-  },
-  getWorkflowResults(e) {
-    return c(e) && e.kind === "workflow" && Array.isArray(e.results) ? e.results : null;
-  },
-  getHeadlessAgentResults(e) {
-    return c(e) && e.kind === "headless_agent" && Array.isArray(e.results) ? e.results : null;
+  isSubgraph(e) {
+    return e.kind === "subgraph";
   }
 };
-function c(e) {
-  return typeof e == "object" && !!e;
+
+// ../../workflow-libraries/common-graphs/src/agent-turn.ts
+function ownedPane(agent) {
+  if (agent.paneId === null) throw new Error(`Agent session ${agent.agentSessionId} has no pane owned by this workflow.`);
+  return agent.paneId;
 }
-function l(e) {
-  return {
-    type: "done",
-    value: e
-  };
+var AgentTurnGraph = m({
+  key: "AgentTurn",
+  title: "Agent turn",
+  label: (parameters) => parameters.label,
+  init: (_destination, request) => ({ request, agent: null, turn: null, resubmits: 0, stalled: null, interruption: null }),
+  state: {
+    request: c.replace(),
+    agent: c.replace(),
+    turn: c.replace(),
+    resubmits: c.replace(),
+    stalled: c.replace(),
+    interruption: c.replace()
+  },
+  entry: "send",
+  nodes: {
+    send: l(async (ctx, { request }) => {
+      if (request.feedback) await ctx.setUiFeedback(request.feedback);
+      if (request.session.kind === "spawn") {
+        const { kind: _kind, ...profile } = request.session;
+        const spawned = await ctx.spawnAgentSession({ ...profile, prompt: request.prompt, modifiers: request.modifiers });
+        return _({
+          update: { agent: { agentSessionId: spawned.agentSessionId, paneId: spawned.paneId }, turn: { agentSessionId: spawned.agentSessionId, sentAt: spawned.sentAt } },
+          wait: y.agentTurn(spawned)
+        });
+      }
+      const { agentSessionId, paneId } = request.session;
+      const sent = await ctx.sendAgentPrompt({ agentSessionId, prompt: request.prompt, modifiers: request.modifiers });
+      return _({ update: { agent: { agentSessionId, paneId }, turn: sent }, wait: y.agentTurn(sent) });
+    }, { title: "Send the prompt", label: (state) => state.request.label }),
+    resubmit: l(async (ctx, state) => {
+      const { label, prompt, modifiers } = state.request;
+      const agent = must(state.agent, "agent");
+      const role = label.toLowerCase();
+      await ctx.setUiFeedback({ kind: "warning", phase: `Retrying ${role}`, message: `The ${role} harness turn failed. Resubmitting its previous message.` });
+      const sent = await ctx.sendAgentPrompt({ agentSessionId: agent.agentSessionId, prompt, modifiers });
+      await ctx.log("warning", `Resubmitted the previous message after harness_error ${state.resubmits + 1}/${state.request.resubmitOnHarnessError ?? 0} to ${role} session ${agent.agentSessionId}.`);
+      return _({ update: { turn: sent, resubmits: state.resubmits + 1 }, wait: y.agentTurn(sent) });
+    }, { title: "Resubmit after a harness error" }),
+    askUser: l(async (ctx, state) => {
+      const { label } = state.request;
+      const { paneId } = must(state.agent, "agent");
+      const where = paneId === null ? "its pane" : `pane ${paneId}`;
+      await ctx.setUiFeedback({ kind: "warning", phase: `${label} stopped`, message: `Continue the agent in ${where} by hand until it finishes, then select Continue.` });
+      await ctx.log("warning", must(state.stalled, "stalled turn"));
+      return _({ wait: y.userContinue(`${label} stopped. Continue the agent by hand, then Continue.`) });
+    }, { title: "Ask the user to finish the agent" }),
+    recheck: l(async (_ctx, state) => _({ wait: y.agentTurn(must(state.turn, "turn")) }), { title: "Check the latest turn" })
+  },
+  edges: {
+    afterSend: f({ from: "send", to: ["ended", "resubmit", "askUser", "interrupted"], choose: routeTurn }),
+    afterResubmit: f({ from: "resubmit", to: ["ended", "resubmit", "askUser", "interrupted"], choose: routeTurn }),
+    afterAskUser: f({ from: "askUser", to: ["recheck"], choose: () => ({ to: "recheck" }) }),
+    afterRecheck: f({ from: "recheck", to: ["ended", "resubmit", "askUser", "interrupted"], choose: routeTurn })
+  },
+  outcomes: {
+    ended: p({ kind: "success", title: "Turn ended", output: (state) => ({ outcome: "ended", agent: must(state.agent, "agent") }) }),
+    interrupted: p({ kind: "failure", title: "Agent session ended", output: (state) => ({ outcome: "interrupted", agent: must(state.agent, "agent"), reason: must(state.interruption, "interruption") }) })
+  }
+});
+function routeTurn(state, event) {
+  const { label } = state.request;
+  if (event.kind !== "agent_turn") throw new Error(`${label} resumed with an unexpected ${event.kind} event.`);
+  const { agentSessionId, paneId } = must(state.agent, "agent");
+  const where = paneId === null ? `session ${agentSessionId}` : `pane ${paneId}`;
+  if (event.outcome === "ended") return { to: "ended", update: { stalled: null } };
+  if (event.outcome === "failed" && event.reason === "harness_error" && state.resubmits < (state.request.resubmitOnHarnessError ?? 0)) return { to: "resubmit" };
+  if (event.outcome === "failed") return { to: "askUser", update: { stalled: `${label} failed in ${where}: ${event.reason}` } };
+  return { to: "interrupted", update: { interruption: `${label} was interrupted in ${where}: ${event.reason}` } };
 }
-function u(e) {
-  return {
-    type: "fail",
-    reason: e
-  };
+function agentTurn(spec) {
+  return u({
+    graph: AgentTurnGraph,
+    title: spec.title,
+    ...spec.label ? { label: spec.label } : {},
+    parameters: spec.parameters,
+    onResult: (state, result) => spec.onResult(state, result.output)
+  });
+}
+function must(value, label) {
+  if (value === null) throw new Error(`Agent turn state is missing its ${label}.`);
+  return value;
+}
+
+// ../../workflow-libraries/common-graphs/src/judgment.ts
+var MAX_ATTEMPTS = 3;
+function createJudgmentGraph(spec) {
+  return m({
+    key: spec.key,
+    title: spec.title,
+    label: (parameters) => `Route the ${parameters.label}`,
+    init: (_destination, request) => ({ request, operationId: null, attempts: 0, error: null, route: null }),
+    state: {
+      request: c.replace(),
+      operationId: c.replace(),
+      attempts: c.replace(),
+      error: c.replace(),
+      route: c.replace()
+    },
+    entry: "judge",
+    nodes: {
+      judge: l(async (ctx, state) => {
+        const { label, profile, prompt, feedback } = state.request;
+        if (feedback) await ctx.setUiFeedback(feedback);
+        const handle = await ctx.runHeadlessAgent({ ...profile, prompt });
+        await ctx.log("info", `Started ${label} routing judgment ${handle.operationId} (attempt ${state.attempts + 1}/${MAX_ATTEMPTS}).`);
+        return _({ update: { operationId: handle.operationId, attempts: state.attempts + 1 }, wait: y.headlessAgent(handle) });
+      }, { title: "Run the judgment" }),
+      askUser: l(async (ctx, state) => {
+        const { label } = state.request;
+        await ctx.setUiFeedback({ kind: "warning", phase: `The ${label} response could not be routed`, message: `The ${label} judgment failed ${MAX_ATTEMPTS} times. Check the logs, then select Continue to read the latest response and judge it again.` });
+        await ctx.log("warning", `${label} routing failed: ${state.error ?? "unknown error"}`);
+        return _({ wait: y.userContinue(`The ${label} response could not be routed. Continue to judge it again.`) });
+      }, { title: "Ask the user before judging again" })
+    },
+    edges: {
+      afterJudge: f({
+        from: "judge",
+        to: ["judged", "judge", "askUser"],
+        choose: (state, event) => routeJudgment(state, event, spec.parse)
+      }),
+      afterAskUser: f({ from: "askUser", to: ["rejudge"], choose: () => ({ to: "rejudge" }) })
+    },
+    outcomes: {
+      judged: p({
+        kind: "success",
+        title: "Judged",
+        output: (state) => {
+          if (state.route === null) throw new Error("Judgment state is missing its route.");
+          return { outcome: "judged", route: state.route };
+        }
+      }),
+      rejudge: p({ kind: "success", title: "Judge again", output: () => ({ outcome: "rejudge" }) })
+    }
+  });
+}
+function routeJudgment(state, event, parse) {
+  if (state.operationId === null) throw new Error("Judgment state is missing its operation.");
+  const result = b.requireHeadless(event, state.operationId);
+  let error;
+  if (result.status === "completed") {
+    try {
+      return { to: "judged", update: { route: parse(result.output ?? ""), error: null } };
+    } catch (parseError) {
+      error = parseError instanceof Error ? parseError.message : String(parseError);
+    }
+  } else {
+    error = `Judgment did not complete${result.error ? `: ${result.error}` : ""}.`;
+  }
+  return { to: state.attempts < MAX_ATTEMPTS ? "judge" : "askUser", update: { error } };
+}
+
+// ../../workflow-libraries/common-graphs/src/fail-step.ts
+async function failStep(ctx, feedback, diagnostic) {
+  await ctx.setUiFeedback({ kind: "error", ...feedback });
+  await ctx.log("error", diagnostic);
+  throw new Error(diagnostic);
+}
+
+// ../../workflow-libraries/common-graphs/src/reviewed-artifact.ts
+function createReviewedArtifactGraph(config) {
+  const writer2 = createWriterGraph(config);
+  const review = createReviewGraph(config);
+  return m({
+    key: config.key,
+    title: config.title,
+    init: (_destination, context) => ({ context, writer: null, reviewer: null, writerResponse: null, review: null, reviewRound: 0, verdict: null, failure: null }),
+    state: {
+      context: c.replace(),
+      writer: c.replace(),
+      reviewer: c.replace(),
+      writerResponse: c.replace(),
+      review: c.replace(),
+      reviewRound: c.replace(),
+      verdict: c.replace(),
+      failure: c.replace()
+    },
+    entry: "write",
+    nodes: {
+      write: u({
+        graph: writer2,
+        title: "Write the artifact",
+        parameters: (state) => ({ context: state.context, writer: null, review: null }),
+        onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { writer: output.writer, writerResponse: output.response }
+      }),
+      review: u({
+        graph: review,
+        title: "Review the artifact",
+        label: (state) => `Review round ${state.reviewer ? state.reviewRound + 1 : 1}`,
+        parameters: (state) => ({ context: state.context, reviewer: state.reviewer, writerResponse: state.writerResponse, round: state.reviewer ? state.reviewRound + 1 : 1 }),
+        onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { reviewer: output.reviewer, review: output.review, verdict: output.verdict, reviewRound: output.round }
+      }),
+      revise: u({
+        graph: writer2,
+        title: "Revise the artifact",
+        parameters: (state) => ({ context: state.context, writer: must2(state.writer, "writer"), review: must2(state.review, "review") }),
+        onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { writerResponse: output.response }
+      }),
+      finish: l(async (ctx, state) => {
+        await ctx.setUiFeedback({ phase: config.phases.complete });
+        await ctx.closePane(ownedPane(must2(state.writer, "writer")));
+        await ctx.closePane(ownedPane(must2(state.reviewer, "reviewer")));
+        await ctx.log("info", `${config.phases.complete} after ${state.reviewRound} review rounds.`);
+        return g();
+      }, { title: "Close the writer and reviewer" }),
+      reportFailure: l(async (ctx, state) => {
+        const failure = must2(state.failure, "failure");
+        await ctx.setUiFeedback({ kind: "error", phase: config.phases.failed, message: failure.message });
+        await ctx.log("error", failure.diagnostic);
+        return g();
+      }, { title: "Report the failure" })
+    },
+    edges: {
+      afterWrite: f({ from: "write", to: ["review", "reportFailure"], choose: (state) => ({ to: state.failure ? "reportFailure" : "review" }) }),
+      afterReview: f({
+        from: "review",
+        to: ["finish", "revise", "reportFailure"],
+        choose: (state) => {
+          if (state.failure) return { to: "reportFailure" };
+          return { to: state.verdict === "complete" ? "finish" : "revise" };
+        }
+      }),
+      afterRevise: f({ from: "revise", to: ["review", "reportFailure"], choose: (state) => ({ to: state.failure ? "reportFailure" : "review" }) }),
+      afterFinish: f({ from: "finish", to: ["reviewed"], choose: () => ({ to: "reviewed" }) }),
+      afterReportFailure: f({ from: "reportFailure", to: ["failed"], choose: () => ({ to: "failed" }) })
+    },
+    outcomes: {
+      reviewed: p({ kind: "success", title: "Artifact reviewed", output: (state) => ({ outcome: "artifact-reviewed", artifactPath: state.context.artifactPath, reviewCount: state.reviewRound }) }),
+      failed: p({ kind: "failure", title: "Artifact not reviewed", output: (state) => ({ outcome: "failed", reason: must2(state.failure, "failure").diagnostic }) })
+    }
+  });
+}
+function createWriterGraph(config) {
+  const judgment = createJudgmentGraph({ key: `${config.key}WriterJudgment`, title: "Route the writer", parse: config.parse.writerRoute });
+  const role = config.roles.writer;
+  const resubmit = config.resubmitOnHarnessError ? { resubmitOnHarnessError: config.resubmitOnHarnessError } : {};
+  return m({
+    key: `${config.key}Writer`,
+    title: "Writer turn",
+    label: (parameters) => parameters.writer ? "Revise the artifact" : "Write the artifact",
+    init: (destination, parameters) => ({
+      repositoryPath: destination.worktreePath,
+      ...parameters,
+      turn: null,
+      response: null,
+      mode: "normal",
+      recoveredNewer: false,
+      route: null,
+      failure: null
+    }),
+    state: {
+      repositoryPath: c.replace(),
+      context: c.replace(),
+      writer: c.replace(),
+      review: c.replace(),
+      turn: c.replace(),
+      response: c.replace(),
+      mode: c.replace(),
+      recoveredNewer: c.replace(),
+      route: c.replace(),
+      failure: c.replace()
+    },
+    entry: "prompt",
+    nodes: {
+      prompt: agentTurn({
+        title: "Prompt the writer",
+        parameters: (state) => state.writer === null ? {
+          label: role,
+          session: { kind: "spawn", ...config.profiles.writer },
+          modifiers: [{ kind: "skill", name: config.skill }],
+          prompt: config.prompts.initialWriter({ ...state.context, repositoryPath: state.repositoryPath }),
+          feedback: { phase: config.phases.writing },
+          ...resubmit
+        } : {
+          label: role,
+          session: { kind: "existing", ...state.writer },
+          prompt: config.prompts.reviewToWriter(must2(state.review, "review")),
+          feedback: { phase: config.phases.revising },
+          ...resubmit
+        },
+        onResult: (_state, turn) => ({ turn, writer: turn.agent })
+      }),
+      readResponse: l(async (ctx, state) => {
+        const writer2 = must2(state.writer, "writer");
+        const response = config.latestAssistantTurnText(await ctx.getConversationHistory(writer2.agentSessionId));
+        if (response) return g({ update: { response } });
+        return failStep(ctx, { phase: config.phases.failed, message: "No writer response was found" }, `writer session ${writer2.agentSessionId} has no complete assistant turn to inspect.`);
+      }, { title: "Read the writer's reply" }),
+      judge: u({
+        graph: judgment,
+        title: "Route the writer",
+        parameters: (state) => ({
+          label: "writer",
+          profile: config.profiles.writerJudgment,
+          prompt: config.prompts.writerRouting({ writerResponse: must2(state.response, "writer response"), artifactPath: state.context.artifactPath }),
+          feedback: { phase: config.phases.checkingWriter }
+        }),
+        onResult: (_state, { output }) => ({ route: output.outcome === "judged" ? output.route : null })
+      }),
+      askUser: l(async (ctx, state) => {
+        const writer2 = must2(state.writer, "writer");
+        await ctx.setUiFeedback({ kind: "warning", phase: "The writer did not produce a reviewable artifact", message: "Resolve it with the writer, then select Continue." });
+        await ctx.log("warning", `Writer session ${writer2.agentSessionId} did not complete its artifact turn. Latest response:
+${must2(state.response, "writer response")}`);
+        return _({ wait: y.userContinue("The writer did not produce a reviewable artifact. Resolve it with the writer, then Continue.") });
+      }, { title: "Ask the user to resolve the writer" }),
+      // A newer complete reply is judged without another prompt; otherwise the writer is nudged once.
+      recover: l(async (ctx, state) => {
+        const writer2 = must2(state.writer, "writer");
+        const latest = config.latestAssistantTurnText(await ctx.getConversationHistory(writer2.agentSessionId));
+        if (latest && latest !== state.response) {
+          await ctx.log("info", `Found a newer complete turn in ${role.toLowerCase()} session ${writer2.agentSessionId}; routing the latest response.`);
+          return g({ update: { response: latest, mode: "retry_recheck", recoveredNewer: true } });
+        }
+        return g({ update: { recoveredNewer: false } });
+      }, { title: "Check for a newer writer reply" }),
+      nudge: agentTurn({
+        title: "Nudge the writer once",
+        parameters: (state) => ({
+          label: role,
+          session: { kind: "existing", ...must2(state.writer, "writer") },
+          prompt: config.prompts.retryWriter(),
+          feedback: { phase: config.phases.recoveringWriter },
+          ...resubmit
+        }),
+        onResult: (_state, turn) => ({ turn })
+      })
+    },
+    edges: {
+      afterPrompt: afterWriterTurn("prompt", role),
+      afterReadResponse: f({ from: "readResponse", to: ["judge"], choose: () => ({ to: "judge" }) }),
+      afterJudge: f({
+        from: "judge",
+        to: ["ready", "nudge", "askUser", "recover"],
+        choose: (state) => {
+          if (state.route === null) return { to: "recover" };
+          if (state.route === "ready") return { to: "ready" };
+          if (state.mode === "retry_recheck") return { to: "nudge", update: { mode: "normal" } };
+          return { to: "askUser" };
+        }
+      }),
+      afterAskUser: f({
+        from: "askUser",
+        to: ["recover"],
+        choose: (_state, event) => {
+          if (event.kind !== "user_continue") throw new Error(`The writer recovery resumed with an unexpected ${event.kind} event.`);
+          return { to: "recover" };
+        }
+      }),
+      afterRecover: f({ from: "recover", to: ["judge", "nudge"], choose: (state) => ({ to: state.recoveredNewer ? "judge" : "nudge" }) }),
+      afterNudge: afterWriterTurn("nudge", role, "readResponse")
+    },
+    outcomes: {
+      ready: p({ kind: "success", title: "Writer ready", output: (state) => ({ outcome: "ready", writer: must2(state.writer, "writer"), response: must2(state.response, "writer response") }) }),
+      failed: p({ kind: "failure", title: "Writer failed", output: (state) => ({ outcome: "failed", failure: must2(state.failure, "failure") }) })
+    }
+  });
+  function afterWriterTurn(from, label, next = "readResponse") {
+    return f({ from, to: [next, "failed"], choose: (state) => afterTurn(state, label, next) });
+  }
+}
+function createReviewGraph(config) {
+  const judgment = createJudgmentGraph({ key: `${config.key}ReviewJudgment`, title: "Route the review", parse: config.parse.reviewerRoute });
+  const role = config.roles.reviewer;
+  const resubmit = config.resubmitOnHarnessError ? { resubmitOnHarnessError: config.resubmitOnHarnessError } : {};
+  return m({
+    key: `${config.key}Review`,
+    title: "Review round",
+    label: (parameters) => `Review round ${parameters.round}`,
+    init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, turn: null, review: null, verdict: null, failure: null }),
+    state: {
+      repositoryPath: c.replace(),
+      context: c.replace(),
+      reviewer: c.replace(),
+      writerResponse: c.replace(),
+      round: c.replace(),
+      turn: c.replace(),
+      review: c.replace(),
+      verdict: c.replace(),
+      failure: c.replace()
+    },
+    entry: "prompt",
+    nodes: {
+      prompt: agentTurn({
+        title: "Prompt the reviewer",
+        parameters: (state) => state.reviewer === null ? {
+          label: role,
+          session: { kind: "spawn", ...config.profiles.reviewer },
+          modifiers: [{ kind: "skill", name: config.skill }],
+          prompt: config.prompts.initialReviewer({ ...state.context, repositoryPath: state.repositoryPath }),
+          feedback: { phase: config.phases.reviewing },
+          ...resubmit
+        } : {
+          label: role,
+          session: { kind: "existing", ...state.reviewer },
+          prompt: config.prompts.writerToReviewer(must2(state.writerResponse, "writer response")),
+          feedback: { phase: config.phases.rereviewing },
+          ...resubmit
+        },
+        onResult: (_state, turn) => ({ turn, reviewer: turn.agent })
+      }),
+      readReview: l(async (ctx, state) => {
+        const reviewer2 = must2(state.reviewer, "reviewer");
+        const review = config.latestAssistantTurnText(await ctx.getConversationHistory(reviewer2.agentSessionId));
+        if (review) return g({ update: { review } });
+        return failStep(ctx, { phase: config.phases.failed, message: "No reviewer response was found" }, `reviewer session ${reviewer2.agentSessionId} has no complete assistant turn to inspect.`);
+      }, { title: "Read the reviewer's reply" }),
+      judge: u({
+        graph: judgment,
+        title: "Route the review",
+        parameters: (state) => ({
+          label: "reviewer",
+          profile: config.profiles.reviewerJudgment,
+          prompt: config.prompts.reviewerRouting({ review: must2(state.review, "review") }),
+          feedback: { phase: config.phases.routingReview }
+        }),
+        onResult: (_state, { output }) => ({ verdict: output.outcome === "judged" ? output.route : null })
+      }),
+      askHuman: l(async (ctx, state) => {
+        await ctx.setUiFeedback({ kind: "warning", phase: "Waiting for your decision", message: "The reviewer raised a human escalation. Resolve it with the reviewer, then continue the workflow." });
+        await ctx.log("warning", `Reviewer raised a human escalation in ${config.roundLabel} ${state.round}.`);
+        return _({ wait: y.userContinue() });
+      }, { title: "Wait for your decision" })
+    },
+    edges: {
+      afterPrompt: f({ from: "prompt", to: ["readReview", "failed"], choose: (state) => afterTurn(state, role, "readReview") }),
+      afterReadReview: f({ from: "readReview", to: ["judge"], choose: () => ({ to: "judge" }) }),
+      afterJudge: f({
+        from: "judge",
+        to: ["reviewed", "askHuman", "readReview"],
+        choose: (state) => {
+          if (state.verdict === null) return { to: "readReview" };
+          return { to: state.verdict === "human-decision" ? "askHuman" : "reviewed" };
+        }
+      }),
+      // After the human decision, the reviewer session's latest complete turn is judged again.
+      afterAskHuman: f({
+        from: "askHuman",
+        to: ["readReview"],
+        choose: (_state, event) => {
+          if (event.kind !== "user_continue") throw new Error(`The human decision resumed with an unexpected ${event.kind} event.`);
+          return { to: "readReview" };
+        }
+      })
+    },
+    outcomes: {
+      reviewed: p({
+        kind: "success",
+        title: "Reviewed",
+        output: (state) => {
+          const verdict = must2(state.verdict, "verdict");
+          if (verdict === "human-decision") throw new Error("A human decision cannot end a review round.");
+          return { outcome: "reviewed", verdict, reviewer: must2(state.reviewer, "reviewer"), review: must2(state.review, "review"), round: state.round };
+        }
+      }),
+      failed: p({ kind: "failure", title: "Review failed", output: (state) => ({ outcome: "failed", failure: must2(state.failure, "failure") }) })
+    }
+  });
+}
+function afterTurn(state, label, next) {
+  const turn = must2(state.turn, "agent turn");
+  if (turn.outcome === "interrupted") return { to: "failed", update: { failure: { message: `${label} failed because its agent session ended.`, diagnostic: turn.reason } } };
+  return { to: next };
+}
+function must2(value, label) {
+  if (value === null) throw new Error(`Reviewed artifact state is missing its ${label}.`);
+  return value;
 }
 
 // src/constants.ts
 var reviewer = {
   harness: "codex",
-  model: "gpt-6-sol",
+  model: "gpt-6.1-sol",
   effort: "high"
 };
 var writer = {
@@ -245,19 +809,6 @@ Apply this precedence:
 
 Every outcome is valid on every invocation. Return no confidence, commentary, markdown, or extra JSON fields.`);
 }
-function completedSingleHeadlessResult(event) {
-  const results = s.getHeadlessAgentResults(event);
-  if (!results) throw new Error("Workflow resumed with a non-headless judgment event.");
-  if (results.length !== 1) {
-    throw new Error(`Expected exactly one judgment result, received ${results.length}.`);
-  }
-  const result = results[0];
-  if (!result || result.status !== "completed") {
-    const detail = result?.error ? `: ${result.error}` : "";
-    throw new Error(`Judgment did not complete${detail}.`);
-  }
-  return result;
-}
 function parseWriterRoute(output) {
   return parseOutcome(output, ["failed", "ready"], "writer");
 }
@@ -295,8 +846,40 @@ function extractJsonObject(output) {
   return output.slice(first, last + 1);
 }
 
+// src/graph.ts
+var DesignArchitectureGraph = createReviewedArtifactGraph({
+  key: "DesignArchitecture",
+  title: "Design architecture",
+  skill: "design-architecture",
+  roles: { writer: "Architecture writer", reviewer: "Architecture reviewer" },
+  roundLabel: "architecture review round",
+  profiles: { writer, reviewer, writerJudgment, reviewerJudgment },
+  phases: {
+    writing: "Designing architecture",
+    checkingWriter: "Checking architecture writer progress",
+    reviewing: "Reviewing architecture",
+    routingReview: "Routing architecture review",
+    revising: "Revising architecture",
+    rereviewing: "Re-reviewing architecture",
+    recoveringWriter: "Recovering architecture writer",
+    complete: "Architecture complete",
+    failed: "Design architecture failed"
+  },
+  prompts: {
+    initialWriter: initialWriterPrompt,
+    reviewToWriter: reviewToWriterPrompt,
+    retryWriter: retryWriterPrompt,
+    initialReviewer: initialReviewerPrompt,
+    writerToReviewer: writerToReviewerPrompt,
+    writerRouting: writerRoutingPrompt,
+    reviewerRouting: reviewerRoutingPrompt
+  },
+  parse: { writerRoute: parseWriterRoute, reviewerRoute: parseReviewerRoute },
+  latestAssistantTurnText
+});
+
 // src/index.ts
-var index_default = r({
+var index_default = h({
   command: () => ({
     title: "Design Architecture",
     description: "Create and independently review a story-scoped target architecture.",
@@ -321,414 +904,16 @@ var index_default = r({
       }
     ]
   }),
-  validate: (_launchCtx, variables) => {
-    parseText(variables.story, "story");
-    parseText(variables.currentStatePath, "currentStatePath");
-    parseText(variables.artifactPath, "artifactPath");
-  },
-  init: (launchCtx, variables) => ({
-    stateVersion: 1,
-    repositoryPath: launchCtx.worktreePath,
-    story: parseText(variables.story, "story"),
-    currentStatePath: parseText(variables.currentStatePath, "currentStatePath"),
-    artifactPath: parseText(variables.artifactPath, "artifactPath"),
-    stage: { kind: "spawn_writer" }
+  parse: (_origin, inputs) => ({
+    story: parseText(inputs.story, "story"),
+    currentStatePath: parseText(inputs.currentStatePath, "currentStatePath"),
+    artifactPath: parseText(inputs.artifactPath, "artifactPath")
   }),
-  step: async (ctx, state, incoming) => {
-    await ctx.log("debug", `Design architecture stage=${state.stage.kind}.`);
-    switch (state.stage.kind) {
-      case "spawn_writer": {
-        await ctx.setUiFeedback({ phase: "Designing architecture" });
-        const spawned = await ctx.spawnAgentSession({
-          harness: writer.harness,
-          model: writer.model,
-          effort: writer.effort,
-          modifiers: [{ kind: "skill", name: "design-architecture" }],
-          prompt: initialWriterPrompt(state)
-        });
-        const writerAgent = agentFromSpawn(spawned);
-        await logSpawn(ctx, "writer", writerAgent, writer);
-        return a(
-          withStage(state, { kind: "await_initial_writer", writer: writerAgent }),
-          o.agentTurn(spawned)
-        );
-      }
-      case "await_initial_writer": {
-        const ended = await requireEndedTurn(ctx, incoming, "Writer");
-        if (!ended.ok) return ended.result;
-        const response = await latestTurnOrFail(ctx, state.stage.writer, "writer");
-        if (!response.ok) return response.result;
-        return startWriterJudgment(ctx, {
-          state: withStage(state, {
-            kind: "await_initial_writer_judgment",
-            writer: state.stage.writer,
-            writerResponse: response.text,
-            mode: "normal"
-          }),
-          writerResponse: response.text
-        });
-      }
-      case "await_initial_writer_judgment": {
-        if (isRetryInvocation(ctx)) return recoverWriterJudgment(ctx, state, state.stage);
-        const route = await readWriterJudgment(ctx, incoming);
-        if (!route.ok) return route.result;
-        if (route.value === "failed") {
-          if (state.stage.mode === "retry_recheck") {
-            return continueWriterAfterRetry(ctx, state, state.stage);
-          }
-          return failIncompleteWriter(ctx, state.stage.writer, state.stage.writerResponse);
-        }
-        return spawnReviewer(ctx, state, state.stage.writer);
-      }
-      case "await_review": {
-        const ended = await requireEndedTurn(ctx, incoming, "Reviewer");
-        if (!ended.ok) return ended.result;
-        const review = await latestTurnOrFail(ctx, state.stage.reviewer, "reviewer");
-        if (!review.ok) return review.result;
-        return startReviewerJudgment(ctx, {
-          state: withStage(state, {
-            kind: "await_reviewer_judgment",
-            writer: state.stage.writer,
-            reviewer: state.stage.reviewer,
-            review: review.text,
-            reviewRound: state.stage.reviewRound
-          }),
-          review: review.text
-        });
-      }
-      case "await_reviewer_judgment": {
-        const route = await readReviewerJudgment(ctx, incoming);
-        if (!route.ok) return route.result;
-        switch (route.value) {
-          case "complete":
-            return finishWorkflow(
-              ctx,
-              state,
-              state.stage.writer,
-              state.stage.reviewer,
-              state.stage.reviewRound
-            );
-          case "revise":
-            return sendReviewToWriter(ctx, state, {
-              writer: state.stage.writer,
-              reviewer: state.stage.reviewer,
-              review: state.stage.review,
-              reviewRound: state.stage.reviewRound
-            });
-          case "human-decision": {
-            await ctx.setUiFeedback({
-              kind: "warning",
-              phase: "Waiting for your decision",
-              message: "The reviewer raised a human escalation. Resolve it with the reviewer, then continue the workflow."
-            });
-            await ctx.log(
-              "warning",
-              `Reviewer raised a human escalation in architecture review round ${state.stage.reviewRound}.`
-            );
-            return a(
-              withStage(state, {
-                kind: "await_human_decision",
-                writer: state.stage.writer,
-                reviewer: state.stage.reviewer,
-                reviewRound: state.stage.reviewRound
-              }),
-              o.userContinue()
-            );
-          }
-          default:
-            return assertNever(route.value);
-        }
-      }
-      case "await_revision": {
-        const ended = await requireEndedTurn(ctx, incoming, "Writer");
-        if (!ended.ok) return ended.result;
-        const response = await latestTurnOrFail(ctx, state.stage.writer, "writer");
-        if (!response.ok) return response.result;
-        return startWriterJudgment(ctx, {
-          state: withStage(state, {
-            kind: "await_revision_judgment",
-            writer: state.stage.writer,
-            reviewer: state.stage.reviewer,
-            writerResponse: response.text,
-            reviewRound: state.stage.reviewRound,
-            mode: "normal"
-          }),
-          writerResponse: response.text
-        });
-      }
-      case "await_revision_judgment": {
-        if (isRetryInvocation(ctx)) return recoverWriterJudgment(ctx, state, state.stage);
-        const route = await readWriterJudgment(ctx, incoming);
-        if (!route.ok) return route.result;
-        if (route.value === "failed") {
-          if (state.stage.mode === "retry_recheck") {
-            return continueWriterAfterRetry(ctx, state, state.stage);
-          }
-          return failIncompleteWriter(ctx, state.stage.writer, state.stage.writerResponse);
-        }
-        await ctx.setUiFeedback({ phase: "Re-reviewing architecture" });
-        const sent = await ctx.sendAgentPrompt({
-          agentSessionId: state.stage.reviewer.agentSessionId,
-          prompt: writerToReviewerPrompt(state.stage.writerResponse)
-        });
-        await ctx.log(
-          "info",
-          `Sent writer response from architecture review round ${state.stage.reviewRound} to reviewer session ${state.stage.reviewer.agentSessionId}.`
-        );
-        return a(
-          withStage(state, {
-            kind: "await_review",
-            writer: state.stage.writer,
-            reviewer: state.stage.reviewer,
-            reviewRound: state.stage.reviewRound + 1
-          }),
-          o.agentTurn(sent)
-        );
-      }
-      case "await_human_decision": {
-        if (!s.isUserContinue(incoming)) {
-          return failWorkflow(
-            ctx,
-            "The human decision could not be resumed",
-            "The architecture human-decision wait resumed with an unexpected event."
-          );
-        }
-        const review = await latestTurnOrFail(ctx, state.stage.reviewer, "reviewer");
-        if (!review.ok) return review.result;
-        await ctx.log(
-          "info",
-          `User continued architecture review round ${state.stage.reviewRound}; routing the reviewer session's latest complete turn.`
-        );
-        return startReviewerJudgment(ctx, {
-          state: withStage(state, {
-            kind: "await_reviewer_judgment",
-            writer: state.stage.writer,
-            reviewer: state.stage.reviewer,
-            review: review.text,
-            reviewRound: state.stage.reviewRound
-          }),
-          review: review.text
-        });
-      }
-      default:
-        return assertNever(state.stage);
-    }
-  }
+  graph: DesignArchitectureGraph
 });
-async function recoverWriterJudgment(ctx, state, stage) {
-  const history = await ctx.getConversationHistory(stage.writer.agentSessionId);
-  const latestResponse = latestAssistantTurnText(history);
-  if (latestResponse && latestResponse !== stage.writerResponse) {
-    await ctx.log(
-      "info",
-      `Retry found a newer complete turn in architecture writer session ${stage.writer.agentSessionId}; routing the latest response.`
-    );
-    return startWriterJudgment(ctx, {
-      state: withStage(state, { ...stage, writerResponse: latestResponse, mode: "retry_recheck" }),
-      writerResponse: latestResponse
-    });
-  }
-  return continueWriterAfterRetry(ctx, state, stage);
-}
-async function continueWriterAfterRetry(ctx, state, stage) {
-  await ctx.setUiFeedback({ phase: "Recovering architecture writer" });
-  const sent = await ctx.sendAgentPrompt({
-    agentSessionId: stage.writer.agentSessionId,
-    prompt: retryWriterPrompt()
-  });
-  await ctx.log(
-    "info",
-    `Sent one retry continuation to architecture writer session ${stage.writer.agentSessionId}.`
-  );
-  if (stage.kind === "await_initial_writer_judgment") {
-    return a(
-      withStage(state, { kind: "await_initial_writer", writer: stage.writer }),
-      o.agentTurn(sent)
-    );
-  }
-  return a(
-    withStage(state, {
-      kind: "await_revision",
-      writer: stage.writer,
-      reviewer: stage.reviewer,
-      reviewRound: stage.reviewRound
-    }),
-    o.agentTurn(sent)
-  );
-}
-async function startWriterJudgment(ctx, input) {
-  await ctx.setUiFeedback({ phase: "Checking architecture writer progress" });
-  const op = await ctx.runHeadlessAgent({
-    harness: writerJudgment.harness,
-    model: writerJudgment.model,
-    effort: writerJudgment.effort,
-    prompt: writerRoutingPrompt({
-      writerResponse: input.writerResponse,
-      artifactPath: input.state.artifactPath
-    })
-  });
-  await ctx.log("info", `Started architecture writer routing judgment ${op.opId}.`);
-  return a(input.state, o.headlessAgent(op));
-}
-async function startReviewerJudgment(ctx, input) {
-  await ctx.setUiFeedback({ phase: "Routing architecture review" });
-  const op = await ctx.runHeadlessAgent({
-    harness: reviewerJudgment.harness,
-    model: reviewerJudgment.model,
-    effort: reviewerJudgment.effort,
-    prompt: reviewerRoutingPrompt({ review: input.review })
-  });
-  await ctx.log("info", `Started architecture reviewer routing judgment ${op.opId}.`);
-  return a(input.state, o.headlessAgent(op));
-}
-async function readWriterJudgment(ctx, incoming) {
-  return readJudgment(ctx, incoming, "writer", parseWriterRoute);
-}
-async function readReviewerJudgment(ctx, incoming) {
-  return readJudgment(ctx, incoming, "reviewer", parseReviewerRoute);
-}
-async function readJudgment(ctx, incoming, label, parse) {
-  try {
-    const result = completedSingleHeadlessResult(incoming);
-    const value = parse(result.output ?? "");
-    await ctx.log("info", `architecture ${label} routing outcome=${value}.`);
-    return { ok: true, value };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      ok: false,
-      result: await failWorkflow(
-        ctx,
-        `The ${label} response could not be routed`,
-        `Architecture ${label} routing failed: ${message}`
-      )
-    };
-  }
-}
-async function spawnReviewer(ctx, state, writerAgent) {
-  await ctx.setUiFeedback({ phase: "Reviewing architecture" });
-  const spawned = await ctx.spawnAgentSession({
-    harness: reviewer.harness,
-    model: reviewer.model,
-    effort: reviewer.effort,
-    modifiers: [{ kind: "skill", name: "design-architecture" }],
-    prompt: initialReviewerPrompt(state)
-  });
-  const reviewerAgent = agentFromSpawn(spawned);
-  await logSpawn(ctx, "reviewer", reviewerAgent, reviewer);
-  return a(
-    withStage(state, {
-      kind: "await_review",
-      writer: writerAgent,
-      reviewer: reviewerAgent,
-      reviewRound: 1
-    }),
-    o.agentTurn(spawned)
-  );
-}
-async function sendReviewToWriter(ctx, state, input) {
-  await ctx.setUiFeedback({ phase: "Revising architecture" });
-  const sent = await ctx.sendAgentPrompt({
-    agentSessionId: input.writer.agentSessionId,
-    prompt: reviewToWriterPrompt(input.review)
-  });
-  await ctx.log(
-    "info",
-    `Sent architecture review round ${input.reviewRound} to writer session ${input.writer.agentSessionId}.`
-  );
-  return a(
-    withStage(state, {
-      kind: "await_revision",
-      writer: input.writer,
-      reviewer: input.reviewer,
-      reviewRound: input.reviewRound
-    }),
-    o.agentTurn(sent)
-  );
-}
-async function failIncompleteWriter(ctx, writerAgent, writerResponse) {
-  return failWorkflow(
-    ctx,
-    "The writer did not produce a reviewable architecture",
-    `Architecture writer session ${writerAgent.agentSessionId} did not complete its artifact turn. Latest response:
-${writerResponse}`
-  );
-}
-async function finishWorkflow(ctx, state, writerAgent, reviewerAgent, reviewCount) {
-  await ctx.setUiFeedback({ phase: "Architecture complete" });
-  await ctx.closePane(writerAgent.paneId);
-  await ctx.closePane(reviewerAgent.paneId);
-  await ctx.log("info", `Architecture completed after ${reviewCount} review rounds.`);
-  return l({
-    outcome: "artifact-reviewed",
-    artifactPath: state.artifactPath,
-    reviewCount
-  });
-}
-async function requireEndedTurn(ctx, incoming, role) {
-  if (s.isAgentTurnEnded(incoming)) return { ok: true };
-  if (s.isAgentTurnFailed(incoming)) {
-    return {
-      ok: false,
-      result: await failWorkflow(
-        ctx,
-        `${role} turn failed`,
-        `${role} turn failed: ${incoming.reason}`
-      )
-    };
-  }
-  return {
-    ok: false,
-    result: await failWorkflow(
-      ctx,
-      `${role} turn could not be resumed`,
-      `${role} turn wait resumed with an unexpected event.`
-    )
-  };
-}
-async function latestTurnOrFail(ctx, agent, role) {
-  const history = await ctx.getConversationHistory(agent.agentSessionId);
-  const text = latestAssistantTurnText(history);
-  if (text) return { ok: true, text };
-  return {
-    ok: false,
-    result: await failWorkflow(
-      ctx,
-      `No ${role} response was found`,
-      `${role} session ${agent.agentSessionId} has no complete assistant turn to inspect.`
-    )
-  };
-}
-async function failWorkflow(ctx, userMessage, diagnostic) {
-  await ctx.setUiFeedback({
-    kind: "error",
-    phase: "Design architecture failed",
-    message: userMessage
-  });
-  await ctx.log("error", diagnostic);
-  return u(diagnostic);
-}
-async function logSpawn(ctx, role, agent, profile) {
-  await ctx.log(
-    "info",
-    `Spawned architecture ${role} in pane ${agent.paneId}: harness=${profile.harness}, model=${profile.model}, effort=${profile.effort}, agentSessionId=${agent.agentSessionId}.`
-  );
-}
-function agentFromSpawn(input) {
-  return { agentSessionId: input.agentSessionId, paneId: input.paneId };
-}
-function withStage(state, stage) {
-  return { ...state, stage };
-}
 function parseText(value, key) {
   if (typeof value === "string" && value.trim().length > 0) return value;
   throw new Error(`${key} must be non-empty text.`);
-}
-function assertNever(value) {
-  throw new Error(`Unsupported workflow value: ${String(value)}`);
-}
-function isRetryInvocation(ctx) {
-  return ctx.invocation?.kind === "retry";
 }
 export {
   index_default as default

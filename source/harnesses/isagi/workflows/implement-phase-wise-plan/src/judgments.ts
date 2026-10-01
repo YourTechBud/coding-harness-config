@@ -1,11 +1,7 @@
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
-import type {
-  WorkflowConversationMessage,
-  WorkflowHeadlessResult,
-} from '@yourtechbudstudio/isagi-workflow-sdk';
-import { event as workflowEvent } from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import type { ImplementerKind } from './constants.js';
 
@@ -89,22 +85,6 @@ export function latestAssistantTurnText(
     .join('\n\n')
     .trim();
   return turnText.length > 0 ? turnText : null;
-}
-
-export function completedSingleHeadlessJudgmentResult(event: unknown): WorkflowHeadlessResult {
-  const results = workflowEvent.getHeadlessAgentResults(event);
-  if (!results) {
-    throw new Error('Workflow resumed with a non-headless judgment event.');
-  }
-  if (results.length !== 1) {
-    throw new Error(`Expected exactly one headless judgment result, received ${results.length}.`);
-  }
-  const result = results[0];
-  if (!result || result.status !== 'completed') {
-    const error = result?.error ? `: ${result.error}` : '';
-    throw new Error(`Headless judgment did not complete${error}.`);
-  }
-  return result;
 }
 
 export function parseDiscoveryResult(output: string): DiscoveryResult {
