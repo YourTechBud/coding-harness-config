@@ -26,28 +26,9 @@ Read the inputs and inspect the relevant repository code and referenced mocks. U
 
 For this plan, omit mock-UI phases and repository documentation work. UI exploration has already happened under human direction; the brief captures its outcome and decisions. Treat the session-created mocks as throwaway artifacts and account for their removal or replacement with production implementation within the implementation phases.
 
-If you encounter consequential ambiguity, missing UI context, or inconsistency between the mocks, brief, and engineering documents, explain the concern and stop for human reconciliation.
+If you encounter consequential ambiguity, missing UI context, or inconsistency between the mocks, brief, and engineering documents, ask the human your questions and stop without writing index.md. The workflow waits for the human whenever index.md is missing.
 
-Write index.md last, only when the complete plan is ready and there are no unresolved escalations. Finish by reporting the entry plan path.`);
-}
-
-export function plannerRoutingPrompt(input: {
-  readonly plannerResponse: string;
-  readonly entryPlanPath: string;
-}): string {
-  return withPromptFooter(`You are an unattended routing judgment for an implementation-plan writer.
-
-Expected entry plan path: ${input.entryPlanPath}
-
-Writer response:
-${input.plannerResponse}
-
-Return exactly one JSON object with exactly this field:
-{"outcome":"ready"}
-
-Return "ready" when the writer reports that it created and finished the implementation plan at the expected directory. Return "failed" when it reports incomplete work, a different plan location, an unresolved blocker, intended future work, or a request for input instead of a completed plan.
-
-Every outcome is valid. Return no confidence, commentary, markdown, or extra JSON fields.`);
+Write index.md last, only when you have no open questions and the complete plan is ready. Finish by reporting the entry plan path.`);
 }
 
 export function withPromptFooter(body: string): string {

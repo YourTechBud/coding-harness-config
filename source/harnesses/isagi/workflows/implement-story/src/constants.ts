@@ -11,9 +11,3 @@ export const planner = {
   model: 'opus',
   effort: 'high',
 } satisfies AgentProfile;
-
-export const plannerJudgment = {
-  harness: 'codex',
-  model: 'gpt-6-luna',
-  effort: 'medium',
-} satisfies AgentProfile;

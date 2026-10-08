@@ -4,16 +4,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import type { OperationContext, WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
-import type { AgentTurnParameters, JudgmentParameters } from 'isagi-workflow-common-graphs';
-import { agentTurnEnded, agentTurnInterrupted, assertDestinationsDeclared, judged, rejudged, subgraphParameters, visit, visitSubgraph } from 'isagi-workflow-common-graphs/testing';
+import type { OperationContext } from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { AgentTurnParameters } from 'isagi-workflow-common-graphs';
+import { agentTurnEnded, agentTurnInterrupted, assertDestinationsDeclared, subgraphParameters, visit, visitSubgraph } from 'isagi-workflow-common-graphs/testing';
 import type { ImplementPhaseWisePlanParameters } from 'isagi-workflow-implement-phase-wise-plan/graph';
 
-import { planner, plannerJudgment } from '../src/constants.js';
+import { planner } from '../src/constants.js';
 import { ImplementStoryGraph, implementStoryParameters } from '../src/graph.js';
 import workflow from '../src/index.js';
 import { PlanningGraph } from '../src/planning.js';
-import { plannerRoutingPrompt } from '../src/prompts.js';
 
 const story = 'https://github.com/owner/repo/issues/42';
 const parameters = implementStoryParameters({ story });
@@ -44,60 +43,35 @@ test('spawns the existing planner prompt with every explicit artifact path', () 
   const prompt = turn.prompt ?? '';
   assert.match(prompt, /omit mock-UI phases and repository documentation work/);
   assert.match(prompt, /Write index.md last/);
-  assert.match(prompt, /stop for human reconciliation/);
+  assert.match(prompt, /ask the human your questions and stop without writing index.md/);
   assert.match(prompt, /removal or replacement with production implementation/);
   for (const path of [...Object.values(artifacts), plan.planDirectory, plan.entryPlanPath]) assert.ok(prompt.includes(path), path);
 });
 
-test('a completed planner turn is judged when the index exists, and a valid plan is ready', async () => {
+test('a completed planner turn with an index and phase files is ready', async () => {
   await withRepository(async (repositoryPath) => {
     writePlan(repositoryPath, { phases: true });
-    const harness = workflowHarness([message('assistant', 'The implementation plan is complete.')]);
-    const read = await visit(PlanningGraph, 'readResponse', harness.ctx, planned(repositoryPath));
-    assert.equal(read.to, 'judge');
-    const judgment = subgraphParameters<JudgmentParameters>(PlanningGraph, 'judge', read.state);
-    assert.deepEqual(judgment.profile, plannerJudgment);
-    assert.equal(judgment.prompt, plannerRoutingPrompt({ plannerResponse: 'The implementation plan is complete.', entryPlanPath: plan.entryPlanPath }));
-    const validated = await visit(PlanningGraph, 'validate', harness.ctx, visitSubgraph(PlanningGraph, 'judge', read.state, judged('ready')).state);
-    assert.equal(validated.to, 'ready');
-    assert.deepEqual(PlanningGraph.outcomes.ready!.output(validated.state), { outcome: 'ready', planner: plannerPane });
+    const checked = await visit(PlanningGraph, 'checkPlan', workflowHarness().ctx, planned(repositoryPath));
+    assert.equal(checked.to, 'ready');
+    assert.deepEqual(PlanningGraph.outcomes.ready!.output(checked.state), { outcome: 'ready', planner: plannerPane });
   });
 });
 
-test('a missing index pauses before judgment, and Continue trusts a human-created index', async () => {
+test('a missing index pauses for the human, and Continue checks the plan files again', async () => {
   await withRepository(async (repositoryPath) => {
-    const harness = workflowHarness([]);
-    const missing = await visit(PlanningGraph, 'readResponse', harness.ctx, planned(repositoryPath));
+    const harness = workflowHarness();
+    const missing = await visit(PlanningGraph, 'checkPlan', harness.ctx, planned(repositoryPath));
     assert.equal(missing.to, 'reconcile');
     const paused = await visit(PlanningGraph, 'reconcile', harness.ctx, missing.state, { kind: 'user_continue' });
+    assert.equal(paused.to, 'checkPlan');
     assert.equal(harness.feedback.at(-1)?.phase, 'Planner needs human reconciliation');
-    assert.match(harness.feedback.at(-1)?.message ?? '', /is missing\. Work with the planner/);
-    assert.equal((await visit(PlanningGraph, 'recheckPlan', harness.ctx, paused.state)).to, 'reconcile');
+    assert.match(harness.feedback.at(-1)?.message ?? '', /has not written scratch\/story\/implementation\/index\.md, so it likely has questions for you/);
     writePlan(repositoryPath, { phases: false });
-    assert.equal((await visit(PlanningGraph, 'recheckPlan', harness.ctx, paused.state)).to, 'ready');
-  });
-});
-
-test('a failed judgment, or a ready judgment with missing phase files, pauses for reconciliation', async () => {
-  await withRepository(async (repositoryPath) => {
-    writePlan(repositoryPath, { phases: false });
-    const harness = workflowHarness([]);
-    const responded = { ...planned(repositoryPath), plannerResponse: 'I could not finish the plan.' };
-    const failed = await visit(PlanningGraph, 'validate', harness.ctx, { ...responded, route: 'failed' as const });
-    assert.equal(failed.to, 'reconcile');
-    assert.match(failed.state.reconcile ?? '', /Planner response:\nI could not finish the plan\./);
-    const incomplete = await visit(PlanningGraph, 'validate', harness.ctx, { ...responded, route: 'ready' as const });
+    const incomplete = await visit(PlanningGraph, 'checkPlan', harness.ctx, paused.state);
     assert.equal(incomplete.to, 'reconcile');
     assert.match(incomplete.state.reconcile ?? '', /contains no phase files/);
-  });
-});
-
-test('a missing planner response fails the step, and a rejudge reads the response again', async () => {
-  await withRepository(async (repositoryPath) => {
     writePlan(repositoryPath, { phases: true });
-    await assert.rejects(visit(PlanningGraph, 'readResponse', workflowHarness([]).ctx, planned(repositoryPath)), /Planner session 55 has no complete assistant turn to inspect\./);
-    const read = await visit(PlanningGraph, 'readResponse', workflowHarness([message('assistant', 'Done.')]).ctx, planned(repositoryPath));
-    assert.equal(visitSubgraph(PlanningGraph, 'judge', read.state, rejudged()).to, 'readResponse');
+    assert.equal((await visit(PlanningGraph, 'checkPlan', harness.ctx, paused.state)).to, 'ready');
   });
 });
 
@@ -117,7 +91,7 @@ test('starts phase-wise implementation with the planner session and boolean opti
 });
 
 test('completion preserves the planner pane and returns it to the user', async () => {
-  const harness = workflowHarness([]);
+  const harness = workflowHarness();
   const implemented = visitSubgraph(ImplementStoryGraph, 'implementPlan', withPlanner(), phaseWiseResult(2, 2));
   assert.equal(implemented.to, 'finish');
   const finished = await visit(ImplementStoryGraph, 'finish', harness.ctx, implemented.state);
@@ -135,7 +109,7 @@ test('completion preserves the planner pane and returns it to the user', async (
 });
 
 test('a failed or incomplete implementation is reported and leaves the planner open for diagnosis', async () => {
-  const harness = workflowHarness([]);
+  const harness = workflowHarness();
   const failed = visitSubgraph(ImplementStoryGraph, 'implementPlan', withPlanner(), { outcomeId: 'failed', outcomeKind: 'failure', output: { outcome: 'failed', reason: 'Commit failed for phase 2' } });
   assert.equal(failed.to, 'reportFailure');
   await visit(ImplementStoryGraph, 'reportFailure', harness.ctx, failed.state);
@@ -190,11 +164,7 @@ async function withRepository(run: (repositoryPath: string) => Promise<void>): P
   }
 }
 
-function message(role: 'user' | 'assistant', text: string): WorkflowConversationMessage {
-  return { role, parts: [{ type: 'text', text, state: 'done' }] };
-}
-
-function workflowHarness(history: readonly WorkflowConversationMessage[]) {
+function workflowHarness() {
   const feedback: Array<Parameters<OperationContext['setUiFeedback']>[0]> = [];
   const logs: string[] = [];
   const closedPanes: number[] = [];
@@ -204,7 +174,7 @@ function workflowHarness(history: readonly WorkflowConversationMessage[]) {
     spawnAgentSession: async () => { throw new Error('Agent turns run in the AgentTurn graph.'); },
     sendAgentPrompt: async () => { throw new Error('Agent turns run in the AgentTurn graph.'); },
     closePane: async (paneId) => { closedPanes.push(paneId); },
-    getConversationHistory: async () => history,
+    getConversationHistory: async () => [],
     runHeadlessAgent: async () => { throw new Error('Judgments run in their own graph.'); },
     log: async (_level, text) => { logs.push(text); },
     setUiFeedback: async (value) => { feedback.push(value); },

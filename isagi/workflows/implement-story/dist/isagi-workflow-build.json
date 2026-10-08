@@ -10,16 +10,16 @@
     "version": "0.1.1"
   },
   "source": {
-    "sha256": "8cdead6f2925942a6194831a9fa9f445e5424bb544ce0de3bf1bfaf9051c54d2"
+    "sha256": "1b270c7e1424bfb158aad504a33e9a2750a0975586cfd225ef9f2b474ad45f91"
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "af7e1a7f85a8dca31950f28e652a24a88096b48614f9db09b57e2724c43ecee6"
+    "sha256": "5cec1bcc7d5fa3e0569954a31b2b764880c5adcb786e191f4b19ed506d9f9ee2"
   },
   "structure": {
     "descriptorVersion": 2,
-    "sha256": "8464e5e93aac3f321d4f36d2b9ae1b661421991865b709985f9d9fa3eab65d4a",
+    "sha256": "61f4ead1cff31c8bc43f76fc9ed30e59d196bc8bc8da662c1bd1ba3a4e21bdb4",
     "rootGraphKey": "ImplementStory",
-    "graphCount": 19
+    "graphCount": 18
   }
 }

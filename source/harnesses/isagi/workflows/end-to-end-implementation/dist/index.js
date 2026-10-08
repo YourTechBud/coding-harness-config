@@ -3321,63 +3321,6 @@ var planner = {
   model: "opus",
   effort: "high"
 };
-var plannerJudgment = {
-  harness: "codex",
-  model: "gpt-6-luna",
-  effort: "medium"
-};
-
-// ../implement-story/src/judgments.ts
-function latestAssistantTurnText3(history) {
-  let finalAssistantIndex = -1;
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const message = history[index];
-    if (message?.role === "assistant" && completeMessageText2(message)) {
-      finalAssistantIndex = index;
-      break;
-    }
-  }
-  if (finalAssistantIndex < 0) return null;
-  let precedingUserIndex = -1;
-  for (let index = finalAssistantIndex - 1; index >= 0; index -= 1) {
-    if (history[index]?.role === "user") {
-      precedingUserIndex = index;
-      break;
-    }
-  }
-  const turn = history.slice(precedingUserIndex + 1, finalAssistantIndex + 1).filter((message) => message.role === "assistant").map(completeMessageText2).filter((text4) => text4.length > 0).join("\n\n").trim();
-  return turn.length > 0 ? turn : null;
-}
-function parsePlannerRoute(output) {
-  const record = parseExactObject(output, ["outcome"], "planner judgment");
-  if (record.outcome !== "ready" && record.outcome !== "failed") {
-    throw new Error("planner judgment outcome must be one of: failed, ready.");
-  }
-  return record.outcome;
-}
-function parseExactObject(output, expectedKeys, label) {
-  const value = JSON.parse(extractJsonObject4(output));
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label} must be a JSON object.`);
-  }
-  const record = value;
-  const keys = Object.keys(record);
-  if (keys.length !== expectedKeys.length || expectedKeys.some((key, index) => keys[index] !== key)) {
-    throw new Error(`${label} must contain exactly: ${expectedKeys.join(", ")}.`);
-  }
-  return record;
-}
-function completeMessageText2(message) {
-  return message.parts.filter((part) => part.type === "text" && part.state !== "streaming").map((part) => part.text).join("\n").trim();
-}
-function extractJsonObject4(output) {
-  const first = output.indexOf("{");
-  const last = output.lastIndexOf("}");
-  if (first < 0 || last < first) {
-    throw new Error("Judgment output did not contain a JSON object.");
-  }
-  return output.slice(first, last + 1);
-}
 
 // ../implement-story/src/prompts.ts
 var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
@@ -3397,24 +3340,9 @@ Read the inputs and inspect the relevant repository code and referenced mocks. U
 
 For this plan, omit mock-UI phases and repository documentation work. UI exploration has already happened under human direction; the brief captures its outcome and decisions. Treat the session-created mocks as throwaway artifacts and account for their removal or replacement with production implementation within the implementation phases.
 
-If you encounter consequential ambiguity, missing UI context, or inconsistency between the mocks, brief, and engineering documents, explain the concern and stop for human reconciliation.
+If you encounter consequential ambiguity, missing UI context, or inconsistency between the mocks, brief, and engineering documents, ask the human your questions and stop without writing index.md. The workflow waits for the human whenever index.md is missing.
 
-Write index.md last, only when the complete plan is ready and there are no unresolved escalations. Finish by reporting the entry plan path.`);
-}
-function plannerRoutingPrompt(input) {
-  return withPromptFooter(`You are an unattended routing judgment for an implementation-plan writer.
-
-Expected entry plan path: ${input.entryPlanPath}
-
-Writer response:
-${input.plannerResponse}
-
-Return exactly one JSON object with exactly this field:
-{"outcome":"ready"}
-
-Return "ready" when the writer reports that it created and finished the implementation plan at the expected directory. Return "failed" when it reports incomplete work, a different plan location, an unresolved blocker, intended future work, or a request for input instead of a completed plan.
-
-Every outcome is valid. Return no confidence, commentary, markdown, or extra JSON fields.`);
+Write index.md last, only when you have no open questions and the complete plan is ready. Finish by reporting the entry plan path.`);
 }
 function withPromptFooter(body) {
   return `${body}
@@ -3423,7 +3351,6 @@ ${PROMPT_FOOTER}`;
 }
 
 // ../implement-story/src/planning.ts
-var PlannerJudgment = createJudgmentGraph({ key: "ImplementStoryPlannerJudgment", title: "Route the planner", parse: parsePlannerRoute });
 var PlanningGraph = m2({
   key: "ImplementStoryPlanning",
   title: "Create the implementation plan",
@@ -3432,8 +3359,6 @@ var PlanningGraph = m2({
     ...parameters,
     turn: null,
     planner: null,
-    plannerResponse: null,
-    route: null,
     reconcile: null,
     failure: null
   }),
@@ -3444,8 +3369,6 @@ var PlanningGraph = m2({
     plan: c2.replace(),
     turn: c2.replace(),
     planner: c2.replace(),
-    plannerResponse: c2.replace(),
-    route: c2.replace(),
     reconcile: c2.replace(),
     failure: c2.replace()
   },
@@ -3471,85 +3394,48 @@ var PlanningGraph = m2({
       }),
       onResult: (_state, turn) => ({ turn, planner: turn.agent })
     }),
-    readResponse: l2(async (ctx, state) => {
-      if (!entryPlanExists(state)) {
-        return g2({ update: { reconcile: `Plan entry ${state.plan.entryPlanPath} is missing. Work with the planner to resolve concerns and create the plan, then select Continue.` } });
-      }
-      const plannerSession = must5(state.planner, "planner");
-      const plannerResponse = latestAssistantTurnText3(await ctx.getConversationHistory(plannerSession.agentSessionId));
-      if (plannerResponse) return g2({ update: { plannerResponse } });
-      return failStep(ctx, { phase: "Implement story failed", message: "No implementation-plan response was found" }, `Planner session ${plannerSession.agentSessionId} has no complete assistant turn to inspect.`);
-    }, { title: "Read the planner's response" }),
-    judge: u2({
-      graph: PlannerJudgment,
-      title: "Route the planner response",
-      parameters: (state) => ({
-        label: "implementation-plan",
-        profile: plannerJudgment,
-        prompt: plannerRoutingPrompt({ plannerResponse: must5(state.plannerResponse, "planner response"), entryPlanPath: state.plan.entryPlanPath })
-      }),
-      // A rejudge reads the planner's latest response again before routing it.
-      onResult: (_state, { output }) => ({ route: output.outcome === "judged" ? output.route : null })
-    }),
-    validate: l2(async (ctx, state) => {
-      const route = must5(state.route, "planner route");
-      await ctx.log("info", `Implementation-plan routing outcome=${route}.`);
-      if (route === "failed") {
-        return g2({ update: { reconcile: `Resolve the planner's concerns and finish the plan, then select Continue. Planner response:
-${must5(state.plannerResponse, "planner response")}` } });
-      }
-      const validationError = planArtifactError(state.repositoryPath, state.plan);
-      return validationError ? g2({ update: { reconcile: validationError } }) : g2();
+    checkPlan: l2(async (_ctx, state) => {
+      const planError = planArtifactError(state.repositoryPath, state.plan);
+      return planError ? g2({ update: { reconcile: planError } }) : g2();
     }, { title: "Check the plan files" }),
     reconcile: l2(async (ctx, state) => {
       const message = must5(state.reconcile, "reconciliation message");
       await ctx.setUiFeedback({ kind: "warning", phase: "Planner needs human reconciliation", message });
       await ctx.log("warning", message);
       return _2({ wait: y2.userContinue() });
-    }, { title: "Reconcile the plan with the planner" }),
-    recheckPlan: l2(async (_ctx, state) => {
-      if (entryPlanExists(state)) return g2();
-      return g2({ update: { reconcile: `Plan entry ${state.plan.entryPlanPath} is still missing. Talk to the planner to ensure it is created, then select Continue.` } });
-    }, { title: "Check the plan entry again" })
+    }, { title: "Reconcile the plan with the planner" })
   },
   edges: {
     afterWritePlan: f2({
       from: "writePlan",
-      to: ["readResponse", "failed"],
+      to: ["checkPlan", "failed"],
       choose: (state) => {
         const turn = must5(state.turn, "planner turn");
-        if (turn.outcome === "ended") return { to: "readResponse" };
+        if (turn.outcome === "ended") return { to: "checkPlan" };
         return { to: "failed", update: { failure: { message: "Implementation-plan writer failed", diagnostic: `Implementation-plan writer turn failed: ${turn.reason}` } } };
       }
     }),
-    afterReadResponse: f2({ from: "readResponse", to: ["reconcile", "judge"], choose: (state) => ({ to: state.reconcile ? "reconcile" : "judge" }) }),
-    afterJudge: f2({ from: "judge", to: ["validate", "readResponse"], choose: (state) => ({ to: state.route === null ? "readResponse" : "validate" }) }),
-    afterValidate: f2({ from: "validate", to: ["reconcile", "ready"], choose: (state) => ({ to: state.reconcile ? "reconcile" : "ready" }) }),
+    afterCheckPlan: f2({ from: "checkPlan", to: ["reconcile", "ready"], choose: (state) => ({ to: state.reconcile ? "reconcile" : "ready" }) }),
     afterReconcile: f2({
       from: "reconcile",
-      to: ["recheckPlan"],
+      to: ["checkPlan"],
       choose: (_state, event) => {
         if (event.kind !== "user_continue") throw new Error(`Planner reconciliation resumed with an unexpected ${event.kind} event.`);
-        return { to: "recheckPlan", update: { reconcile: null } };
+        return { to: "checkPlan", update: { reconcile: null } };
       }
-    }),
-    afterRecheckPlan: f2({ from: "recheckPlan", to: ["reconcile", "ready"], choose: (state) => ({ to: state.reconcile ? "reconcile" : "ready" }) })
+    })
   },
   outcomes: {
     ready: p2({ kind: "success", title: "Plan ready", output: (state) => ({ outcome: "ready", planner: must5(state.planner, "planner") }) }),
     failed: p2({ kind: "failure", title: "Plan not created", output: (state) => ({ outcome: "failed", failure: must5(state.failure, "failure") }) })
   }
 });
-function entryPlanExists(state) {
-  const path = resolve3(state.repositoryPath, state.plan.entryPlanPath);
-  return existsSync2(path) && statSync2(path).isFile();
-}
 function planArtifactError(repositoryPath, plan) {
   const entryPath = resolve3(repositoryPath, plan.entryPlanPath);
-  if (!existsSync2(entryPath) || !statSync2(entryPath).isFile()) return `Expected implementation-plan entry file ${plan.entryPlanPath} was not created.`;
+  if (!existsSync2(entryPath) || !statSync2(entryPath).isFile()) return `The planner has not written ${plan.entryPlanPath}, so it likely has questions for you. Work with the planner until it writes the plan, then select Continue.`;
   const directoryPath = resolve3(repositoryPath, plan.planDirectory);
   const phaseFiles = readdirSync2(directoryPath).filter((name) => /^phase-\d{2}-.+\.md$/.test(name));
-  if (phaseFiles.length === 0) return `Implementation plan ${plan.planDirectory} contains no phase files.`;
+  if (phaseFiles.length === 0) return `Implementation plan ${plan.planDirectory} contains no phase files. Work with the planner until it writes them, then select Continue.`;
   return null;
 }
 function must5(value, label) {
@@ -3825,11 +3711,11 @@ ${PROMPT_FOOTER2}`;
 }
 
 // ../analyze-current-state/src/judgments.ts
-function latestAssistantTurnText4(history) {
+function latestAssistantTurnText3(history) {
   let finalAssistantIndex = -1;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const message = history[index];
-    if (message?.role === "assistant" && completeMessageText3(message)) {
+    if (message?.role === "assistant" && completeMessageText2(message)) {
       finalAssistantIndex = index;
       break;
     }
@@ -3842,7 +3728,7 @@ function latestAssistantTurnText4(history) {
       break;
     }
   }
-  const turn = history.slice(precedingUserIndex + 1, finalAssistantIndex + 1).filter((message) => message.role === "assistant").map(completeMessageText3).filter((text4) => text4.length > 0).join("\n\n").trim();
+  const turn = history.slice(precedingUserIndex + 1, finalAssistantIndex + 1).filter((message) => message.role === "assistant").map(completeMessageText2).filter((text4) => text4.length > 0).join("\n\n").trim();
   return turn.length > 0 ? turn : null;
 }
 function writerRoutingPrompt(input) {
@@ -3865,7 +3751,7 @@ ${input.review}
 
 ${REVIEWER_ROUTING_INSTRUCTIONS}`);
 }
-function completeMessageText3(message) {
+function completeMessageText2(message) {
   return message.parts.filter((part) => part.type === "text" && part.state !== "streaming").map((part) => part.text).join("\n").trim();
 }
 
@@ -3899,7 +3785,7 @@ var AnalyzeCurrentStateGraph = createReviewedArtifactGraph({
     reviewerRouting: reviewerRoutingPrompt
   },
   parse: { writerRoute: parseWriterRoute, reviewerRoute: parseReviewerRoute },
-  latestAssistantTurnText: latestAssistantTurnText4
+  latestAssistantTurnText: latestAssistantTurnText3
 });
 
 // ../design-architecture/src/constants.ts
@@ -4009,11 +3895,11 @@ ${PROMPT_FOOTER3}`;
 }
 
 // ../design-architecture/src/judgments.ts
-function latestAssistantTurnText5(history) {
+function latestAssistantTurnText4(history) {
   let finalAssistantIndex = -1;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const message = history[index];
-    if (message?.role === "assistant" && completeMessageText4(message)) {
+    if (message?.role === "assistant" && completeMessageText3(message)) {
       finalAssistantIndex = index;
       break;
     }
@@ -4026,7 +3912,7 @@ function latestAssistantTurnText5(history) {
       break;
     }
   }
-  const turn = history.slice(precedingUserIndex + 1, finalAssistantIndex + 1).filter((message) => message.role === "assistant").map(completeMessageText4).filter((text4) => text4.length > 0).join("\n\n").trim();
+  const turn = history.slice(precedingUserIndex + 1, finalAssistantIndex + 1).filter((message) => message.role === "assistant").map(completeMessageText3).filter((text4) => text4.length > 0).join("\n\n").trim();
   return turn.length > 0 ? turn : null;
 }
 function writerRoutingPrompt2(input) {
@@ -4049,7 +3935,7 @@ ${input.review}
 
 ${REVIEWER_ROUTING_INSTRUCTIONS}`);
 }
-function completeMessageText4(message) {
+function completeMessageText3(message) {
   return message.parts.filter((part) => part.type === "text" && part.state !== "streaming").map((part) => part.text).join("\n").trim();
 }
 
@@ -4083,7 +3969,7 @@ var DesignArchitectureGraph = createReviewedArtifactGraph({
     reviewerRouting: reviewerRoutingPrompt2
   },
   parse: { writerRoute: parseWriterRoute, reviewerRoute: parseReviewerRoute },
-  latestAssistantTurnText: latestAssistantTurnText5
+  latestAssistantTurnText: latestAssistantTurnText4
 });
 
 // ../design-program/src/constants.ts
@@ -4197,11 +4083,11 @@ ${PROMPT_FOOTER4}`;
 }
 
 // ../design-program/src/judgments.ts
-function latestAssistantTurnText6(history) {
+function latestAssistantTurnText5(history) {
   let finalAssistantIndex = -1;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const message = history[index];
-    if (message?.role === "assistant" && completeMessageText5(message)) {
+    if (message?.role === "assistant" && completeMessageText4(message)) {
       finalAssistantIndex = index;
       break;
     }
@@ -4214,7 +4100,7 @@ function latestAssistantTurnText6(history) {
       break;
     }
   }
-  const turn = history.slice(precedingUserIndex + 1, finalAssistantIndex + 1).filter((message) => message.role === "assistant").map(completeMessageText5).filter((text4) => text4.length > 0).join("\n\n").trim();
+  const turn = history.slice(precedingUserIndex + 1, finalAssistantIndex + 1).filter((message) => message.role === "assistant").map(completeMessageText4).filter((text4) => text4.length > 0).join("\n\n").trim();
   return turn.length > 0 ? turn : null;
 }
 function writerRoutingPrompt3(input) {
@@ -4237,7 +4123,7 @@ ${input.review}
 
 ${REVIEWER_ROUTING_INSTRUCTIONS}`);
 }
-function completeMessageText5(message) {
+function completeMessageText4(message) {
   return message.parts.filter((part) => part.type === "text" && part.state !== "streaming").map((part) => part.text).join("\n").trim();
 }
 
@@ -4273,7 +4159,7 @@ var DesignProgramGraph = createReviewedArtifactGraph({
     reviewerRouting: reviewerRoutingPrompt3
   },
   parse: { writerRoute: parseWriterRoute, reviewerRoute: parseReviewerRoute },
-  latestAssistantTurnText: latestAssistantTurnText6
+  latestAssistantTurnText: latestAssistantTurnText5
 });
 
 // src/graphs/design.ts
@@ -4700,7 +4586,7 @@ Return exactly one JSON object with exactly these fields and no markdown or comm
 }
 function readPullRequestResult(result, story) {
   if (result.status !== "completed") throw new Error(`Pull-request agent did not complete${result.error ? `: ${result.error}` : ""}.`);
-  const value = JSON.parse(extractJsonObject5(result.output ?? ""));
+  const value = JSON.parse(extractJsonObject4(result.output ?? ""));
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Pull-request result must be a JSON object.");
   const record = value;
   const expected = ["baseBranch", "body", "headBranch", "number", "outcome", "state", "title", "url"];
@@ -4734,7 +4620,7 @@ function storyLinkLine(story) {
   if (/^[^/\s]+\/[^/#\s]+#[1-9]\d*$/u.test(story)) return `Closes ${story}`;
   return `Related story: ${story}`;
 }
-function extractJsonObject5(output) {
+function extractJsonObject4(output) {
   const first = output.indexOf("{");
   const last = output.lastIndexOf("}");
   if (first < 0 || last < first) throw new Error("Pull-request output did not contain a JSON object.");

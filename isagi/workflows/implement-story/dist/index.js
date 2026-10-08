@@ -2750,63 +2750,6 @@ var planner = {
   model: "opus",
   effort: "high"
 };
-var plannerJudgment = {
-  harness: "codex",
-  model: "gpt-6-luna",
-  effort: "medium"
-};
-
-// src/judgments.ts
-function latestAssistantTurnText3(history) {
-  let finalAssistantIndex = -1;
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const message = history[index];
-    if (message?.role === "assistant" && completeMessageText2(message)) {
-      finalAssistantIndex = index;
-      break;
-    }
-  }
-  if (finalAssistantIndex < 0) return null;
-  let precedingUserIndex = -1;
-  for (let index = finalAssistantIndex - 1; index >= 0; index -= 1) {
-    if (history[index]?.role === "user") {
-      precedingUserIndex = index;
-      break;
-    }
-  }
-  const turn = history.slice(precedingUserIndex + 1, finalAssistantIndex + 1).filter((message) => message.role === "assistant").map(completeMessageText2).filter((text) => text.length > 0).join("\n\n").trim();
-  return turn.length > 0 ? turn : null;
-}
-function parsePlannerRoute(output) {
-  const record = parseExactObject(output, ["outcome"], "planner judgment");
-  if (record.outcome !== "ready" && record.outcome !== "failed") {
-    throw new Error("planner judgment outcome must be one of: failed, ready.");
-  }
-  return record.outcome;
-}
-function parseExactObject(output, expectedKeys, label) {
-  const value = JSON.parse(extractJsonObject4(output));
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label} must be a JSON object.`);
-  }
-  const record = value;
-  const keys = Object.keys(record);
-  if (keys.length !== expectedKeys.length || expectedKeys.some((key, index) => keys[index] !== key)) {
-    throw new Error(`${label} must contain exactly: ${expectedKeys.join(", ")}.`);
-  }
-  return record;
-}
-function completeMessageText2(message) {
-  return message.parts.filter((part) => part.type === "text" && part.state !== "streaming").map((part) => part.text).join("\n").trim();
-}
-function extractJsonObject4(output) {
-  const first = output.indexOf("{");
-  const last = output.lastIndexOf("}");
-  if (first < 0 || last < first) {
-    throw new Error("Judgment output did not contain a JSON object.");
-  }
-  return output.slice(first, last + 1);
-}
 
 // src/prompts.ts
 var PROMPT_FOOTER = "Do not run any tasks in the background, but you are allowed to run tasks and shell commands in the foreground.";
@@ -2826,24 +2769,9 @@ Read the inputs and inspect the relevant repository code and referenced mocks. U
 
 For this plan, omit mock-UI phases and repository documentation work. UI exploration has already happened under human direction; the brief captures its outcome and decisions. Treat the session-created mocks as throwaway artifacts and account for their removal or replacement with production implementation within the implementation phases.
 
-If you encounter consequential ambiguity, missing UI context, or inconsistency between the mocks, brief, and engineering documents, explain the concern and stop for human reconciliation.
+If you encounter consequential ambiguity, missing UI context, or inconsistency between the mocks, brief, and engineering documents, ask the human your questions and stop without writing index.md. The workflow waits for the human whenever index.md is missing.
 
-Write index.md last, only when the complete plan is ready and there are no unresolved escalations. Finish by reporting the entry plan path.`);
-}
-function plannerRoutingPrompt(input) {
-  return withPromptFooter(`You are an unattended routing judgment for an implementation-plan writer.
-
-Expected entry plan path: ${input.entryPlanPath}
-
-Writer response:
-${input.plannerResponse}
-
-Return exactly one JSON object with exactly this field:
-{"outcome":"ready"}
-
-Return "ready" when the writer reports that it created and finished the implementation plan at the expected directory. Return "failed" when it reports incomplete work, a different plan location, an unresolved blocker, intended future work, or a request for input instead of a completed plan.
-
-Every outcome is valid. Return no confidence, commentary, markdown, or extra JSON fields.`);
+Write index.md last, only when you have no open questions and the complete plan is ready. Finish by reporting the entry plan path.`);
 }
 function withPromptFooter(body) {
   return `${body}
@@ -2852,7 +2780,6 @@ ${PROMPT_FOOTER}`;
 }
 
 // src/planning.ts
-var PlannerJudgment = createJudgmentGraph({ key: "ImplementStoryPlannerJudgment", title: "Route the planner", parse: parsePlannerRoute });
 var PlanningGraph = m({
   key: "ImplementStoryPlanning",
   title: "Create the implementation plan",
@@ -2861,8 +2788,6 @@ var PlanningGraph = m({
     ...parameters,
     turn: null,
     planner: null,
-    plannerResponse: null,
-    route: null,
     reconcile: null,
     failure: null
   }),
@@ -2873,8 +2798,6 @@ var PlanningGraph = m({
     plan: c.replace(),
     turn: c.replace(),
     planner: c.replace(),
-    plannerResponse: c.replace(),
-    route: c.replace(),
     reconcile: c.replace(),
     failure: c.replace()
   },
@@ -2900,85 +2823,48 @@ var PlanningGraph = m({
       }),
       onResult: (_state, turn) => ({ turn, planner: turn.agent })
     }),
-    readResponse: l(async (ctx, state) => {
-      if (!entryPlanExists(state)) {
-        return g({ update: { reconcile: `Plan entry ${state.plan.entryPlanPath} is missing. Work with the planner to resolve concerns and create the plan, then select Continue.` } });
-      }
-      const plannerSession = must4(state.planner, "planner");
-      const plannerResponse = latestAssistantTurnText3(await ctx.getConversationHistory(plannerSession.agentSessionId));
-      if (plannerResponse) return g({ update: { plannerResponse } });
-      return failStep(ctx, { phase: "Implement story failed", message: "No implementation-plan response was found" }, `Planner session ${plannerSession.agentSessionId} has no complete assistant turn to inspect.`);
-    }, { title: "Read the planner's response" }),
-    judge: u({
-      graph: PlannerJudgment,
-      title: "Route the planner response",
-      parameters: (state) => ({
-        label: "implementation-plan",
-        profile: plannerJudgment,
-        prompt: plannerRoutingPrompt({ plannerResponse: must4(state.plannerResponse, "planner response"), entryPlanPath: state.plan.entryPlanPath })
-      }),
-      // A rejudge reads the planner's latest response again before routing it.
-      onResult: (_state, { output }) => ({ route: output.outcome === "judged" ? output.route : null })
-    }),
-    validate: l(async (ctx, state) => {
-      const route = must4(state.route, "planner route");
-      await ctx.log("info", `Implementation-plan routing outcome=${route}.`);
-      if (route === "failed") {
-        return g({ update: { reconcile: `Resolve the planner's concerns and finish the plan, then select Continue. Planner response:
-${must4(state.plannerResponse, "planner response")}` } });
-      }
-      const validationError = planArtifactError(state.repositoryPath, state.plan);
-      return validationError ? g({ update: { reconcile: validationError } }) : g();
+    checkPlan: l(async (_ctx, state) => {
+      const planError = planArtifactError(state.repositoryPath, state.plan);
+      return planError ? g({ update: { reconcile: planError } }) : g();
     }, { title: "Check the plan files" }),
     reconcile: l(async (ctx, state) => {
       const message = must4(state.reconcile, "reconciliation message");
       await ctx.setUiFeedback({ kind: "warning", phase: "Planner needs human reconciliation", message });
       await ctx.log("warning", message);
       return _({ wait: y.userContinue() });
-    }, { title: "Reconcile the plan with the planner" }),
-    recheckPlan: l(async (_ctx, state) => {
-      if (entryPlanExists(state)) return g();
-      return g({ update: { reconcile: `Plan entry ${state.plan.entryPlanPath} is still missing. Talk to the planner to ensure it is created, then select Continue.` } });
-    }, { title: "Check the plan entry again" })
+    }, { title: "Reconcile the plan with the planner" })
   },
   edges: {
     afterWritePlan: f({
       from: "writePlan",
-      to: ["readResponse", "failed"],
+      to: ["checkPlan", "failed"],
       choose: (state) => {
         const turn = must4(state.turn, "planner turn");
-        if (turn.outcome === "ended") return { to: "readResponse" };
+        if (turn.outcome === "ended") return { to: "checkPlan" };
         return { to: "failed", update: { failure: { message: "Implementation-plan writer failed", diagnostic: `Implementation-plan writer turn failed: ${turn.reason}` } } };
       }
     }),
-    afterReadResponse: f({ from: "readResponse", to: ["reconcile", "judge"], choose: (state) => ({ to: state.reconcile ? "reconcile" : "judge" }) }),
-    afterJudge: f({ from: "judge", to: ["validate", "readResponse"], choose: (state) => ({ to: state.route === null ? "readResponse" : "validate" }) }),
-    afterValidate: f({ from: "validate", to: ["reconcile", "ready"], choose: (state) => ({ to: state.reconcile ? "reconcile" : "ready" }) }),
+    afterCheckPlan: f({ from: "checkPlan", to: ["reconcile", "ready"], choose: (state) => ({ to: state.reconcile ? "reconcile" : "ready" }) }),
     afterReconcile: f({
       from: "reconcile",
-      to: ["recheckPlan"],
+      to: ["checkPlan"],
       choose: (_state, event) => {
         if (event.kind !== "user_continue") throw new Error(`Planner reconciliation resumed with an unexpected ${event.kind} event.`);
-        return { to: "recheckPlan", update: { reconcile: null } };
+        return { to: "checkPlan", update: { reconcile: null } };
       }
-    }),
-    afterRecheckPlan: f({ from: "recheckPlan", to: ["reconcile", "ready"], choose: (state) => ({ to: state.reconcile ? "reconcile" : "ready" }) })
+    })
   },
   outcomes: {
     ready: p({ kind: "success", title: "Plan ready", output: (state) => ({ outcome: "ready", planner: must4(state.planner, "planner") }) }),
     failed: p({ kind: "failure", title: "Plan not created", output: (state) => ({ outcome: "failed", failure: must4(state.failure, "failure") }) })
   }
 });
-function entryPlanExists(state) {
-  const path = resolve2(state.repositoryPath, state.plan.entryPlanPath);
-  return existsSync2(path) && statSync2(path).isFile();
-}
 function planArtifactError(repositoryPath, plan) {
   const entryPath = resolve2(repositoryPath, plan.entryPlanPath);
-  if (!existsSync2(entryPath) || !statSync2(entryPath).isFile()) return `Expected implementation-plan entry file ${plan.entryPlanPath} was not created.`;
+  if (!existsSync2(entryPath) || !statSync2(entryPath).isFile()) return `The planner has not written ${plan.entryPlanPath}, so it likely has questions for you. Work with the planner until it writes the plan, then select Continue.`;
   const directoryPath = resolve2(repositoryPath, plan.planDirectory);
   const phaseFiles = readdirSync2(directoryPath).filter((name) => /^phase-\d{2}-.+\.md$/.test(name));
-  if (phaseFiles.length === 0) return `Implementation plan ${plan.planDirectory} contains no phase files.`;
+  if (phaseFiles.length === 0) return `Implementation plan ${plan.planDirectory} contains no phase files. Work with the planner until it writes them, then select Continue.`;
   return null;
 }
 function must4(value, label) {
