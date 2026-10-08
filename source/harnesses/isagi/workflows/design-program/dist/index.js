@@ -337,6 +337,10 @@ function routeJudgment(state, event, parse) {
   return { to: state.attempts < MAX_ATTEMPTS ? "judge" : "askUser", update: { error } };
 }
 
+// ../../workflow-libraries/common-graphs/src/reviewed-artifact.ts
+import { stat } from "node:fs/promises";
+import { resolve } from "node:path";
+
 // ../../workflow-libraries/common-graphs/src/fail-step.ts
 async function failStep(ctx, feedback, diagnostic) {
   await ctx.setUiFeedback({ kind: "error", ...feedback });
@@ -345,13 +349,14 @@ async function failStep(ctx, feedback, diagnostic) {
 }
 
 // ../../workflow-libraries/common-graphs/src/reviewed-artifact.ts
+var MAX_WRITER_RECOVERIES = 1;
 function createReviewedArtifactGraph(config) {
   const writer2 = createWriterGraph(config);
   const review = createReviewGraph(config);
   return m({
     key: config.key,
     title: config.title,
-    init: (_destination, context) => ({ context, writer: null, reviewer: null, writerResponse: null, review: null, reviewRound: 0, verdict: null, failure: null }),
+    init: (_destination, context) => ({ context, writer: null, reviewer: null, writerResponse: null, review: null, reviewRound: 0, verdict: null, reviewReason: null, failure: null }),
     state: {
       context: c.replace(),
       writer: c.replace(),
@@ -360,6 +365,7 @@ function createReviewedArtifactGraph(config) {
       review: c.replace(),
       reviewRound: c.replace(),
       verdict: c.replace(),
+      reviewReason: c.replace(),
       failure: c.replace()
     },
     entry: "write",
@@ -375,12 +381,26 @@ function createReviewedArtifactGraph(config) {
         title: "Review the artifact",
         label: (state) => `Review round ${state.reviewer ? state.reviewRound + 1 : 1}`,
         parameters: (state) => ({ context: state.context, reviewer: state.reviewer, writerResponse: state.writerResponse, round: state.reviewer ? state.reviewRound + 1 : 1 }),
-        onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { reviewer: output.reviewer, review: output.review, verdict: output.verdict, reviewRound: output.round }
+        onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { reviewer: output.reviewer, review: output.review, verdict: output.verdict, reviewReason: output.reason, reviewRound: output.round }
       }),
       revise: u({
         graph: writer2,
         title: "Revise the artifact",
         parameters: (state) => ({ context: state.context, writer: must2(state.writer, "writer"), review: must2(state.review, "review") }),
+        onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { writerResponse: output.response }
+      }),
+      askHuman: l(async (ctx, state) => {
+        const reason = must2(state.reviewReason, "review decision");
+        const message = `${reason} Resolve it with ${config.roles.writer.toLowerCase()}, then select Continue.`;
+        await ctx.setUiFeedback({ kind: "warning", phase: "Waiting for your decision", message });
+        await ctx.log("warning", `${config.roundLabel} ${state.reviewRound} needs a human decision: ${reason}
+${must2(state.review, "review")}`);
+        return _({ wait: y.userContinue(message) });
+      }, { title: "Wait for your decision" }),
+      replay: u({
+        graph: writer2,
+        title: "Incorporate your decision",
+        parameters: (state) => ({ context: state.context, writer: must2(state.writer, "writer"), review: must2(state.review, "review"), afterHumanDecision: true }),
         onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { writerResponse: output.response }
       }),
       finish: l(async (ctx, state) => {
@@ -401,13 +421,19 @@ function createReviewedArtifactGraph(config) {
       afterWrite: f({ from: "write", to: ["review", "reportFailure"], choose: (state) => ({ to: state.failure ? "reportFailure" : "review" }) }),
       afterReview: f({
         from: "review",
-        to: ["finish", "revise", "reportFailure"],
+        to: ["finish", "revise", "askHuman", "reportFailure"],
         choose: (state) => {
           if (state.failure) return { to: "reportFailure" };
+          if (state.verdict === "human-decision") return { to: "askHuman" };
           return { to: state.verdict === "complete" ? "finish" : "revise" };
         }
       }),
       afterRevise: f({ from: "revise", to: ["review", "reportFailure"], choose: (state) => ({ to: state.failure ? "reportFailure" : "review" }) }),
+      afterAskHuman: f({ from: "askHuman", to: ["replay"], choose: (_state, event) => {
+        if (event.kind !== "user_continue") throw new Error(`The human decision resumed with an unexpected ${event.kind} event.`);
+        return { to: "replay" };
+      } }),
+      afterReplay: f({ from: "replay", to: ["review", "reportFailure"], choose: (state) => ({ to: state.failure ? "reportFailure" : "review" }) }),
       afterFinish: f({ from: "finish", to: ["reviewed"], choose: () => ({ to: "reviewed" }) }),
       afterReportFailure: f({ from: "reportFailure", to: ["failed"], choose: () => ({ to: "failed" }) })
     },
@@ -430,9 +456,11 @@ function createWriterGraph(config) {
       ...parameters,
       turn: null,
       response: null,
-      mode: "normal",
-      recoveredNewer: false,
+      afterHumanDecision: parameters.afterHumanDecision ?? false,
+      artifactExists: false,
+      recoveryAttempts: 0,
       route: null,
+      routingReason: null,
       failure: null
     }),
     state: {
@@ -442,9 +470,11 @@ function createWriterGraph(config) {
       review: c.replace(),
       turn: c.replace(),
       response: c.replace(),
-      mode: c.replace(),
-      recoveredNewer: c.replace(),
+      afterHumanDecision: c.replace(),
+      artifactExists: c.replace(),
+      recoveryAttempts: c.replace(),
       route: c.replace(),
+      routingReason: c.replace(),
       failure: c.replace()
     },
     entry: "prompt",
@@ -461,7 +491,7 @@ function createWriterGraph(config) {
         } : {
           label: role,
           session: { kind: "existing", ...state.writer },
-          prompt: config.prompts.reviewToWriter(must2(state.review, "review")),
+          prompt: state.afterHumanDecision ? continuationPrompt(state) : config.prompts.reviewToWriter(must2(state.review, "review")),
           feedback: { phase: config.phases.revising },
           ...resubmit
         },
@@ -470,7 +500,10 @@ function createWriterGraph(config) {
       readResponse: l(async (ctx, state) => {
         const writer2 = must2(state.writer, "writer");
         const response = config.latestAssistantTurnText(await ctx.getConversationHistory(writer2.agentSessionId));
-        if (response) return g({ update: { response } });
+        if (response) {
+          const artifactExists = await artifactFileExists(resolve(state.repositoryPath, state.context.artifactPath));
+          return g({ update: { response, artifactExists } });
+        }
         return failStep(ctx, { phase: config.phases.failed, message: "No writer response was found" }, `writer session ${writer2.agentSessionId} has no complete assistant turn to inspect.`);
       }, { title: "Read the writer's reply" }),
       judge: u({
@@ -479,28 +512,34 @@ function createWriterGraph(config) {
         parameters: (state) => ({
           label: "writer",
           profile: config.profiles.writerJudgment,
-          prompt: config.prompts.writerRouting({ writerResponse: must2(state.response, "writer response"), artifactPath: state.context.artifactPath }),
+          prompt: config.prompts.writerRouting({ writerResponse: must2(state.response, "writer response"), artifactPath: state.context.artifactPath, artifactExists: state.artifactExists }),
           feedback: { phase: config.phases.checkingWriter }
         }),
-        onResult: (_state, { output }) => ({ route: output.outcome === "judged" ? output.route : null })
+        onResult: (_state, { output }) => output.outcome === "judged" ? { route: output.route.outcome, routingReason: output.route.reason } : { route: null, routingReason: null }
       }),
       askUser: l(async (ctx, state) => {
         const writer2 = must2(state.writer, "writer");
-        await ctx.setUiFeedback({ kind: "warning", phase: "The writer did not produce a reviewable artifact", message: "Resolve it with the writer, then select Continue." });
-        await ctx.log("warning", `Writer session ${writer2.agentSessionId} did not complete its artifact turn. Latest response:
+        const phase = state.route === "human-decision" ? "Waiting for your decision" : "The writer needs help finishing the artifact";
+        const reason = state.artifactExists || state.route === "human-decision" ? must2(state.routingReason, "writer routing reason") : `The artifact file is missing or empty at ${state.context.artifactPath}.`;
+        const message = `${reason} Resolve it with ${role.toLowerCase()}, then select Continue.`;
+        await ctx.setUiFeedback({ kind: "warning", phase, message });
+        await ctx.log("warning", `Writer session ${writer2.agentSessionId}: ${phase}. ${reason}
+Latest response:
 ${must2(state.response, "writer response")}`);
-        return _({ wait: y.userContinue("The writer did not produce a reviewable artifact. Resolve it with the writer, then Continue.") });
+        return _({ wait: y.userContinue(message) });
       }, { title: "Ask the user to resolve the writer" }),
-      // A newer complete reply is judged without another prompt; otherwise the writer is nudged once.
-      recover: l(async (ctx, state) => {
-        const writer2 = must2(state.writer, "writer");
-        const latest = config.latestAssistantTurnText(await ctx.getConversationHistory(writer2.agentSessionId));
-        if (latest && latest !== state.response) {
-          await ctx.log("info", `Found a newer complete turn in ${role.toLowerCase()} session ${writer2.agentSessionId}; routing the latest response.`);
-          return g({ update: { response: latest, mode: "retry_recheck", recoveredNewer: true } });
-        }
-        return g({ update: { recoveredNewer: false } });
-      }, { title: "Check for a newer writer reply" }),
+      recover: l(async () => g({ update: { recoveryAttempts: 0 } }), { title: "Prepare the updated writer response" }),
+      replay: agentTurn({
+        title: "Incorporate your decision and reply to the reviewer",
+        parameters: (state) => ({
+          label: role,
+          session: { kind: "existing", ...must2(state.writer, "writer") },
+          prompt: continuationPrompt(state),
+          feedback: { phase: config.phases.revising },
+          ...resubmit
+        }),
+        onResult: (_state, turn) => ({ turn })
+      }),
       nudge: agentTurn({
         title: "Nudge the writer once",
         parameters: (state) => ({
@@ -510,7 +549,7 @@ ${must2(state.response, "writer response")}`);
           feedback: { phase: config.phases.recoveringWriter },
           ...resubmit
         }),
-        onResult: (_state, turn) => ({ turn })
+        onResult: (state, turn) => ({ turn, recoveryAttempts: state.recoveryAttempts + 1 })
       })
     },
     edges: {
@@ -518,12 +557,12 @@ ${must2(state.response, "writer response")}`);
       afterReadResponse: f({ from: "readResponse", to: ["judge"], choose: () => ({ to: "judge" }) }),
       afterJudge: f({
         from: "judge",
-        to: ["ready", "nudge", "askUser", "recover"],
+        to: ["ready", "nudge", "askUser", "readResponse"],
         choose: (state) => {
-          if (state.route === null) return { to: "recover" };
-          if (state.route === "ready") return { to: "ready" };
-          if (state.mode === "retry_recheck") return { to: "nudge", update: { mode: "normal" } };
-          return { to: "askUser" };
+          if (state.route === null) return { to: "readResponse" };
+          if (state.route === "human-decision") return { to: "askUser" };
+          if (state.route === "ready" && state.artifactExists) return { to: "ready" };
+          return { to: state.recoveryAttempts < MAX_WRITER_RECOVERIES ? "nudge" : "askUser" };
         }
       }),
       afterAskUser: f({
@@ -534,7 +573,8 @@ ${must2(state.response, "writer response")}`);
           return { to: "recover" };
         }
       }),
-      afterRecover: f({ from: "recover", to: ["judge", "nudge"], choose: (state) => ({ to: state.recoveredNewer ? "judge" : "nudge" }) }),
+      afterRecover: f({ from: "recover", to: ["replay"], choose: () => ({ to: "replay" }) }),
+      afterReplay: afterWriterTurn("replay", role, "readResponse"),
       afterNudge: afterWriterTurn("nudge", role, "readResponse")
     },
     outcomes: {
@@ -542,6 +582,9 @@ ${must2(state.response, "writer response")}`);
       failed: p({ kind: "failure", title: "Writer failed", output: (state) => ({ outcome: "failed", failure: must2(state.failure, "failure") }) })
     }
   });
+  function continuationPrompt(state) {
+    return config.prompts.continueWriter(state.review);
+  }
   function afterWriterTurn(from, label, next = "readResponse") {
     return f({ from, to: [next, "failed"], choose: (state) => afterTurn(state, label, next) });
   }
@@ -554,7 +597,7 @@ function createReviewGraph(config) {
     key: `${config.key}Review`,
     title: "Review round",
     label: (parameters) => `Review round ${parameters.round}`,
-    init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, turn: null, review: null, verdict: null, failure: null }),
+    init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, turn: null, review: null, verdict: null, routingReason: null, failure: null }),
     state: {
       repositoryPath: c.replace(),
       context: c.replace(),
@@ -564,6 +607,7 @@ function createReviewGraph(config) {
       turn: c.replace(),
       review: c.replace(),
       verdict: c.replace(),
+      routingReason: c.replace(),
       failure: c.replace()
     },
     entry: "prompt",
@@ -601,32 +645,18 @@ function createReviewGraph(config) {
           prompt: config.prompts.reviewerRouting({ review: must2(state.review, "review") }),
           feedback: { phase: config.phases.routingReview }
         }),
-        onResult: (_state, { output }) => ({ verdict: output.outcome === "judged" ? output.route : null })
-      }),
-      askHuman: l(async (ctx, state) => {
-        await ctx.setUiFeedback({ kind: "warning", phase: "Waiting for your decision", message: "The reviewer raised a human escalation. Resolve it with the reviewer, then continue the workflow." });
-        await ctx.log("warning", `Reviewer raised a human escalation in ${config.roundLabel} ${state.round}.`);
-        return _({ wait: y.userContinue() });
-      }, { title: "Wait for your decision" })
+        onResult: (_state, { output }) => output.outcome === "judged" ? { verdict: output.route.outcome, routingReason: output.route.reason } : { verdict: null, routingReason: null }
+      })
     },
     edges: {
       afterPrompt: f({ from: "prompt", to: ["readReview", "failed"], choose: (state) => afterTurn(state, role, "readReview") }),
       afterReadReview: f({ from: "readReview", to: ["judge"], choose: () => ({ to: "judge" }) }),
       afterJudge: f({
         from: "judge",
-        to: ["reviewed", "askHuman", "readReview"],
+        to: ["reviewed", "readReview"],
         choose: (state) => {
           if (state.verdict === null) return { to: "readReview" };
-          return { to: state.verdict === "human-decision" ? "askHuman" : "reviewed" };
-        }
-      }),
-      // After the human decision, the reviewer session's latest complete turn is judged again.
-      afterAskHuman: f({
-        from: "askHuman",
-        to: ["readReview"],
-        choose: (_state, event) => {
-          if (event.kind !== "user_continue") throw new Error(`The human decision resumed with an unexpected ${event.kind} event.`);
-          return { to: "readReview" };
+          return { to: "reviewed" };
         }
       })
     },
@@ -636,13 +666,21 @@ function createReviewGraph(config) {
         title: "Reviewed",
         output: (state) => {
           const verdict = must2(state.verdict, "verdict");
-          if (verdict === "human-decision") throw new Error("A human decision cannot end a review round.");
-          return { outcome: "reviewed", verdict, reviewer: must2(state.reviewer, "reviewer"), review: must2(state.review, "review"), round: state.round };
+          return { outcome: "reviewed", verdict, reason: must2(state.routingReason, "review routing reason"), reviewer: must2(state.reviewer, "reviewer"), review: must2(state.review, "review"), round: state.round };
         }
       }),
       failed: p({ kind: "failure", title: "Review failed", output: (state) => ({ outcome: "failed", failure: must2(state.failure, "failure") }) })
     }
   });
+}
+async function artifactFileExists(path) {
+  try {
+    const info = await stat(path);
+    return info.isFile() && info.size > 0;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")) return false;
+    throw error;
+  }
 }
 function afterTurn(state, label, next) {
   const turn = must2(state.turn, "agent turn");
@@ -652,6 +690,50 @@ function afterTurn(state, label, next) {
 function must2(value, label) {
   if (value === null) throw new Error(`Reviewed artifact state is missing its ${label}.`);
   return value;
+}
+
+// ../../workflow-libraries/common-graphs/src/artifact-routing.ts
+var WRITER_ROUTING_INSTRUCTIONS = `Return exactly one JSON object with exactly these fields:
+{"outcome":"ready","reason":"The writing or revision is complete and ready for review."}
+
+Apply this precedence:
+1. Return "human-decision" when the writer identifies a specific unresolved user decision or input that blocks further writing or acceptance. This takes precedence even when the file exists and the writer says it is ready for review. Name the decision in reason. Writer and reviewer agreement does not remove the need for the user's decision.
+2. Return "ready" when the artifact file exists and the writer reports completed writing or revisions for review, including an evidence-backed response that applies some findings and pushes back on others. Ready for review is separate from reviewer acceptance. Findings the reviewer can adjudicate and nonblocking recorded uncertainty do not make a completed turn incomplete.
+3. Return "incomplete" when the artifact file is missing or the writer reports unfinished writing, only intended future work, or no completed artifact turn. Explain what remains in reason.
+
+Every outcome is valid on every invocation. Return a concise, nonempty reason and no confidence, commentary, markdown, or extra JSON fields.`;
+var REVIEWER_ROUTING_INSTRUCTIONS = `Return exactly one JSON object with exactly these fields:
+{"outcome":"revise","reason":"The artifact needs corrections."}
+
+Apply this precedence:
+1. Return "human-decision" when the reviewer identifies a specific unresolved decision or input that requires the user before writing or acceptance can proceed, or explicitly escalates a fundamental impasse. Name the decision in reason. A required user decision takes precedence over closure language or a contradictory "No escalation." section. An ordinary disagreement or held finding that the agents can resolve is not a human decision.
+2. Return "complete" when the reviewer explicitly closes the loop with "No re-review needed." and does not simultaneously report an open Blocker, Concern, or human decision. Optional findings may coexist with completion.
+3. Return "revise" for every other response, including any Blocker or Concern the writer can address, incomplete corrections, held findings, new findings, ambiguous closure language, and requests for another review round.
+
+Every outcome is valid on every invocation. Return a concise, nonempty reason and no confidence, commentary, markdown, or extra JSON fields.`;
+var REVIEWER_ESCALATION_AND_CLOSURE = `Always include a Human Escalation section. When a specific unresolved user decision or input blocks further writing or acceptance, explicitly state "Escalation required:", explain the decision, the recommendation, alternatives, and consequences. Escalate this decision even when you and the writer agree. Also escalate a fundamental impasse when repeated substantive disagreement is unlikely to be resolved by another exchange, explaining both positions. Otherwise state "No escalation." An ordinary disagreement or held finding the agents can resolve is not an escalation.
+
+When no Blocker, Concern, or blocking human decision remains, end with the exact line: No re-review needed.`;
+var WRITER_INPUT_POLICY = `When a specific user decision or input blocks further writing or acceptance, preserve the completed work and clearly state the decision needed, your recommendation, alternatives, and consequences. Distinguish this blocking decision from nonblocking uncertainty and findings the reviewer can adjudicate. Keep scope decisions with the user.`;
+var WRITER_CONTINUATION_INSTRUCTIONS = `Incorporate the decisions and changes from our conversation into the artifact and any affected predecessor artifacts. Preserve completed work and verify the updated artifacts. Then provide a fresh response for the reviewer explaining the incorporated decisions, changes, and any remaining evidence-backed pushback. State whether a specific unresolved user decision still blocks progress. Produce an updated reviewer-facing response rather than repeating an outdated reply.`;
+function parseWriterRoute(output) {
+  return parseJudgment(output, ["ready", "incomplete", "human-decision"], "writer");
+}
+function parseReviewerRoute(output) {
+  return parseJudgment(output, ["complete", "revise", "human-decision"], "reviewer");
+}
+function parseJudgment(output, allowed, label) {
+  const first = output.indexOf("{");
+  const last = output.lastIndexOf("}");
+  if (first < 0 || last < first) throw new Error("Judgment output did not contain a JSON object.");
+  const value = JSON.parse(output.slice(first, last + 1));
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} judgment must be a JSON object.`);
+  const record = value;
+  const keys = Object.keys(record);
+  if (keys.length !== 2 || !keys.includes("outcome") || !keys.includes("reason")) throw new Error(`${label} judgment must contain exactly two fields: outcome and reason.`);
+  if (typeof record.outcome !== "string" || !allowed.includes(record.outcome)) throw new Error(`${label} judgment outcome must be one of: ${allowed.join(", ")}.`);
+  if (typeof record.reason !== "string" || record.reason.trim().length === 0) throw new Error(`${label} judgment reason must be nonempty text.`);
+  return { outcome: record.outcome, reason: record.reason.trim() };
 }
 
 // src/constants.ts
@@ -699,9 +781,6 @@ State "None." under a section with no findings. Consolidate findings with the sa
 Keep the review at the program-design boundary. Exact changed contracts, load-bearing module homes and symbols, representations and invariants, detailed state and failure mechanics, consequential algorithms, compatibility mechanics, and verification seams are valid program-design concerns. Do not demand exhaustive file-change inventories, implementation phases or task ordering, construction strategy, temporary breakage, debt repayment, verification commands or phase assignments, complete function bodies, incidental private helpers, or line-by-line code.
 
 Review the program design from first principles and inspect the current architecture and current-state analysis wherever the design depends on them. Assess the current artifact set rather than attempting to reconstruct changes between review rounds or separately auditing predecessor artifacts beyond what the program design requires.`;
-var REVIEWER_ESCALATION_AND_CLOSURE = `Always include a Human Escalation section. State "No escalation." unless you and the writer have repeatedly disagreed on the same substantive issue and another exchange is unlikely to resolve it. In that case, explicitly state "Escalation required:", summarize both positions, and name the decision a human must make. A first disagreement or a held finding is not an escalation.
-
-When no Blocker or Concern remains, end with the exact line: No re-review needed.`;
 function initialWriterPrompt(input) {
   return withPromptFooter(`Design the program for the supplied story and write the complete artifact at the requested path.
 
@@ -713,7 +792,7 @@ Program-design artifact path: ${input.artifactPath}
 
 ${DESIGN_SCOPE}
 
-Work unattended. Preserve the story, use the predecessor artifacts and repository as evidence, and converge on one simple, maintainable program design with enough precision to implement the binding scope. Finish with the artifact ready for an independent review, making any unresolved user decision explicit. If program design exposes a substantive flaw in the current-state analysis or architecture, update the affected predecessor artifact and keep the artifact set coherent.`);
+Work unattended. Preserve the story, use the predecessor artifacts and repository as evidence, and converge on one simple, maintainable program design with enough precision to implement the binding scope. Finish with the artifact ready for an independent review, making any unresolved user decision explicit. ${WRITER_INPUT_POLICY} If program design exposes a substantive flaw in the current-state analysis or architecture, update the affected predecessor artifact and keep the artifact set coherent.`);
 }
 function reviewToWriterPrompt(review) {
   return withPromptFooter(`Here is the review of the program design:
@@ -722,12 +801,18 @@ ${review}
 
 ${DESIGN_SCOPE}
 
-Evaluate every finding against the story's binding scope, current-state analysis, and repository evidence, building on the completed architecture. Update the program-design artifact wherever the review improves its correctness, simplicity, coherence, or decision quality within that scope. Correct a predecessor artifact only when resolving a substantive flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect, expands the binding scope, treats a suggestion as a requirement, or would make the design worse. Finish with the current artifact set ready for another independent review.`);
+Evaluate every finding against the story's binding scope, current-state analysis, and repository evidence, building on the completed architecture. Update the program-design artifact wherever the review improves its correctness, simplicity, coherence, or decision quality within that scope. Correct a predecessor artifact only when resolving a substantive flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect, expands the binding scope, treats a suggestion as a requirement, or would make the design worse. Finish with the current artifact set ready for another independent review. ${WRITER_INPUT_POLICY}`);
 }
 function retryWriterPrompt() {
   return withPromptFooter(
-    `Resume the program-design work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`
+    `Resume the program-design work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and provide a completed response for review. ${WRITER_INPUT_POLICY}`
   );
+}
+function continueWriterPrompt(review) {
+  return withPromptFooter(`${WRITER_CONTINUATION_INSTRUCTIONS}${review ? `
+
+Review to address:
+${review}` : ""}`);
 }
 function initialReviewerPrompt(input) {
   return withPromptFooter(`Independently review the program design from first principles.
@@ -787,15 +872,12 @@ function writerRoutingPrompt(input) {
 
 Program-design artifact path: ${input.artifactPath}
 
+Nonempty artifact file exists: ${input.artifactExists}
+
 Writer response:
 ${input.writerResponse}
 
-Return exactly one JSON object with exactly this field:
-{"outcome":"ready"}
-
-Return "ready" when the writer reports that it completed the requested writing or revision turn and the program-design artifact is ready for review. A response that applies some findings and pushes back on others is ready when that work is complete. Return "failed" when the writer reports that it did not create or finish the artifact, says work remains, only describes intended future work, asks for input instead of completing the artifact, or otherwise does not report a completed artifact turn.
-
-Every outcome is valid on every invocation. Return no confidence, commentary, markdown, or extra JSON fields.`);
+${WRITER_ROUTING_INSTRUCTIONS}`);
 }
 function reviewerRoutingPrompt(input) {
   return withPromptFooter(`You are an unattended routing judgment for a program-design reviewer.
@@ -803,51 +885,10 @@ function reviewerRoutingPrompt(input) {
 Reviewer response:
 ${input.review}
 
-Return exactly one JSON object with exactly this field:
-{"outcome":"revise"}
-
-Apply this precedence:
-1. Return "human-decision" when the Human Escalation section explicitly states "Escalation required:" and identifies a decision for the human. An ordinary disagreement, held finding, or "No escalation." is not a human decision.
-2. Return "complete" when the reviewer explicitly closes the loop with "No re-review needed." and does not simultaneously report an open Blocker, Concern, or human decision. Optional findings may coexist with completion.
-3. Return "revise" for every other response, including any Blocker or Concern, incomplete corrections, held findings, new findings, ambiguous closure language, and requests for another review round.
-
-Every outcome is valid on every invocation. Return no confidence, commentary, markdown, or extra JSON fields.`);
-}
-function parseWriterRoute(output) {
-  return parseOutcome(output, ["failed", "ready"], "writer");
-}
-function parseReviewerRoute(output) {
-  return parseOutcome(
-    output,
-    ["complete", "revise", "human-decision"],
-    "reviewer"
-  );
-}
-function parseOutcome(output, allowed, label) {
-  const value = JSON.parse(extractJsonObject(output));
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label} judgment must be a JSON object.`);
-  }
-  const record = value;
-  const keys = Object.keys(record);
-  if (keys.length !== 1 || keys[0] !== "outcome") {
-    throw new Error(`${label} judgment must contain exactly one field: outcome.`);
-  }
-  if (typeof record.outcome !== "string" || !allowed.includes(record.outcome)) {
-    throw new Error(`${label} judgment outcome must be one of: ${allowed.join(", ")}.`);
-  }
-  return record.outcome;
+${REVIEWER_ROUTING_INSTRUCTIONS}`);
 }
 function completeMessageText(message) {
   return message.parts.filter((part) => part.type === "text" && part.state !== "streaming").map((part) => part.text).join("\n").trim();
-}
-function extractJsonObject(output) {
-  const first = output.indexOf("{");
-  const last = output.lastIndexOf("}");
-  if (first < 0 || last < first) {
-    throw new Error("Judgment output did not contain a JSON object.");
-  }
-  return output.slice(first, last + 1);
 }
 
 // src/graph.ts
@@ -875,6 +916,7 @@ var DesignProgramGraph = createReviewedArtifactGraph({
     initialWriter: initialWriterPrompt,
     reviewToWriter: reviewToWriterPrompt,
     retryWriter: retryWriterPrompt,
+    continueWriter: continueWriterPrompt,
     initialReviewer: initialReviewerPrompt,
     writerToReviewer: writerToReviewerPrompt,
     writerRouting: writerRoutingPrompt,

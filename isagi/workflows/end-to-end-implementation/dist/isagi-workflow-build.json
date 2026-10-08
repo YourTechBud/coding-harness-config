@@ -14,11 +14,11 @@
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "99ee46218b38cf129909ce592f213f6f9315f8457e81fe06d83a0ac068fa3a57"
+    "sha256": "f7aa7352928af4766f106fbcdeb61cada437084e5328ca907bae84a46231b035"
   },
   "structure": {
     "descriptorVersion": 2,
-    "sha256": "032c19d89983577e8922fd20f8b1867c22b9760e2244f11fd4e07b8c116c5f15",
+    "sha256": "02fedc7757b839fb644b69b2eb95e5bcd7efab799cd33ac3bca9698689166cba",
     "rootGraphKey": "EndToEndImplementation",
     "graphCount": 48
   }

@@ -9,7 +9,7 @@ import { reviewer, reviewerJudgment, writer, writerJudgment } from '../src/const
 import { AnalyzeCurrentStateGraph, type AnalyzeCurrentStateParameters } from '../src/graph.js';
 import workflow from '../src/index.js';
 import { reviewerRoutingPrompt, writerRoutingPrompt } from '../src/judgments.js';
-import { initialReviewerPrompt, initialWriterPrompt, PROMPT_FOOTER, retryWriterPrompt } from '../src/prompts.js';
+import { continueWriterPrompt, initialReviewerPrompt, initialWriterPrompt, PROMPT_FOOTER, retryWriterPrompt } from '../src/prompts.js';
 
 // The writer/reviewer loop itself is tested in isagi-workflow-common-graphs. These tests prove this
 // workflow hands the loop its own launch form, profiles, skill, prompts, judgments, and wording.
@@ -55,11 +55,11 @@ test('a ready writer starts the independently configured reviewer with the same 
 });
 
 test('writer and reviewer replies are judged with their configured profiles and routing prompts', () => {
-  const writerState = { ...writerGraph.init(destination, { context: parameters, writer: null, review: null }), response: 'Done.' };
+  const writerState = { ...writerGraph.init(destination, { context: parameters, writer: null, review: null }), response: 'Done.', artifactExists: true };
   assert.deepEqual(subgraphParameters<JudgmentParameters>(writerGraph, 'judge', writerState), {
     label: 'writer',
     profile: writerJudgment,
-    prompt: writerRoutingPrompt({ writerResponse: 'Done.', artifactPath: parameters.artifactPath }),
+    prompt: writerRoutingPrompt({ writerResponse: 'Done.', artifactPath: parameters.artifactPath, artifactExists: true }),
     feedback: { phase: 'Checking writer progress' },
   });
   const reviewState = { ...reviewGraph.init(destination, { context: parameters, reviewer: null, writerResponse: null, round: 1 }), review: 'No re-review needed.' };
@@ -84,4 +84,15 @@ test('the loop is keyed for this workflow and returns the reviewed artifact', ()
   for (const each of [graph, writerGraph, reviewGraph]) assertDestinationsDeclared(each);
   const finished = { ...graph.init(destination, parameters), reviewRound: 2 };
   assert.deepEqual(graph.outcomes.reviewed!.output(finished), { outcome: 'artifact-reviewed', artifactPath: parameters.artifactPath, reviewCount: 2 });
+});
+
+test('Continue uses the shared decision-incorporation prompt with this workflow footer', () => {
+  const pane = { agentSessionId: 11, paneId: 21 };
+  const state = writerGraph.init(destination, { context: parameters, writer: pane, review: 'Choose U1.' });
+  const turn = subgraphParameters<AgentTurnParameters>(writerGraph, 'replay', state);
+  assert.deepEqual(turn.session, { kind: 'existing', ...pane });
+  assert.equal(turn.prompt, continueWriterPrompt('Choose U1.'));
+  assert.match(turn.prompt ?? '', /fresh response for the reviewer/);
+  assert.match(turn.prompt ?? '', /Choose U1/);
+  assert.equal(turn.prompt?.endsWith(PROMPT_FOOTER), true);
 });

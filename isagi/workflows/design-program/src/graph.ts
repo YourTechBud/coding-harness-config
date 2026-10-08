@@ -2,7 +2,7 @@ import { createReviewedArtifactGraph, type ReviewedArtifactOutput } from 'isagi-
 
 import { reviewer, reviewerJudgment, writer, writerJudgment } from './constants.js';
 import { latestAssistantTurnText, parseReviewerRoute, parseWriterRoute, reviewerRoutingPrompt, writerRoutingPrompt } from './judgments.js';
-import { initialReviewerPrompt, initialWriterPrompt, retryWriterPrompt, reviewToWriterPrompt, writerToReviewerPrompt } from './prompts.js';
+import { continueWriterPrompt, initialReviewerPrompt, initialWriterPrompt, retryWriterPrompt, reviewToWriterPrompt, writerToReviewerPrompt } from './prompts.js';
 
 export type DesignProgramParameters = {
   readonly story: string;
@@ -39,6 +39,7 @@ export const DesignProgramGraph = createReviewedArtifactGraph<DesignProgramParam
     initialWriter: initialWriterPrompt,
     reviewToWriter: reviewToWriterPrompt,
     retryWriter: retryWriterPrompt,
+    continueWriter: continueWriterPrompt,
     initialReviewer: initialReviewerPrompt,
     writerToReviewer: writerToReviewerPrompt,
     writerRouting: writerRoutingPrompt,

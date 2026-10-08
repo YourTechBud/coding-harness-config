@@ -1,3 +1,5 @@
+import { REVIEWER_ESCALATION_AND_CLOSURE, WRITER_INPUT_POLICY, WRITER_CONTINUATION_INSTRUCTIONS } from 'isagi-workflow-common-graphs';
+
 export const PROMPT_FOOTER =
   "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
 
@@ -16,10 +18,6 @@ For every finding, assign one severity and order findings by severity within eac
 
 State "None." under a section with no findings. Consolidate findings with the same root cause. Give every Blocker and Concern concrete repository evidence and a clear correction target. Optional findings may coexist with closure; Blockers and Concerns may not.`;
 
-const REVIEWER_ESCALATION_AND_CLOSURE = `Always include a Human Escalation section. State "No escalation." unless you and the writer have repeatedly disagreed on the same substantive issue and another exchange is unlikely to resolve it. In that case, explicitly state "Escalation required:", summarize both positions, and name the decision a human must make. A first disagreement or a held finding is not an escalation.
-
-When no Blocker or Concern remains, end with the exact line: No re-review needed.`;
-
 export function initialWriterPrompt(input: {
   readonly repositoryPath: string;
   readonly story: string;
@@ -31,7 +29,7 @@ Repository: ${input.repositoryPath}
 Story: ${input.story}
 Artifact path: ${input.artifactPath}
 
-Work unattended. Use the repository as evidence, make reasonable evidence-backed decisions when details are uncertain, and finish only when the artifact is ready for an independent review.`);
+Work unattended. Use the repository as evidence, make reasonable evidence-backed decisions when details are uncertain, and finish with the artifact ready for an independent review. ${WRITER_INPUT_POLICY}`);
 }
 
 export function reviewToWriterPrompt(review: string): string {
@@ -39,13 +37,17 @@ export function reviewToWriterPrompt(review: string): string {
 
 ${review}
 
-Evaluate every finding against the story and repository evidence. Update the artifact directly wherever the review improves its correctness, completeness, simplicity, or evidentiary support. Push back with concrete evidence when a finding is incorrect or would make the artifact worse. Finish with the artifact ready for another independent review.`);
+Evaluate every finding against the story and repository evidence. Update the artifact directly wherever the review improves its correctness, completeness, simplicity, or evidentiary support. Push back with concrete evidence when a finding is incorrect or would make the artifact worse. Finish with the artifact ready for another independent review. ${WRITER_INPUT_POLICY}`);
 }
 
 export function retryWriterPrompt(): string {
   return withPromptFooter(
-    `Resume the current-state analysis from the current conversation, worktree, and artifact. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`,
+    `Resume the current-state analysis from the current conversation, worktree, and artifact. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and provide a completed response for review. ${WRITER_INPUT_POLICY}`,
   );
+}
+
+export function continueWriterPrompt(review: string | null): string {
+  return withPromptFooter(`${WRITER_CONTINUATION_INSTRUCTIONS}${review ? `\n\nReview to address:\n${review}` : ''}`);
 }
 
 export function initialReviewerPrompt(input: {

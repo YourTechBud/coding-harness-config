@@ -1,9 +1,10 @@
 import type { WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
 
+import { WRITER_ROUTING_INSTRUCTIONS, REVIEWER_ROUTING_INSTRUCTIONS } from 'isagi-workflow-common-graphs';
+
 import { withPromptFooter } from './prompts.js';
 
-export type WriterRoute = 'failed' | 'ready';
-export type ReviewerRoute = 'complete' | 'revise' | 'human-decision';
+export { parseWriterRoute, parseReviewerRoute, type WriterRoute, type ReviewerRoute } from 'isagi-workflow-common-graphs';
 
 export function latestAssistantTurnText(
   history: readonly WorkflowConversationMessage[],
@@ -39,20 +40,18 @@ export function latestAssistantTurnText(
 export function writerRoutingPrompt(input: {
   readonly writerResponse: string;
   readonly artifactPath: string;
+  readonly artifactExists: boolean;
 }): string {
   return withPromptFooter(`You are an unattended routing judgment for a current-state-analysis writer.
 
 Artifact path: ${input.artifactPath}
 
+Nonempty artifact file exists: ${input.artifactExists}
+
 Writer response:
 ${input.writerResponse}
 
-Return exactly one JSON object with exactly this field:
-{"outcome":"ready"}
-
-Return "ready" when the writer reports that it completed the requested writing or revision turn and the artifact is ready for review. A response that applies some findings and pushes back on others is ready when that work is complete. Return "failed" when the writer reports that it did not create or finish the artifact, says work remains, only describes intended future work, asks for input instead of completing the artifact, or otherwise does not report a completed artifact turn.
-
-Every outcome is valid on every invocation. Return no confidence, commentary, markdown, or extra JSON fields.`);
+${WRITER_ROUTING_INSTRUCTIONS}`);
 }
 
 export function reviewerRoutingPrompt(input: { readonly review: string }): string {
@@ -61,47 +60,7 @@ export function reviewerRoutingPrompt(input: { readonly review: string }): strin
 Reviewer response:
 ${input.review}
 
-Return exactly one JSON object with exactly this field:
-{"outcome":"revise"}
-
-Apply this precedence:
-1. Return "human-decision" when the Human Escalation section explicitly states "Escalation required:" and identifies a decision for the human. An ordinary disagreement, held finding, or "No escalation." is not a human decision.
-2. Return "complete" when the reviewer explicitly closes the loop with "No re-review needed." and does not simultaneously report an open Blocker, Concern, or human decision. Optional findings may coexist with completion.
-3. Return "revise" for every other response, including any Blocker or Concern, incomplete corrections, held findings, new findings, ambiguous closure language, and requests for another review round.
-
-Every outcome is valid on every invocation. Return no confidence, commentary, markdown, or extra JSON fields.`);
-}
-
-export function parseWriterRoute(output: string): WriterRoute {
-  return parseOutcome(output, ['failed', 'ready'] as const, 'writer');
-}
-
-export function parseReviewerRoute(output: string): ReviewerRoute {
-  return parseOutcome(
-    output,
-    ['complete', 'revise', 'human-decision'] as const,
-    'reviewer',
-  );
-}
-
-function parseOutcome<const Outcome extends string>(
-  output: string,
-  allowed: readonly Outcome[],
-  label: string,
-): Outcome {
-  const value = JSON.parse(extractJsonObject(output)) as unknown;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`${label} judgment must be a JSON object.`);
-  }
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record);
-  if (keys.length !== 1 || keys[0] !== 'outcome') {
-    throw new Error(`${label} judgment must contain exactly one field: outcome.`);
-  }
-  if (typeof record.outcome !== 'string' || !allowed.includes(record.outcome as Outcome)) {
-    throw new Error(`${label} judgment outcome must be one of: ${allowed.join(', ')}.`);
-  }
-  return record.outcome as Outcome;
+${REVIEWER_ROUTING_INSTRUCTIONS}`);
 }
 
 function completeMessageText(message: WorkflowConversationMessage): string {
@@ -110,13 +69,4 @@ function completeMessageText(message: WorkflowConversationMessage): string {
     .map((part) => part.text)
     .join('\n')
     .trim();
-}
-
-function extractJsonObject(output: string): string {
-  const first = output.indexOf('{');
-  const last = output.lastIndexOf('}');
-  if (first < 0 || last < first) {
-    throw new Error('Judgment output did not contain a JSON object.');
-  }
-  return output.slice(first, last + 1);
 }

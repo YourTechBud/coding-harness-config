@@ -1,3 +1,5 @@
+import { REVIEWER_ESCALATION_AND_CLOSURE, WRITER_INPUT_POLICY, WRITER_CONTINUATION_INSTRUCTIONS } from 'isagi-workflow-common-graphs';
+
 export const PROMPT_FOOTER =
   "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
 
@@ -24,10 +26,6 @@ Keep the review at the program-design boundary. Exact changed contracts, load-be
 
 Review the program design from first principles and inspect the current architecture and current-state analysis wherever the design depends on them. Assess the current artifact set rather than attempting to reconstruct changes between review rounds or separately auditing predecessor artifacts beyond what the program design requires.`;
 
-const REVIEWER_ESCALATION_AND_CLOSURE = `Always include a Human Escalation section. State "No escalation." unless you and the writer have repeatedly disagreed on the same substantive issue and another exchange is unlikely to resolve it. In that case, explicitly state "Escalation required:", summarize both positions, and name the decision a human must make. A first disagreement or a held finding is not an escalation.
-
-When no Blocker or Concern remains, end with the exact line: No re-review needed.`;
-
 export function initialWriterPrompt(input: {
   readonly repositoryPath: string;
   readonly story: string;
@@ -45,7 +43,7 @@ Program-design artifact path: ${input.artifactPath}
 
 ${DESIGN_SCOPE}
 
-Work unattended. Preserve the story, use the predecessor artifacts and repository as evidence, and converge on one simple, maintainable program design with enough precision to implement the binding scope. Finish with the artifact ready for an independent review, making any unresolved user decision explicit. If program design exposes a substantive flaw in the current-state analysis or architecture, update the affected predecessor artifact and keep the artifact set coherent.`);
+Work unattended. Preserve the story, use the predecessor artifacts and repository as evidence, and converge on one simple, maintainable program design with enough precision to implement the binding scope. Finish with the artifact ready for an independent review, making any unresolved user decision explicit. ${WRITER_INPUT_POLICY} If program design exposes a substantive flaw in the current-state analysis or architecture, update the affected predecessor artifact and keep the artifact set coherent.`);
 }
 
 export function reviewToWriterPrompt(review: string): string {
@@ -55,13 +53,17 @@ ${review}
 
 ${DESIGN_SCOPE}
 
-Evaluate every finding against the story's binding scope, current-state analysis, and repository evidence, building on the completed architecture. Update the program-design artifact wherever the review improves its correctness, simplicity, coherence, or decision quality within that scope. Correct a predecessor artifact only when resolving a substantive flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect, expands the binding scope, treats a suggestion as a requirement, or would make the design worse. Finish with the current artifact set ready for another independent review.`);
+Evaluate every finding against the story's binding scope, current-state analysis, and repository evidence, building on the completed architecture. Update the program-design artifact wherever the review improves its correctness, simplicity, coherence, or decision quality within that scope. Correct a predecessor artifact only when resolving a substantive flaw. Push back with concrete evidence and tradeoff reasoning when a finding is incorrect, expands the binding scope, treats a suggestion as a requirement, or would make the design worse. Finish with the current artifact set ready for another independent review. ${WRITER_INPUT_POLICY}`);
 }
 
 export function retryWriterPrompt(): string {
   return withPromptFooter(
-    `Resume the program-design work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and end only when it is ready for review.`,
+    `Resume the program-design work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and provide a completed response for review. ${WRITER_INPUT_POLICY}`,
   );
+}
+
+export function continueWriterPrompt(review: string | null): string {
+  return withPromptFooter(`${WRITER_CONTINUATION_INSTRUCTIONS}${review ? `\n\nReview to address:\n${review}` : ''}`);
 }
 
 export function initialReviewerPrompt(input: {

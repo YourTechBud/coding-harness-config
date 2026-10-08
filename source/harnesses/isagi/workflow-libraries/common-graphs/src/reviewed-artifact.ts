@@ -1,3 +1,6 @@
+import { stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
 import {
   complete,
   createGraph,
@@ -18,18 +21,19 @@ import {
 import { agentTurn, ownedPane, type AgentPane, type AgentTurnOutput, type AgentTurnParameters } from './agent-turn.js';
 import { failStep } from './fail-step.js';
 import { createJudgmentGraph, type JudgmentOutput, type JudgmentParameters } from './judgment.js';
+import type { ArtifactJudgment, ReviewerRoute, WriterRoute } from './artifact-routing.js';
 
 // A writer drafts a Markdown artifact and an independent reviewer reviews it until the reviewer
 // closes the loop. Headless judgments route every writer and reviewer reply. The workflow supplies
 // its prompts, parsers, profiles, and wording; this module owns the loop.
 //
 // root:    write → review ⇄ revise → finish
-// writer:  prompt → read reply → judge → ready, or ask the user, then re-judge a newer reply or nudge
-// review:  prompt → read reply → judge → complete | revise, or ask the human and re-judge
+// writer:  prompt → read reply and check file → judge → ready | bounded recovery | human wait
+// review:  prompt → read reply → judge → complete | revise | human decision
+// Continue after either human wait asks the writer for a fresh reply incorporating the discussion.
 
 export type ArtifactContext = { readonly story: string; readonly artifactPath: string };
-export type WriterRoute = 'failed' | 'ready';
-export type ReviewerRoute = 'complete' | 'revise' | 'human-decision';
+const MAX_WRITER_RECOVERIES = 1;
 
 type Profile = { readonly harness: WorkflowAgentHarness; readonly model: string; readonly effort: string };
 type WithRepository<Context> = Context & { readonly repositoryPath: string };
@@ -62,14 +66,15 @@ export type ReviewedArtifactConfig<Context extends ArtifactContext> = {
     readonly initialWriter: (input: WithRepository<Context>) => string;
     readonly reviewToWriter: (review: string) => string;
     readonly retryWriter: () => string;
+    readonly continueWriter: (review: string | null) => string;
     readonly initialReviewer: (input: WithRepository<Context>) => string;
     readonly writerToReviewer: (writerResponse: string) => string;
-    readonly writerRouting: (input: { readonly writerResponse: string; readonly artifactPath: string }) => string;
+    readonly writerRouting: (input: { readonly writerResponse: string; readonly artifactPath: string; readonly artifactExists: boolean }) => string;
     readonly reviewerRouting: (input: { readonly review: string }) => string;
   };
   readonly parse: {
-    readonly writerRoute: (output: string) => WriterRoute;
-    readonly reviewerRoute: (output: string) => ReviewerRoute;
+    readonly writerRoute: (output: string) => ArtifactJudgment<WriterRoute>;
+    readonly reviewerRoute: (output: string) => ArtifactJudgment<ReviewerRoute>;
   };
   readonly latestAssistantTurnText: (history: readonly WorkflowConversationMessage[]) => string | null;
 };
@@ -91,7 +96,7 @@ export function createReviewedArtifactGraph<Context extends ArtifactContext>(
   return createGraph<S, {}, Context, ReviewedArtifactOutput>({
     key: config.key,
     title: config.title,
-    init: (_destination, context) => ({ context, writer: null, reviewer: null, writerResponse: null, review: null, reviewRound: 0, verdict: null, failure: null }),
+    init: (_destination, context) => ({ context, writer: null, reviewer: null, writerResponse: null, review: null, reviewRound: 0, verdict: null, reviewReason: null, failure: null }),
     state: {
       context: reduce.replace<Context>(),
       writer: reduce.replace<AgentPane | null>(),
@@ -99,7 +104,8 @@ export function createReviewedArtifactGraph<Context extends ArtifactContext>(
       writerResponse: reduce.replace<string | null>(),
       review: reduce.replace<string | null>(),
       reviewRound: reduce.replace<number>(),
-      verdict: reduce.replace<'complete' | 'revise' | null>(),
+      verdict: reduce.replace<ReviewerRoute | null>(),
+      reviewReason: reduce.replace<string | null>(),
       failure: reduce.replace<Failure | null>(),
     },
     entry: 'write',
@@ -118,12 +124,25 @@ export function createReviewedArtifactGraph<Context extends ArtifactContext>(
         onResult: (_state, { output }) =>
           output.outcome === 'failed'
             ? { failure: output.failure }
-            : { reviewer: output.reviewer, review: output.review, verdict: output.verdict, reviewRound: output.round },
+            : { reviewer: output.reviewer, review: output.review, verdict: output.verdict, reviewReason: output.reason, reviewRound: output.round },
       }),
       revise: subgraph<S, S, WriterParameters<Context>, WriterOutput>({
         graph: writer,
         title: 'Revise the artifact',
         parameters: (state) => ({ context: state.context, writer: must(state.writer, 'writer'), review: must(state.review, 'review') }),
+        onResult: (_state, { output }) => (output.outcome === 'failed' ? { failure: output.failure } : { writerResponse: output.response }),
+      }),
+      askHuman: operation<S, S>(async (ctx, state) => {
+        const reason = must(state.reviewReason, 'review decision');
+        const message = `${reason} Resolve it with ${config.roles.writer.toLowerCase()}, then select Continue.`;
+        await ctx.setUiFeedback({ kind: 'warning', phase: 'Waiting for your decision', message });
+        await ctx.log('warning', `${config.roundLabel} ${state.reviewRound} needs a human decision: ${reason}\n${must(state.review, 'review')}`);
+        return suspend({ wait: wait.userContinue(message) });
+      }, { title: 'Wait for your decision' }),
+      replay: subgraph<S, S, WriterParameters<Context>, WriterOutput>({
+        graph: writer,
+        title: 'Incorporate your decision',
+        parameters: (state) => ({ context: state.context, writer: must(state.writer, 'writer'), review: must(state.review, 'review'), afterHumanDecision: true }),
         onResult: (_state, { output }) => (output.outcome === 'failed' ? { failure: output.failure } : { writerResponse: output.response }),
       }),
       finish: operation<S, S>(async (ctx, state) => {
@@ -144,13 +163,19 @@ export function createReviewedArtifactGraph<Context extends ArtifactContext>(
       afterWrite: edge<S, S>({ from: 'write', to: ['review', 'reportFailure'], choose: (state) => ({ to: state.failure ? 'reportFailure' : 'review' }) }),
       afterReview: edge<S, S>({
         from: 'review',
-        to: ['finish', 'revise', 'reportFailure'],
+        to: ['finish', 'revise', 'askHuman', 'reportFailure'],
         choose: (state) => {
           if (state.failure) return { to: 'reportFailure' };
+          if (state.verdict === 'human-decision') return { to: 'askHuman' };
           return { to: state.verdict === 'complete' ? 'finish' : 'revise' };
         },
       }),
       afterRevise: edge<S, S>({ from: 'revise', to: ['review', 'reportFailure'], choose: (state) => ({ to: state.failure ? 'reportFailure' : 'review' }) }),
+      afterAskHuman: edge<S, S>({ from: 'askHuman', to: ['replay'], choose: (_state, event) => {
+        if (event.kind !== 'user_continue') throw new Error(`The human decision resumed with an unexpected ${event.kind} event.`);
+        return { to: 'replay' };
+      } }),
+      afterReplay: edge<S, S>({ from: 'replay', to: ['review', 'reportFailure'], choose: (state) => ({ to: state.failure ? 'reportFailure' : 'review' }) }),
       afterFinish: edge<S, S>({ from: 'finish', to: ['reviewed'], choose: () => ({ to: 'reviewed' }) }),
       afterReportFailure: edge<S, S>({ from: 'reportFailure', to: ['failed'], choose: () => ({ to: 'failed' }) }),
     },
@@ -168,13 +193,14 @@ export type RootState<Context> = {
   readonly writerResponse: string | null;
   readonly review: string | null;
   readonly reviewRound: number;
-  readonly verdict: 'complete' | 'revise' | null;
+  readonly verdict: ReviewerRoute | null;
+  readonly reviewReason: string | null;
   readonly failure: Failure | null;
 };
 
 // Writer: the first visit spawns the writer; a revision visit sends the review to the same writer.
 
-type WriterParameters<Context> = { readonly context: Context; readonly writer: AgentPane | null; readonly review: string | null };
+type WriterParameters<Context> = { readonly context: Context; readonly writer: AgentPane | null; readonly review: string | null; readonly afterHumanDecision?: boolean };
 type WriterOutput = { readonly outcome: 'ready'; readonly writer: AgentPane; readonly response: string } | Failed;
 type WriterState<Context> = {
   readonly repositoryPath: string;
@@ -183,9 +209,11 @@ type WriterState<Context> = {
   readonly review: string | null;
   readonly turn: AgentTurnOutput | null;
   readonly response: string | null;
-  readonly mode: 'normal' | 'retry_recheck';
-  readonly recoveredNewer: boolean;
+  readonly afterHumanDecision: boolean;
+  readonly artifactExists: boolean;
+  readonly recoveryAttempts: number;
   readonly route: WriterRoute | null;
+  readonly routingReason: string | null;
   readonly failure: Failure | null;
 };
 
@@ -204,9 +232,11 @@ function createWriterGraph<Context extends ArtifactContext>(config: ReviewedArti
       ...parameters,
       turn: null,
       response: null,
-      mode: 'normal',
-      recoveredNewer: false,
+      afterHumanDecision: parameters.afterHumanDecision ?? false,
+      artifactExists: false,
+      recoveryAttempts: 0,
       route: null,
+      routingReason: null,
       failure: null,
     }),
     state: {
@@ -216,9 +246,11 @@ function createWriterGraph<Context extends ArtifactContext>(config: ReviewedArti
       review: reduce.replace<string | null>(),
       turn: reduce.replace<AgentTurnOutput | null>(),
       response: reduce.replace<string | null>(),
-      mode: reduce.replace<'normal' | 'retry_recheck'>(),
-      recoveredNewer: reduce.replace<boolean>(),
+      afterHumanDecision: reduce.replace<boolean>(),
+      artifactExists: reduce.replace<boolean>(),
+      recoveryAttempts: reduce.replace<number>(),
       route: reduce.replace<WriterRoute | null>(),
+      routingReason: reduce.replace<string | null>(),
       failure: reduce.replace<Failure | null>(),
     },
     entry: 'prompt',
@@ -238,7 +270,7 @@ function createWriterGraph<Context extends ArtifactContext>(config: ReviewedArti
             : {
                 label: role,
                 session: { kind: 'existing', ...state.writer },
-                prompt: config.prompts.reviewToWriter(must(state.review, 'review')),
+                prompt: state.afterHumanDecision ? continuationPrompt(state) : config.prompts.reviewToWriter(must(state.review, 'review')),
                 feedback: { phase: config.phases.revising },
                 ...resubmit,
               },
@@ -247,36 +279,44 @@ function createWriterGraph<Context extends ArtifactContext>(config: ReviewedArti
       readResponse: operation<S, S>(async (ctx, state) => {
         const writer = must(state.writer, 'writer');
         const response = config.latestAssistantTurnText(await ctx.getConversationHistory(writer.agentSessionId));
-        if (response) return complete({ update: { response } });
+        if (response) {
+          const artifactExists = await artifactFileExists(resolve(state.repositoryPath, state.context.artifactPath));
+          return complete({ update: { response, artifactExists } });
+        }
         return failStep(ctx, { phase: config.phases.failed, message: 'No writer response was found' }, `writer session ${writer.agentSessionId} has no complete assistant turn to inspect.`);
       }, { title: "Read the writer's reply" }),
-      judge: subgraph<S, S, JudgmentParameters, JudgmentOutput<WriterRoute>>({
+      judge: subgraph<S, S, JudgmentParameters, JudgmentOutput<ArtifactJudgment<WriterRoute>>>({
         graph: judgment,
         title: 'Route the writer',
         parameters: (state) => ({
           label: 'writer',
           profile: config.profiles.writerJudgment,
-          prompt: config.prompts.writerRouting({ writerResponse: must(state.response, 'writer response'), artifactPath: state.context.artifactPath }),
+          prompt: config.prompts.writerRouting({ writerResponse: must(state.response, 'writer response'), artifactPath: state.context.artifactPath, artifactExists: state.artifactExists }),
           feedback: { phase: config.phases.checkingWriter },
         }),
-        onResult: (_state, { output }) => ({ route: output.outcome === 'judged' ? output.route : null }),
+        onResult: (_state, { output }) => output.outcome === 'judged' ? { route: output.route.outcome, routingReason: output.route.reason } : { route: null, routingReason: null },
       }),
       askUser: operation<S, S>(async (ctx, state) => {
         const writer = must(state.writer, 'writer');
-        await ctx.setUiFeedback({ kind: 'warning', phase: 'The writer did not produce a reviewable artifact', message: 'Resolve it with the writer, then select Continue.' });
-        await ctx.log('warning', `Writer session ${writer.agentSessionId} did not complete its artifact turn. Latest response:\n${must(state.response, 'writer response')}`);
-        return suspend({ wait: wait.userContinue('The writer did not produce a reviewable artifact. Resolve it with the writer, then Continue.') });
+        const phase = state.route === 'human-decision' ? 'Waiting for your decision' : 'The writer needs help finishing the artifact';
+        const reason = state.artifactExists || state.route === 'human-decision' ? must(state.routingReason, 'writer routing reason') : `The artifact file is missing or empty at ${state.context.artifactPath}.`;
+        const message = `${reason} Resolve it with ${role.toLowerCase()}, then select Continue.`;
+        await ctx.setUiFeedback({ kind: 'warning', phase, message });
+        await ctx.log('warning', `Writer session ${writer.agentSessionId}: ${phase}. ${reason}\nLatest response:\n${must(state.response, 'writer response')}`);
+        return suspend({ wait: wait.userContinue(message) });
       }, { title: 'Ask the user to resolve the writer' }),
-      // A newer complete reply is judged without another prompt; otherwise the writer is nudged once.
-      recover: operation<S, S>(async (ctx, state) => {
-        const writer = must(state.writer, 'writer');
-        const latest = config.latestAssistantTurnText(await ctx.getConversationHistory(writer.agentSessionId));
-        if (latest && latest !== state.response) {
-          await ctx.log('info', `Found a newer complete turn in ${role.toLowerCase()} session ${writer.agentSessionId}; routing the latest response.`);
-          return complete({ update: { response: latest, mode: 'retry_recheck', recoveredNewer: true } });
-        }
-        return complete({ update: { recoveredNewer: false } });
-      }, { title: "Check for a newer writer reply" }),
+      recover: operation<S, S>(async () => complete({ update: { recoveryAttempts: 0 } }), { title: 'Prepare the updated writer response' }),
+      replay: agentTurn<S, S>({
+        title: 'Incorporate your decision and reply to the reviewer',
+        parameters: (state) => ({
+          label: role,
+          session: { kind: 'existing', ...must(state.writer, 'writer') },
+          prompt: continuationPrompt(state),
+          feedback: { phase: config.phases.revising },
+          ...resubmit,
+        }),
+        onResult: (_state, turn) => ({ turn }),
+      }),
       nudge: agentTurn<S, S>({
         title: 'Nudge the writer once',
         parameters: (state) => ({
@@ -286,7 +326,7 @@ function createWriterGraph<Context extends ArtifactContext>(config: ReviewedArti
           feedback: { phase: config.phases.recoveringWriter },
           ...resubmit,
         }),
-        onResult: (_state, turn) => ({ turn }),
+        onResult: (state, turn) => ({ turn, recoveryAttempts: state.recoveryAttempts + 1 }),
       }),
     },
     edges: {
@@ -294,14 +334,12 @@ function createWriterGraph<Context extends ArtifactContext>(config: ReviewedArti
       afterReadResponse: edge<S, S>({ from: 'readResponse', to: ['judge'], choose: () => ({ to: 'judge' }) }),
       afterJudge: edge<S, S>({
         from: 'judge',
-        to: ['ready', 'nudge', 'askUser', 'recover'],
+        to: ['ready', 'nudge', 'askUser', 'readResponse'],
         choose: (state) => {
-          // After a judgment the user had to look at, a newer reply is judged; otherwise the writer is nudged.
-          if (state.route === null) return { to: 'recover' };
-          if (state.route === 'ready') return { to: 'ready' };
-          // A re-judged reply that still is not ready gets the one nudge the old Retry path sent.
-          if (state.mode === 'retry_recheck') return { to: 'nudge', update: { mode: 'normal' } };
-          return { to: 'askUser' };
+          if (state.route === null) return { to: 'readResponse' };
+          if (state.route === 'human-decision') return { to: 'askUser' };
+          if (state.route === 'ready' && state.artifactExists) return { to: 'ready' };
+          return { to: state.recoveryAttempts < MAX_WRITER_RECOVERIES ? 'nudge' : 'askUser' };
         },
       }),
       afterAskUser: edge<S, S>({
@@ -312,7 +350,8 @@ function createWriterGraph<Context extends ArtifactContext>(config: ReviewedArti
           return { to: 'recover' };
         },
       }),
-      afterRecover: edge<S, S>({ from: 'recover', to: ['judge', 'nudge'], choose: (state) => ({ to: state.recoveredNewer ? 'judge' : 'nudge' }) }),
+      afterRecover: edge<S, S>({ from: 'recover', to: ['replay'], choose: () => ({ to: 'replay' }) }),
+      afterReplay: afterWriterTurn('replay', role, 'readResponse'),
       afterNudge: afterWriterTurn('nudge', role, 'readResponse'),
     },
     outcomes: {
@@ -321,7 +360,11 @@ function createWriterGraph<Context extends ArtifactContext>(config: ReviewedArti
     },
   });
 
-  function afterWriterTurn(from: 'prompt' | 'nudge', label: string, next = 'readResponse') {
+  function continuationPrompt(state: S): string {
+    return config.prompts.continueWriter(state.review);
+  }
+
+  function afterWriterTurn(from: 'prompt' | 'nudge' | 'replay', label: string, next = 'readResponse') {
     return edge<S, S>({ from, to: [next, 'failed'], choose: (state) => afterTurn<S>(state, label, next) });
   }
 }
@@ -329,7 +372,7 @@ function createWriterGraph<Context extends ArtifactContext>(config: ReviewedArti
 // Review: the first visit spawns the reviewer; later rounds send the writer's reply to it.
 
 type ReviewParameters<Context> = { readonly context: Context; readonly reviewer: AgentPane | null; readonly writerResponse: string | null; readonly round: number };
-type ReviewOutput = { readonly outcome: 'reviewed'; readonly verdict: 'complete' | 'revise'; readonly reviewer: AgentPane; readonly review: string; readonly round: number } | Failed;
+type ReviewOutput = { readonly outcome: 'reviewed'; readonly verdict: ReviewerRoute; readonly reason: string; readonly reviewer: AgentPane; readonly review: string; readonly round: number } | Failed;
 type ReviewState<Context> = {
   readonly repositoryPath: string;
   readonly context: Context;
@@ -339,6 +382,7 @@ type ReviewState<Context> = {
   readonly turn: AgentTurnOutput | null;
   readonly review: string | null;
   readonly verdict: ReviewerRoute | null;
+  readonly routingReason: string | null;
   readonly failure: Failure | null;
 };
 
@@ -352,7 +396,7 @@ function createReviewGraph<Context extends ArtifactContext>(config: ReviewedArti
     key: `${config.key}Review`,
     title: 'Review round',
     label: (parameters) => `Review round ${parameters.round}`,
-    init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, turn: null, review: null, verdict: null, failure: null }),
+    init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, turn: null, review: null, verdict: null, routingReason: null, failure: null }),
     state: {
       repositoryPath: reduce.replace<string>(),
       context: reduce.replace<Context>(),
@@ -362,6 +406,7 @@ function createReviewGraph<Context extends ArtifactContext>(config: ReviewedArti
       turn: reduce.replace<AgentTurnOutput | null>(),
       review: reduce.replace<string | null>(),
       verdict: reduce.replace<ReviewerRoute | null>(),
+      routingReason: reduce.replace<string | null>(),
       failure: reduce.replace<Failure | null>(),
     },
     entry: 'prompt',
@@ -393,7 +438,7 @@ function createReviewGraph<Context extends ArtifactContext>(config: ReviewedArti
         if (review) return complete({ update: { review } });
         return failStep(ctx, { phase: config.phases.failed, message: 'No reviewer response was found' }, `reviewer session ${reviewer.agentSessionId} has no complete assistant turn to inspect.`);
       }, { title: "Read the reviewer's reply" }),
-      judge: subgraph<S, S, JudgmentParameters, JudgmentOutput<ReviewerRoute>>({
+      judge: subgraph<S, S, JudgmentParameters, JudgmentOutput<ArtifactJudgment<ReviewerRoute>>>({
         graph: judgment,
         title: 'Route the review',
         parameters: (state) => ({
@@ -402,33 +447,19 @@ function createReviewGraph<Context extends ArtifactContext>(config: ReviewedArti
           prompt: config.prompts.reviewerRouting({ review: must(state.review, 'review') }),
           feedback: { phase: config.phases.routingReview },
         }),
-        onResult: (_state, { output }) => ({ verdict: output.outcome === 'judged' ? output.route : null }),
+        onResult: (_state, { output }) => output.outcome === 'judged' ? { verdict: output.route.outcome, routingReason: output.route.reason } : { verdict: null, routingReason: null },
       }),
-      askHuman: operation<S, S>(async (ctx, state) => {
-        await ctx.setUiFeedback({ kind: 'warning', phase: 'Waiting for your decision', message: 'The reviewer raised a human escalation. Resolve it with the reviewer, then continue the workflow.' });
-        await ctx.log('warning', `Reviewer raised a human escalation in ${config.roundLabel} ${state.round}.`);
-        return suspend({ wait: wait.userContinue() });
-      }, { title: 'Wait for your decision' }),
     },
     edges: {
       afterPrompt: edge<S, S>({ from: 'prompt', to: ['readReview', 'failed'], choose: (state) => afterTurn<S>(state, role, 'readReview') }),
       afterReadReview: edge<S, S>({ from: 'readReview', to: ['judge'], choose: () => ({ to: 'judge' }) }),
       afterJudge: edge<S, S>({
         from: 'judge',
-        to: ['reviewed', 'askHuman', 'readReview'],
+        to: ['reviewed', 'readReview'],
         choose: (state) => {
           // After a judgment the user had to look at, the reviewer's latest reply is read and judged again.
           if (state.verdict === null) return { to: 'readReview' };
-          return { to: state.verdict === 'human-decision' ? 'askHuman' : 'reviewed' };
-        },
-      }),
-      // After the human decision, the reviewer session's latest complete turn is judged again.
-      afterAskHuman: edge<S, S>({
-        from: 'askHuman',
-        to: ['readReview'],
-        choose: (_state, event) => {
-          if (event.kind !== 'user_continue') throw new Error(`The human decision resumed with an unexpected ${event.kind} event.`);
-          return { to: 'readReview' };
+          return { to: 'reviewed' };
         },
       }),
     },
@@ -438,13 +469,22 @@ function createReviewGraph<Context extends ArtifactContext>(config: ReviewedArti
         title: 'Reviewed',
         output: (state) => {
           const verdict = must(state.verdict, 'verdict');
-          if (verdict === 'human-decision') throw new Error('A human decision cannot end a review round.');
-          return { outcome: 'reviewed', verdict, reviewer: must(state.reviewer, 'reviewer'), review: must(state.review, 'review'), round: state.round };
+          return { outcome: 'reviewed', verdict, reason: must(state.routingReason, 'review routing reason'), reviewer: must(state.reviewer, 'reviewer'), review: must(state.review, 'review'), round: state.round };
         },
       }),
       failed: outcome({ kind: 'failure', title: 'Review failed', output: (state) => ({ outcome: 'failed', failure: must(state.failure, 'failure') }) }),
     },
   });
+}
+
+async function artifactFileExists(path: string): Promise<boolean> {
+  try {
+    const info = await stat(path);
+    return info.isFile() && info.size > 0;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return false;
+    throw error;
+  }
 }
 
 function afterTurn<S extends { readonly turn: AgentTurnOutput | null }>(state: S, label: string, next: string): EdgeDecision<GraphUpdate<S>> {

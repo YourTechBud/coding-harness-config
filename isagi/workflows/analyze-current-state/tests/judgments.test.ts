@@ -31,29 +31,24 @@ test('collects every complete assistant message in the latest turn', () => {
   );
 });
 
-test('parses every writer and reviewer route and rejects extra fields', () => {
-  assert.equal(parseWriterRoute('{"outcome":"ready"}'), 'ready');
-  assert.equal(parseWriterRoute('{"outcome":"failed"}'), 'failed');
-  assert.equal(parseReviewerRoute('{"outcome":"complete"}'), 'complete');
-  assert.equal(parseReviewerRoute('{"outcome":"revise"}'), 'revise');
-  assert.equal(
-    parseReviewerRoute('Result: {"outcome":"human-decision"}'),
-    'human-decision',
-  );
-  assert.throws(
-    () => parseReviewerRoute('{"outcome":"complete","confidence":1}'),
-    /exactly one field/,
-  );
+test('parses writer and reviewer decisions with an explanation', () => {
+  assert.deepEqual(parseWriterRoute('{"outcome":"ready","reason":"Done."}'), { outcome: 'ready', reason: 'Done.' });
+  assert.deepEqual(parseWriterRoute('{"outcome":"incomplete","reason":"Writing remains."}'), { outcome: 'incomplete', reason: 'Writing remains.' });
+  assert.deepEqual(parseWriterRoute('{"outcome":"human-decision","reason":"Choose U1."}'), { outcome: 'human-decision', reason: 'Choose U1.' });
+  assert.deepEqual(parseReviewerRoute('{"outcome":"complete","reason":"Accepted."}'), { outcome: 'complete', reason: 'Accepted.' });
+  assert.deepEqual(parseReviewerRoute('{"outcome":"revise","reason":"Correct the owner."}'), { outcome: 'revise', reason: 'Correct the owner.' });
+  assert.deepEqual(parseReviewerRoute('Result: {"outcome":"human-decision","reason":"Choose U1."}'), { outcome: 'human-decision', reason: 'Choose U1.' });
 });
 
 test('writer judgment uses one phase-independent contract and the required footer', () => {
   const prompt = writerRoutingPrompt({
     writerResponse: 'The artifact is ready.',
     artifactPath: 'scratch/current-state.md',
+    artifactExists: true,
   });
   assert.match(prompt, /Every outcome is valid on every invocation/);
   assert.match(prompt, /pushes back on others/);
-  assert.match(prompt, /"failed"/);
+  assert.match(prompt, /"incomplete"/);
   assert.equal(prompt.endsWith(PROMPT_FOOTER), true);
 });
 

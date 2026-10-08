@@ -13,7 +13,17 @@ export {
   type ArtifactContext,
   type ReviewedArtifactConfig,
   type ReviewedArtifactOutput,
+} from './reviewed-artifact.js';
+export {
+  WRITER_ROUTING_INSTRUCTIONS,
+  REVIEWER_ROUTING_INSTRUCTIONS,
+  REVIEWER_ESCALATION_AND_CLOSURE,
+  WRITER_INPUT_POLICY,
+  WRITER_CONTINUATION_INSTRUCTIONS,
+  parseWriterRoute,
+  parseReviewerRoute,
+  type ArtifactJudgment,
   type ReviewerRoute,
   type WriterRoute,
-} from './reviewed-artifact.js';
+} from './artifact-routing.js';
 export { failStep } from './fail-step.js';
