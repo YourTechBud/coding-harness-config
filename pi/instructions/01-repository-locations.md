@@ -3,7 +3,9 @@
 When the user asks you to refer to one of these projects, use its corresponding location; `$HOME` means the user's home directory.
 
 - Isagi: `$HOME/work/projects/Isagi`
+- Toph: `$HOME/work/projects/Toph`
 - Raphael: `$HOME/work/projects/Raphael`
+- Fluidcast: `$HOME/work/projects/Fluidcast`
 - Coding Harness Config: `$HOME/work/ai/coding-harness-config`
 
 These paths are a reference only; do not read or explore these repositories by default.
