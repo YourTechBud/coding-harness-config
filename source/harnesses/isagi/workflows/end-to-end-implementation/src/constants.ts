@@ -12,6 +12,12 @@ export const uiAgent = {
   effort: 'medium',
 } satisfies AgentProfile;
 
+export const uiReadinessJudgment = {
+  harness: 'codex',
+  model: 'gpt-6-luna',
+  effort: 'medium',
+} satisfies AgentProfile;
+
 export const documentationAgent = {
   harness: 'claude',
   model: 'opus',

@@ -22,10 +22,20 @@ Read these documents and explore the relevant existing UI and code to ground the
 Start with a concise assessment of the UI pieces worth exploring and any questions that would help me decide what to do. Keep this opening turn focused on discovery; I will steer the scope and subsequent mock creation.`;
 }
 
-export function uiBriefPrompt(uiBriefPath: string): string {
-  return `Write a concise UI brief at ${uiBriefPath} summarizing the outcome of this session for a fresh implementation planner.
+export function uiReadinessPrompt(): string {
+  return `Before we wrap up this session, check whether anything is still open: a decision I haven't made, a UI piece we raised but haven't mocked or settled, or a question you need answered before implementation planning.
 
-Capture decisions, what was created, and where the mocks exist, including relevant file paths, routes, and how to view them. Give the planner enough context to use the designs without access to this conversation.
+List what is open, or say that nothing is. Answer without changing any files.`;
+}
+
+export function uiDesignAmendmentPrompt(input: Pick<DesignInputs, 'architecturePath' | 'programDesignPath'>): string {
+  return `Amend ${input.architecturePath} and ${input.programDesignPath} with the decisions we made in this session so they remain the source of truth for implementation. Make targeted edits that fit each document's existing structure. If the session changed nothing they cover, leave them unchanged and say so.`;
+}
+
+export function uiBriefPrompt(input: Pick<DesignInputs, 'architecturePath' | 'programDesignPath'> & { readonly uiBriefPath: string }): string {
+  return `Write a concise UI brief at ${input.uiBriefPath} summarizing the outcome of this session for a fresh implementation planner.
+
+The decisions from this session now live in ${input.architecturePath} and ${input.programDesignPath}; reference them rather than restating them. Capture what was created and where the mocks exist, including relevant file paths, routes, and how to view them, plus any UI detail the design documents don't hold. Give the planner enough context to use the designs without access to this conversation.
 
 If no UI mocks were needed or created, capture that outcome. Keep the brief simple and report its path when finished.`;
 }

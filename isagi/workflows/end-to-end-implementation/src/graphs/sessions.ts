@@ -14,10 +14,11 @@ import {
   type EdgeDecision,
   type GraphUpdate,
 } from '@yourtechbudstudio/isagi-workflow-sdk';
-import { agentTurn, failStep, ownedPane, type AgentTurnOutput } from 'isagi-workflow-common-graphs';
+import { agentTurn, createJudgmentGraph, failStep, ownedPane, type AgentTurnOutput, type JudgmentOutput, type JudgmentParameters } from 'isagi-workflow-common-graphs';
 
-import { documentationAgent, uiAgent } from '../constants.js';
-import { documentationDiscoveryPrompt, uiBriefPrompt, uiDiscoveryPrompt } from '../prompts.js';
+import { documentationAgent, uiAgent, uiReadinessJudgment } from '../constants.js';
+import { latestAssistantTurnText, parseUiReadiness, uiReadinessJudgmentPrompt, type UiReadiness } from '../judgments.js';
+import { documentationDiscoveryPrompt, uiBriefPrompt, uiDesignAmendmentPrompt, uiDiscoveryPrompt, uiReadinessPrompt } from '../prompts.js';
 import { CheckpointGraph, type CheckpointOutput, type CheckpointParameters } from './checkpoint-commit.js';
 import { designPaths, entryPlanPath, errorText, must, planDirectory, uiBriefPath, type Failed, type Failure } from './context.js';
 
@@ -26,8 +27,11 @@ const BRAINSTORMING = [{ kind: 'skill', name: 'brainstorming' }] as const;
 export type SessionOutput = { readonly outcome: 'ready' } | Failed;
 
 // Prepare implementation: the old plan is removed so the planner recreates it, then a UI agent
-// brainstorms mocks with the user, writes the UI brief in the same session, and its changes are
-// committed as a draft.
+// brainstorms mocks with the user. On Continue the same session is asked what is still open; open
+// items go back to the user until nothing is, then the agent amends the design documents, writes the
+// UI brief, and its changes are committed as a draft.
+
+const UiReadinessJudgment = createJudgmentGraph({ key: 'EndToEndImplementationUiReadiness', title: 'Judge UI readiness', parse: parseUiReadiness });
 
 export type PrepareImplementationParameters = { readonly story: string };
 
@@ -35,6 +39,8 @@ type PrepareState = {
   readonly repositoryPath: string;
   readonly story: string;
   readonly turn: AgentTurnOutput | null;
+  readonly readinessReply: string | null;
+  readonly readiness: UiReadiness | null;
   readonly briefMissing: boolean;
   readonly failure: Failure | null;
 };
@@ -42,11 +48,13 @@ type PrepareState = {
 export const PrepareImplementationGraph = createGraph<PrepareState, {}, PrepareImplementationParameters, SessionOutput>({
   key: 'EndToEndImplementationPrepare',
   title: 'Prepare implementation',
-  init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, turn: null, briefMissing: false, failure: null }),
+  init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, turn: null, readinessReply: null, readiness: null, briefMissing: false, failure: null }),
   state: {
     repositoryPath: reduce.replace<string>(),
     story: reduce.replace<string>(),
     turn: reduce.replace<AgentTurnOutput | null>(),
+    readinessReply: reduce.replace<string | null>(),
+    readiness: reduce.replace<UiReadiness | null>(),
     briefMissing: reduce.replace<boolean>(),
     failure: reduce.replace<Failure | null>(),
   },
@@ -79,16 +87,64 @@ export const PrepareImplementationGraph = createGraph<PrepareState, {}, PrepareI
     }),
 
     steerUi: operation<PrepareState, PrepareState>(async (ctx) => {
-      await ctx.setUiFeedback({ phase: 'Explore UI with the agent', message: 'Steer the UI session, then select Continue to capture the brief and prepare implementation.' });
+      await ctx.setUiFeedback({ phase: 'Explore UI with the agent', message: 'Steer the UI session, then select Continue to check for open items, amend the design documents, and capture the brief.' });
       return suspend({ wait: wait.userContinue() });
     }, { title: 'Explore the UI with the agent' }),
+
+    checkReadiness: agentTurn<PrepareState, PrepareState>({
+      title: 'Check for open UI items',
+      parameters: (state) => ({
+        label: 'UI readiness check',
+        session: { kind: 'existing', ...must(state.turn, 'UI session').agent },
+        prompt: uiReadinessPrompt(),
+        feedback: { phase: 'Checking for open UI items' },
+      }),
+      onResult: (_state, turn) => ({ turn }),
+    }),
+
+    readReadiness: operation<PrepareState, PrepareState>(async (ctx, state) => {
+      const { agentSessionId } = must(state.turn, 'UI session').agent;
+      const readinessReply = latestAssistantTurnText(await ctx.getConversationHistory(agentSessionId));
+      if (!readinessReply) return failStep(ctx, { phase: 'End-to-end implementation failed', message: 'No UI readiness response was found' }, `UI session ${agentSessionId} has no complete assistant turn to inspect.`);
+      return complete({ update: { readinessReply } });
+    }, { title: "Read the UI agent's readiness reply" }),
+
+    judgeReadiness: subgraph<PrepareState, PrepareState, JudgmentParameters, JudgmentOutput<UiReadiness>>({
+      graph: UiReadinessJudgment,
+      title: 'Judge UI readiness',
+      parameters: (state) => ({
+        label: 'UI readiness',
+        profile: uiReadinessJudgment,
+        prompt: uiReadinessJudgmentPrompt(must(state.readinessReply, 'UI readiness reply')),
+      }),
+      // A rejudge reads the UI agent's latest reply again before judging it.
+      onResult: (_state, { output }) => ({ readiness: output.outcome === 'judged' ? output.route : null }),
+    }),
+
+    resolveOpenItems: operation<PrepareState, PrepareState>(async (ctx, state) => {
+      const { reason } = must(state.readiness, 'UI readiness');
+      await ctx.setUiFeedback({ kind: 'warning', phase: 'UI session has open items', message: `${reason} Resolve them in the UI session, then select Continue.` });
+      await ctx.log('info', `UI session has open items: ${reason}`);
+      return suspend({ wait: wait.userContinue('The UI session has open items. Resolve them, then Continue.') });
+    }, { title: 'Ask the user to resolve open UI items' }),
+
+    amendDesign: agentTurn<PrepareState, PrepareState>({
+      title: 'Amend the design documents',
+      parameters: (state) => ({
+        label: 'Design amendment',
+        session: { kind: 'existing', ...must(state.turn, 'UI session').agent },
+        prompt: uiDesignAmendmentPrompt(designPaths),
+        feedback: { phase: 'Amending design documents' },
+      }),
+      onResult: (_state, turn) => ({ turn }),
+    }),
 
     writeBrief: agentTurn<PrepareState, PrepareState>({
       title: 'Write the UI brief',
       parameters: (state) => ({
         label: 'UI brief writing',
         session: { kind: 'existing', ...must(state.turn, 'UI session').agent },
-        prompt: uiBriefPrompt(uiBriefPath),
+        prompt: uiBriefPrompt({ ...designPaths, uiBriefPath }),
         feedback: { phase: 'Writing UI brief' },
       }),
       onResult: (_state, turn) => ({ turn }),
@@ -117,7 +173,19 @@ export const PrepareImplementationGraph = createGraph<PrepareState, {}, PrepareI
   edges: {
     afterResetPlan: edge<PrepareState, PrepareState>({ from: 'resetPlan', to: ['discoverUi'], choose: () => ({ to: 'discoverUi' }) }),
     afterDiscoverUi: edge<PrepareState, PrepareState>({ from: 'discoverUi', to: ['steerUi', 'failed'], choose: (state) => afterTurn(state, 'steerUi', 'UI discovery failed') }),
-    afterSteerUi: afterContinue<PrepareState>('steerUi', 'writeBrief', 'UI session could not continue'),
+    afterSteerUi: afterContinue<PrepareState>('steerUi', 'checkReadiness', 'UI session could not continue'),
+    afterCheckReadiness: edge<PrepareState, PrepareState>({ from: 'checkReadiness', to: ['readReadiness', 'failed'], choose: (state) => afterTurn(state, 'readReadiness', 'UI readiness check failed') }),
+    afterReadReadiness: edge<PrepareState, PrepareState>({ from: 'readReadiness', to: ['judgeReadiness'], choose: () => ({ to: 'judgeReadiness' }) }),
+    afterJudgeReadiness: edge<PrepareState, PrepareState>({
+      from: 'judgeReadiness',
+      to: ['readReadiness', 'resolveOpenItems', 'amendDesign'],
+      choose: (state) => {
+        if (state.readiness === null) return { to: 'readReadiness' };
+        return { to: state.readiness.outcome === 'pending' ? 'resolveOpenItems' : 'amendDesign' };
+      },
+    }),
+    afterResolveOpenItems: afterContinue<PrepareState>('resolveOpenItems', 'checkReadiness', 'Open UI items could not continue'),
+    afterAmendDesign: edge<PrepareState, PrepareState>({ from: 'amendDesign', to: ['writeBrief', 'failed'], choose: (state) => afterTurn(state, 'writeBrief', 'Design amendment failed') }),
     afterWriteBrief: edge<PrepareState, PrepareState>({ from: 'writeBrief', to: ['checkBrief', 'failed'], choose: (state) => afterTurn(state, 'checkBrief', 'UI brief writing failed') }),
     afterCheckBrief: edge<PrepareState, PrepareState>({ from: 'checkBrief', to: ['askForBrief', 'commit'], choose: (state) => ({ to: state.briefMissing ? 'askForBrief' : 'commit' }) }),
     afterAskForBrief: afterContinue<PrepareState>('askForBrief', 'checkBrief', 'UI brief check could not continue'),

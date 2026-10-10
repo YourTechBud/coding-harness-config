@@ -4254,6 +4254,11 @@ var uiAgent = {
   model: "opus",
   effort: "medium"
 };
+var uiReadinessJudgment = {
+  harness: "codex",
+  model: "gpt-6-luna",
+  effort: "medium"
+};
 var documentationAgent = {
   harness: "claude",
   model: "opus",
@@ -4269,6 +4274,57 @@ var pullRequestAgent = {
   model: "gpt-6-luna",
   effort: "medium"
 };
+
+// src/judgments.ts
+function uiReadinessJudgmentPrompt(response) {
+  return `You are an unattended routing judgment for a UI design session. The agent was asked whether anything is still open before the design documents are updated and the UI brief is written.
+
+Agent response:
+${response}
+
+Return exactly one JSON object with exactly these fields:
+{"outcome":"pending","reason":"The user has not chosen between the two empty-state layouts."}
+
+Return "pending" when the agent names anything still open for the user, such as an unmade decision, an unsettled UI piece, or an unanswered question, and name the open items in reason. Return "ready" when the agent reports that nothing is open. Updates to the design documents or the UI brief are not open items.
+
+Return a concise, nonempty reason and no commentary, markdown, or extra JSON fields.`;
+}
+function parseUiReadiness(output) {
+  const first = output.indexOf("{");
+  const last = output.lastIndexOf("}");
+  if (first < 0 || last < first) throw new Error("UI readiness judgment did not contain a JSON object.");
+  const value = JSON.parse(output.slice(first, last + 1));
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("UI readiness judgment must be a JSON object.");
+  const record = value;
+  const keys = Object.keys(record);
+  if (keys.length !== 2 || !keys.includes("outcome") || !keys.includes("reason")) throw new Error("UI readiness judgment must contain exactly two fields: outcome and reason.");
+  if (record.outcome !== "ready" && record.outcome !== "pending") throw new Error("UI readiness judgment outcome must be one of: ready, pending.");
+  if (typeof record.reason !== "string" || record.reason.trim().length === 0) throw new Error("UI readiness judgment reason must be nonempty text.");
+  return { outcome: record.outcome, reason: record.reason.trim() };
+}
+function latestAssistantTurnText6(history) {
+  let finalAssistantIndex = -1;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index];
+    if (message?.role === "assistant" && completeMessageText5(message)) {
+      finalAssistantIndex = index;
+      break;
+    }
+  }
+  if (finalAssistantIndex < 0) return null;
+  let precedingUserIndex = -1;
+  for (let index = finalAssistantIndex - 1; index >= 0; index -= 1) {
+    if (history[index]?.role === "user") {
+      precedingUserIndex = index;
+      break;
+    }
+  }
+  const turn = history.slice(precedingUserIndex + 1, finalAssistantIndex + 1).filter((message) => message.role === "assistant").map(completeMessageText5).filter((text4) => text4.length > 0).join("\n\n").trim();
+  return turn.length > 0 ? turn : null;
+}
+function completeMessageText5(message) {
+  return message.parts.filter((part) => part.type === "text" && part.state !== "streaming").map((part) => part.text).join("\n").trim();
+}
 
 // src/prompts.ts
 function designContext(input) {
@@ -4286,10 +4342,18 @@ Read these documents and explore the relevant existing UI and code to ground the
 
 Start with a concise assessment of the UI pieces worth exploring and any questions that would help me decide what to do. Keep this opening turn focused on discovery; I will steer the scope and subsequent mock creation.`;
 }
-function uiBriefPrompt(uiBriefPath2) {
-  return `Write a concise UI brief at ${uiBriefPath2} summarizing the outcome of this session for a fresh implementation planner.
+function uiReadinessPrompt() {
+  return `Before we wrap up this session, check whether anything is still open: a decision I haven't made, a UI piece we raised but haven't mocked or settled, or a question you need answered before implementation planning.
 
-Capture decisions, what was created, and where the mocks exist, including relevant file paths, routes, and how to view them. Give the planner enough context to use the designs without access to this conversation.
+List what is open, or say that nothing is. Answer without changing any files.`;
+}
+function uiDesignAmendmentPrompt(input) {
+  return `Amend ${input.architecturePath} and ${input.programDesignPath} with the decisions we made in this session so they remain the source of truth for implementation. Make targeted edits that fit each document's existing structure. If the session changed nothing they cover, leave them unchanged and say so.`;
+}
+function uiBriefPrompt(input) {
+  return `Write a concise UI brief at ${input.uiBriefPath} summarizing the outcome of this session for a fresh implementation planner.
+
+The decisions from this session now live in ${input.architecturePath} and ${input.programDesignPath}; reference them rather than restating them. Capture what was created and where the mocks exist, including relevant file paths, routes, and how to view them, plus any UI detail the design documents don't hold. Give the planner enough context to use the designs without access to this conversation.
 
 If no UI mocks were needed or created, capture that outcome. Keep the brief simple and report its path when finished.`;
 }
@@ -4395,14 +4459,17 @@ var CheckpointGraph = m({
 
 // src/graphs/sessions.ts
 var BRAINSTORMING = [{ kind: "skill", name: "brainstorming" }];
+var UiReadinessJudgment = createJudgmentGraph({ key: "EndToEndImplementationUiReadiness", title: "Judge UI readiness", parse: parseUiReadiness });
 var PrepareImplementationGraph = m({
   key: "EndToEndImplementationPrepare",
   title: "Prepare implementation",
-  init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, turn: null, briefMissing: false, failure: null }),
+  init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, turn: null, readinessReply: null, readiness: null, briefMissing: false, failure: null }),
   state: {
     repositoryPath: c.replace(),
     story: c.replace(),
     turn: c.replace(),
+    readinessReply: c.replace(),
+    readiness: c.replace(),
     briefMissing: c.replace(),
     failure: c.replace()
   },
@@ -4431,15 +4498,58 @@ var PrepareImplementationGraph = m({
       onResult: (_state, turn) => ({ turn })
     }),
     steerUi: l(async (ctx) => {
-      await ctx.setUiFeedback({ phase: "Explore UI with the agent", message: "Steer the UI session, then select Continue to capture the brief and prepare implementation." });
+      await ctx.setUiFeedback({ phase: "Explore UI with the agent", message: "Steer the UI session, then select Continue to check for open items, amend the design documents, and capture the brief." });
       return _({ wait: y.userContinue() });
     }, { title: "Explore the UI with the agent" }),
+    checkReadiness: agentTurn({
+      title: "Check for open UI items",
+      parameters: (state) => ({
+        label: "UI readiness check",
+        session: { kind: "existing", ...must6(state.turn, "UI session").agent },
+        prompt: uiReadinessPrompt(),
+        feedback: { phase: "Checking for open UI items" }
+      }),
+      onResult: (_state, turn) => ({ turn })
+    }),
+    readReadiness: l(async (ctx, state) => {
+      const { agentSessionId } = must6(state.turn, "UI session").agent;
+      const readinessReply = latestAssistantTurnText6(await ctx.getConversationHistory(agentSessionId));
+      if (!readinessReply) return failStep(ctx, { phase: "End-to-end implementation failed", message: "No UI readiness response was found" }, `UI session ${agentSessionId} has no complete assistant turn to inspect.`);
+      return g({ update: { readinessReply } });
+    }, { title: "Read the UI agent's readiness reply" }),
+    judgeReadiness: u({
+      graph: UiReadinessJudgment,
+      title: "Judge UI readiness",
+      parameters: (state) => ({
+        label: "UI readiness",
+        profile: uiReadinessJudgment,
+        prompt: uiReadinessJudgmentPrompt(must6(state.readinessReply, "UI readiness reply"))
+      }),
+      // A rejudge reads the UI agent's latest reply again before judging it.
+      onResult: (_state, { output }) => ({ readiness: output.outcome === "judged" ? output.route : null })
+    }),
+    resolveOpenItems: l(async (ctx, state) => {
+      const { reason } = must6(state.readiness, "UI readiness");
+      await ctx.setUiFeedback({ kind: "warning", phase: "UI session has open items", message: `${reason} Resolve them in the UI session, then select Continue.` });
+      await ctx.log("info", `UI session has open items: ${reason}`);
+      return _({ wait: y.userContinue("The UI session has open items. Resolve them, then Continue.") });
+    }, { title: "Ask the user to resolve open UI items" }),
+    amendDesign: agentTurn({
+      title: "Amend the design documents",
+      parameters: (state) => ({
+        label: "Design amendment",
+        session: { kind: "existing", ...must6(state.turn, "UI session").agent },
+        prompt: uiDesignAmendmentPrompt(designPaths),
+        feedback: { phase: "Amending design documents" }
+      }),
+      onResult: (_state, turn) => ({ turn })
+    }),
     writeBrief: agentTurn({
       title: "Write the UI brief",
       parameters: (state) => ({
         label: "UI brief writing",
         session: { kind: "existing", ...must6(state.turn, "UI session").agent },
-        prompt: uiBriefPrompt(uiBriefPath),
+        prompt: uiBriefPrompt({ ...designPaths, uiBriefPath }),
         feedback: { phase: "Writing UI brief" }
       }),
       onResult: (_state, turn) => ({ turn })
@@ -4464,7 +4574,19 @@ var PrepareImplementationGraph = m({
   edges: {
     afterResetPlan: f({ from: "resetPlan", to: ["discoverUi"], choose: () => ({ to: "discoverUi" }) }),
     afterDiscoverUi: f({ from: "discoverUi", to: ["steerUi", "failed"], choose: (state) => afterTurn2(state, "steerUi", "UI discovery failed") }),
-    afterSteerUi: afterContinue("steerUi", "writeBrief", "UI session could not continue"),
+    afterSteerUi: afterContinue("steerUi", "checkReadiness", "UI session could not continue"),
+    afterCheckReadiness: f({ from: "checkReadiness", to: ["readReadiness", "failed"], choose: (state) => afterTurn2(state, "readReadiness", "UI readiness check failed") }),
+    afterReadReadiness: f({ from: "readReadiness", to: ["judgeReadiness"], choose: () => ({ to: "judgeReadiness" }) }),
+    afterJudgeReadiness: f({
+      from: "judgeReadiness",
+      to: ["readReadiness", "resolveOpenItems", "amendDesign"],
+      choose: (state) => {
+        if (state.readiness === null) return { to: "readReadiness" };
+        return { to: state.readiness.outcome === "pending" ? "resolveOpenItems" : "amendDesign" };
+      }
+    }),
+    afterResolveOpenItems: afterContinue("resolveOpenItems", "checkReadiness", "Open UI items could not continue"),
+    afterAmendDesign: f({ from: "amendDesign", to: ["writeBrief", "failed"], choose: (state) => afterTurn2(state, "writeBrief", "Design amendment failed") }),
     afterWriteBrief: f({ from: "writeBrief", to: ["checkBrief", "failed"], choose: (state) => afterTurn2(state, "checkBrief", "UI brief writing failed") }),
     afterCheckBrief: f({ from: "checkBrief", to: ["askForBrief", "commit"], choose: (state) => ({ to: state.briefMissing ? "askForBrief" : "commit" }) }),
     afterAskForBrief: afterContinue("askForBrief", "checkBrief", "UI brief check could not continue"),

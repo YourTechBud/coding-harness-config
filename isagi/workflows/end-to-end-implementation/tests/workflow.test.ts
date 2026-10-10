@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import type { OperationContext } from '@yourtechbudstudio/isagi-workflow-sdk';
+import type { OperationContext, WorkflowConversationMessage } from '@yourtechbudstudio/isagi-workflow-sdk';
 import type { AgentTurnParameters } from 'isagi-workflow-common-graphs';
 import {
   agentTurnEnded,
@@ -13,6 +13,8 @@ import {
   assertDestinationsDeclared,
   headlessCompleted,
   headlessFailed,
+  judged,
+  rejudged,
   subgraphParameters,
   visit,
   visitSubgraph,
@@ -21,7 +23,7 @@ import type { ImplementStoryParameters } from 'isagi-workflow-implement-story/gr
 import type { SolutionWalkthroughParameters } from 'isagi-workflow-solution-walkthrough-story/graph';
 
 import { checkpointPrompt } from '../src/checkpoint.js';
-import { commitAgent, documentationAgent, uiAgent } from '../src/constants.js';
+import { commitAgent, documentationAgent, uiAgent, uiReadinessJudgment } from '../src/constants.js';
 import { EndToEndImplementationGraph } from '../src/graph.js';
 import { CheckpointGraph } from '../src/graphs/checkpoint-commit.js';
 import {
@@ -43,7 +45,8 @@ import { DocumentationGraph, PrepareImplementationGraph } from '../src/graphs/se
 import { PullRequestGraph } from '../src/graphs/submit-pull-request.js';
 import { WalkthroughGraph } from '../src/graphs/walkthrough.js';
 import workflow from '../src/index.js';
-import { uiBriefPrompt } from '../src/prompts.js';
+import { uiReadinessJudgmentPrompt } from '../src/judgments.js';
+import { uiBriefPrompt, uiDesignAmendmentPrompt, uiReadinessPrompt } from '../src/prompts.js';
 
 const story = 'https://github.com/owner/repository/issues/123';
 const session = { agentSessionId: 21, paneId: 31 };
@@ -159,7 +162,7 @@ test('rejection stops cleanly before touching the implementation plan', async (t
   });
 });
 
-test('approval resets the implementation plan, then UI discovery brainstorms, pauses, and writes a brief in the same session', async (t) => {
+test('approval resets the implementation plan, then UI discovery brainstorms, settles open items, amends the design, and writes a brief in the same session', async (t) => {
   const worktreePath = tempWorktree(t);
   initGit(worktreePath);
   writeArtifact(worktreePath, entryPlanPath, '# Old plan');
@@ -176,12 +179,41 @@ test('approval resets the implementation plan, then UI discovery brainstorms, pa
   const discovered = visitSubgraph(graph, 'discoverUi', reset.state, agentTurnEnded(session));
   assert.equal(discovered.to, 'steerUi');
   const steered = await visit(graph, 'steerUi', harness.ctx, discovered.state, { kind: 'user_continue' });
-  assert.equal(steered.to, 'writeBrief');
-  const brief = subgraphParameters<AgentTurnParameters>(graph, 'writeBrief', steered.state);
-  assert.deepEqual(brief.session, { kind: 'existing', ...session });
-  assert.equal(brief.prompt, uiBriefPrompt(uiBriefPath));
+  assert.equal(steered.to, 'checkReadiness');
 
-  const written = visitSubgraph(graph, 'writeBrief', steered.state, agentTurnEnded(session));
+  // Open items go back to the user, and Continue asks the same session again.
+  const readiness = subgraphParameters<AgentTurnParameters>(graph, 'checkReadiness', steered.state);
+  assert.deepEqual(readiness.session, { kind: 'existing', ...session });
+  assert.equal(readiness.prompt, uiReadinessPrompt());
+  const checkedOnce = visitSubgraph(graph, 'checkReadiness', steered.state, agentTurnEnded(session));
+  assert.equal(checkedOnce.to, 'readReadiness');
+  harness.history.push(message('user', uiReadinessPrompt()), message('assistant', 'The empty-state layout is still undecided.'));
+  const readOnce = await visit(graph, 'readReadiness', harness.ctx, checkedOnce.state);
+  assert.equal(readOnce.to, 'judgeReadiness');
+  assert.deepEqual(subgraphParameters(graph, 'judgeReadiness', readOnce.state), { label: 'UI readiness', profile: uiReadinessJudgment, prompt: uiReadinessJudgmentPrompt('The empty-state layout is still undecided.') });
+  const pending = visitSubgraph(graph, 'judgeReadiness', readOnce.state, judged({ outcome: 'pending', reason: 'Choose the empty-state layout.' }));
+  assert.equal(pending.to, 'resolveOpenItems');
+  const resolved = await visit(graph, 'resolveOpenItems', harness.ctx, pending.state, { kind: 'user_continue' });
+  assert.deepEqual(harness.feedback.at(-1), { kind: 'warning', phase: 'UI session has open items', message: 'Choose the empty-state layout. Resolve them in the UI session, then select Continue.' });
+  assert.equal(resolved.to, 'checkReadiness');
+
+  const checkedAgain = visitSubgraph(graph, 'checkReadiness', resolved.state, agentTurnEnded(session));
+  harness.history.push(message('user', uiReadinessPrompt()), message('assistant', 'Nothing is open.'));
+  const readAgain = await visit(graph, 'readReadiness', harness.ctx, checkedAgain.state);
+  assert.equal(readAgain.state.readinessReply, 'Nothing is open.');
+  const ready = visitSubgraph(graph, 'judgeReadiness', readAgain.state, judged({ outcome: 'ready', reason: 'Nothing is open.' }));
+  assert.equal(ready.to, 'amendDesign');
+
+  const amendment = subgraphParameters<AgentTurnParameters>(graph, 'amendDesign', ready.state);
+  assert.deepEqual(amendment.session, { kind: 'existing', ...session });
+  assert.equal(amendment.prompt, uiDesignAmendmentPrompt(designPaths));
+  const amended = visitSubgraph(graph, 'amendDesign', ready.state, agentTurnEnded(session));
+  assert.equal(amended.to, 'writeBrief');
+  const brief = subgraphParameters<AgentTurnParameters>(graph, 'writeBrief', amended.state);
+  assert.deepEqual(brief.session, { kind: 'existing', ...session });
+  assert.equal(brief.prompt, uiBriefPrompt({ ...designPaths, uiBriefPath }));
+
+  const written = visitSubgraph(graph, 'writeBrief', amended.state, agentTurnEnded(session));
   writeArtifact(worktreePath, uiBriefPath, '# UI brief');
   commitAll(worktreePath, 'draft: UI brief');
   const checked = await visit(graph, 'checkBrief', harness.ctx, written.state);
@@ -212,6 +244,23 @@ test('a missing UI brief pauses and a dead UI session fails, both without closin
   const died = visitSubgraph(graph, 'discoverUi', graph.init(destination(worktreePath), { story }), agentTurnInterrupted(session, 'UI discovery was interrupted in pane 31: session_died'));
   assert.deepEqual(graph.outcomes.failed!.output(died.state), { outcome: 'failed', failure: { message: 'UI discovery failed', diagnostic: 'UI discovery was interrupted in pane 31: session_died' } });
   assert.deepEqual(harness.closed, []);
+});
+
+test('a UI readiness reply that cannot be judged is read again, and a missing reply fails the step', async (t) => {
+  const worktreePath = tempWorktree(t);
+  const harness = workflowHarness(worktreePath);
+  const graph = PrepareImplementationGraph;
+  const checked = visitSubgraph(graph, 'checkReadiness', { ...graph.init(destination(worktreePath), { story }), turn: { outcome: 'ended' as const, agent: session } }, agentTurnEnded(session));
+  await assert.rejects(visit(graph, 'readReadiness', harness.ctx, checked.state), /UI session 21 has no complete assistant turn/);
+
+  harness.history.push(message('user', uiReadinessPrompt()), message('assistant', 'Nothing is open.'));
+  const read = await visit(graph, 'readReadiness', harness.ctx, checked.state);
+  const rejudge = visitSubgraph(graph, 'judgeReadiness', read.state, rejudged());
+  assert.equal(rejudge.to, 'readReadiness');
+  assert.equal(rejudge.state.readiness, null);
+
+  const amendmentDied = visitSubgraph(graph, 'amendDesign', read.state, agentTurnInterrupted(session, 'Design amendment was interrupted in pane 31: session_died'));
+  assert.deepEqual(graph.outcomes.failed!.output(amendmentDied.state), { outcome: 'failed', failure: { message: 'Design amendment failed', diagnostic: 'Design amendment was interrupted in pane 31: session_died' } });
 });
 
 for (const checkpoint of ['ui', 'documentation'] as const) {
@@ -406,13 +455,14 @@ function workflowHarness(worktreePath: string) {
   const feedback: Array<Parameters<OperationContext['setUiFeedback']>[0]> = [];
   const headless: Array<Parameters<OperationContext['runHeadlessAgent']>[0]> = [];
   const closed: number[] = [];
+  const history: WorkflowConversationMessage[] = [];
   const ctx: OperationContext = {
     destination: destination(worktreePath),
     execution: { runId: 1, graphInvocationId: 1, executionId: 1, attempt: 'initial' },
     spawnAgentSession: async () => { throw new Error('Agent turns run in the AgentTurn graph.'); },
     sendAgentPrompt: async () => { throw new Error('Agent turns run in the AgentTurn graph.'); },
     closePane: async (paneId) => { closed.push(paneId); },
-    getConversationHistory: async () => [],
+    getConversationHistory: async () => history,
     runHeadlessAgent: async (request) => {
       headless.push(request);
       return { operationId: `op-${headless.length}` };
@@ -420,7 +470,11 @@ function workflowHarness(worktreePath: string) {
     log: async () => {},
     setUiFeedback: async (value) => { feedback.push(value); },
   };
-  return { ctx, feedback, headless, closed };
+  return { ctx, feedback, headless, closed, history };
+}
+
+function message(role: WorkflowConversationMessage['role'], text: string): WorkflowConversationMessage {
+  return { role, parts: [{ type: 'text', text, state: 'done' }] };
 }
 
 function tempWorktree(t: TestContext): string {
