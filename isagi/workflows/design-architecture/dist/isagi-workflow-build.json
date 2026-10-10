@@ -10,15 +10,15 @@
     "version": "0.1.1"
   },
   "source": {
-    "sha256": "d86b34e02e92dfdd7cd32bc3892cca6df9d2946ed73e7f5266411768222188ba"
+    "sha256": "e4ec4d07b5c324914c502725ded70995832b812dc80f25d193d54a75174c04e2"
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "8195f7ce63864e95f3676d870df5e9a49d84d583c02c9908df4906072dd641b3"
+    "sha256": "35d9c2383878cdcd82d1679cb42581a4fc79f0b25235dd6f35940ec3387e6cf1"
   },
   "structure": {
     "descriptorVersion": 2,
-    "sha256": "2dcc3351f468adf475c53237db934024a30f07270b02c25358fe2c9cb618d7e6",
+    "sha256": "4175d9c73c3bf03fa7d1d603f74981bc3281919cc3dbd8163924634db47c304b",
     "rootGraphKey": "DesignArchitecture",
     "graphCount": 6
   }

@@ -984,17 +984,18 @@ function createReviewedArtifactGraph(config) {
       }),
       askHuman: l4(async (ctx, state) => {
         const reason = must2(state.reviewReason, "review decision");
-        const message = `${reason} Resolve it with ${config.roles.writer.toLowerCase()}, then select Continue.`;
+        const message = `${reason} Resolve it with ${config.roles.reviewer.toLowerCase()}, then select Continue.`;
         await ctx.setUiFeedback({ kind: "warning", phase: "Waiting for your decision", message });
         await ctx.log("warning", `${config.roundLabel} ${state.reviewRound} needs a human decision: ${reason}
 ${must2(state.review, "review")}`);
         return _4({ wait: y4.userContinue(message) });
       }, { title: "Wait for your decision" }),
-      replay: u4({
-        graph: writer4,
-        title: "Incorporate your decision",
-        parameters: (state) => ({ context: state.context, writer: must2(state.writer, "writer"), review: must2(state.review, "review"), afterHumanDecision: true }),
-        onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { writerResponse: output.response }
+      restate: u4({
+        graph: review,
+        title: "Restate the review with your decision",
+        label: (state) => `Restate review round ${state.reviewRound}`,
+        parameters: (state) => ({ context: state.context, reviewer: must2(state.reviewer, "reviewer"), writerResponse: null, round: state.reviewRound, restate: true }),
+        onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { reviewer: output.reviewer, review: output.review, verdict: output.verdict, reviewReason: output.reason, reviewRound: output.round }
       }),
       finish: l4(async (ctx, state) => {
         await ctx.setUiFeedback({ phase: config.phases.complete });
@@ -1022,11 +1023,18 @@ ${must2(state.review, "review")}`);
         }
       }),
       afterRevise: f4({ from: "revise", to: ["review", "reportFailure"], choose: (state) => ({ to: state.failure ? "reportFailure" : "review" }) }),
-      afterAskHuman: f4({ from: "askHuman", to: ["replay"], choose: (_state, event) => {
+      afterAskHuman: f4({ from: "askHuman", to: ["restate"], choose: (_state, event) => {
         if (event.kind !== "user_continue") throw new Error(`The human decision resumed with an unexpected ${event.kind} event.`);
-        return { to: "replay" };
+        return { to: "restate" };
       } }),
-      afterReplay: f4({ from: "replay", to: ["review", "reportFailure"], choose: (state) => ({ to: state.failure ? "reportFailure" : "review" }) }),
+      afterRestate: f4({
+        from: "restate",
+        to: ["revise", "askHuman", "reportFailure"],
+        choose: (state) => {
+          if (state.failure) return { to: "reportFailure" };
+          return { to: state.verdict === "human-decision" ? "askHuman" : "revise" };
+        }
+      }),
       afterFinish: f4({ from: "finish", to: ["reviewed"], choose: () => ({ to: "reviewed" }) }),
       afterReportFailure: f4({ from: "reportFailure", to: ["failed"], choose: () => ({ to: "failed" }) })
     },
@@ -1049,7 +1057,6 @@ function createWriterGraph(config) {
       ...parameters,
       turn: null,
       response: null,
-      afterHumanDecision: parameters.afterHumanDecision ?? false,
       artifactExists: false,
       recoveryAttempts: 0,
       route: null,
@@ -1063,7 +1070,6 @@ function createWriterGraph(config) {
       review: c4.replace(),
       turn: c4.replace(),
       response: c4.replace(),
-      afterHumanDecision: c4.replace(),
       artifactExists: c4.replace(),
       recoveryAttempts: c4.replace(),
       route: c4.replace(),
@@ -1084,7 +1090,7 @@ function createWriterGraph(config) {
         } : {
           label: role,
           session: { kind: "existing", ...state.writer },
-          prompt: state.afterHumanDecision ? continuationPrompt(state) : config.prompts.reviewToWriter(must2(state.review, "review")),
+          prompt: config.prompts.reviewToWriter(must2(state.review, "review")),
           feedback: { phase: config.phases.revising },
           ...resubmit
         },
@@ -1112,8 +1118,8 @@ function createWriterGraph(config) {
       }),
       askUser: l4(async (ctx, state) => {
         const writer4 = must2(state.writer, "writer");
-        const phase = state.route === "human-decision" ? "Waiting for your decision" : "The writer needs help finishing the artifact";
-        const reason = state.artifactExists || state.route === "human-decision" ? must2(state.routingReason, "writer routing reason") : `The artifact file is missing or empty at ${state.context.artifactPath}.`;
+        const phase = "The writer needs help finishing the artifact";
+        const reason = state.artifactExists ? must2(state.routingReason, "writer routing reason") : `The artifact file is missing or empty at ${state.context.artifactPath}.`;
         const message = `${reason} Resolve it with ${role.toLowerCase()}, then select Continue.`;
         await ctx.setUiFeedback({ kind: "warning", phase, message });
         await ctx.log("warning", `Writer session ${writer4.agentSessionId}: ${phase}. ${reason}
@@ -1121,20 +1127,8 @@ Latest response:
 ${must2(state.response, "writer response")}`);
         return _4({ wait: y4.userContinue(message) });
       }, { title: "Ask the user to resolve the writer" }),
-      recover: l4(async () => g4({ update: { recoveryAttempts: 0 } }), { title: "Prepare the updated writer response" }),
-      replay: agentTurn({
-        title: "Incorporate your decision and reply to the reviewer",
-        parameters: (state) => ({
-          label: role,
-          session: { kind: "existing", ...must2(state.writer, "writer") },
-          prompt: continuationPrompt(state),
-          feedback: { phase: config.phases.revising },
-          ...resubmit
-        }),
-        onResult: (_state, turn) => ({ turn })
-      }),
       nudge: agentTurn({
-        title: "Nudge the writer once",
+        title: "Ask the writer to resume",
         parameters: (state) => ({
           label: role,
           session: { kind: "existing", ...must2(state.writer, "writer") },
@@ -1153,21 +1147,18 @@ ${must2(state.response, "writer response")}`);
         to: ["ready", "nudge", "askUser", "readResponse"],
         choose: (state) => {
           if (state.route === null) return { to: "readResponse" };
-          if (state.route === "human-decision") return { to: "askUser" };
           if (state.route === "ready" && state.artifactExists) return { to: "ready" };
           return { to: state.recoveryAttempts < MAX_WRITER_RECOVERIES ? "nudge" : "askUser" };
         }
       }),
       afterAskUser: f4({
         from: "askUser",
-        to: ["recover"],
+        to: ["nudge"],
         choose: (_state, event) => {
           if (event.kind !== "user_continue") throw new Error(`The writer recovery resumed with an unexpected ${event.kind} event.`);
-          return { to: "recover" };
+          return { to: "nudge" };
         }
       }),
-      afterRecover: f4({ from: "recover", to: ["replay"], choose: () => ({ to: "replay" }) }),
-      afterReplay: afterWriterTurn("replay", role, "readResponse"),
       afterNudge: afterWriterTurn("nudge", role, "readResponse")
     },
     outcomes: {
@@ -1175,9 +1166,6 @@ ${must2(state.response, "writer response")}`);
       failed: p4({ kind: "failure", title: "Writer failed", output: (state) => ({ outcome: "failed", failure: must2(state.failure, "failure") }) })
     }
   });
-  function continuationPrompt(state) {
-    return config.prompts.continueWriter(state.review);
-  }
   function afterWriterTurn(from, label, next = "readResponse") {
     return f4({ from, to: [next, "failed"], choose: (state) => afterTurn(state, label, next) });
   }
@@ -1189,14 +1177,15 @@ function createReviewGraph(config) {
   return m4({
     key: `${config.key}Review`,
     title: "Review round",
-    label: (parameters) => `Review round ${parameters.round}`,
-    init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, turn: null, review: null, verdict: null, routingReason: null, failure: null }),
+    label: (parameters) => `${parameters.restate ? "Restate review" : "Review"} round ${parameters.round}`,
+    init: (destination, parameters) => ({ repositoryPath: destination.worktreePath, ...parameters, restate: parameters.restate ?? false, turn: null, review: null, verdict: null, routingReason: null, failure: null }),
     state: {
       repositoryPath: c4.replace(),
       context: c4.replace(),
       reviewer: c4.replace(),
       writerResponse: c4.replace(),
       round: c4.replace(),
+      restate: c4.replace(),
       turn: c4.replace(),
       review: c4.replace(),
       verdict: c4.replace(),
@@ -1213,6 +1202,12 @@ function createReviewGraph(config) {
           modifiers: [{ kind: "skill", name: config.skill }],
           prompt: config.prompts.initialReviewer({ ...state.context, repositoryPath: state.repositoryPath }),
           feedback: { phase: config.phases.reviewing },
+          ...resubmit
+        } : state.restate ? {
+          label: role,
+          session: { kind: "existing", ...state.reviewer },
+          prompt: config.prompts.restateReview(),
+          feedback: { phase: config.phases.restating },
           ...resubmit
         } : {
           label: role,
@@ -1290,9 +1285,8 @@ var WRITER_ROUTING_INSTRUCTIONS = `Return exactly one JSON object with exactly t
 {"outcome":"ready","reason":"The writing or revision is complete and ready for review."}
 
 Apply this precedence:
-1. Return "human-decision" when the writer identifies a specific unresolved user decision or input that blocks further writing or acceptance. This takes precedence even when the file exists and the writer says it is ready for review. Name the decision in reason. Writer and reviewer agreement does not remove the need for the user's decision.
-2. Return "ready" when the artifact file exists and the writer reports completed writing or revisions for review, including an evidence-backed response that applies some findings and pushes back on others. Ready for review is separate from reviewer acceptance. Findings the reviewer can adjudicate and nonblocking recorded uncertainty do not make a completed turn incomplete.
-3. Return "incomplete" when the artifact file is missing or the writer reports unfinished writing, only intended future work, or no completed artifact turn. Explain what remains in reason.
+1. Return "ready" when the artifact file exists and the writer reports completed writing or revisions for review, including an evidence-backed response that applies some findings and pushes back on others. Ready for review is separate from reviewer acceptance. Findings the reviewer can adjudicate, recorded uncertainty, and decisions the writer says need the user do not make a completed turn incomplete; the reviewer decides what to escalate to the user.
+2. Return "incomplete" when the artifact file is missing or the writer reports unfinished writing, only intended future work, or no completed artifact turn. Explain what remains in reason.
 
 Every outcome is valid on every invocation. Return a concise, nonempty reason and no confidence, commentary, markdown, or extra JSON fields.`;
 var REVIEWER_ROUTING_INSTRUCTIONS = `Return exactly one JSON object with exactly these fields:
@@ -1308,9 +1302,9 @@ var REVIEWER_ESCALATION_AND_CLOSURE = `Always include a Human Escalation section
 
 When no Blocker, Concern, or blocking human decision remains, end with the exact line: No re-review needed.`;
 var WRITER_INPUT_POLICY = `When a specific user decision or input blocks further writing or acceptance, preserve the completed work and clearly state the decision needed, your recommendation, alternatives, and consequences. Distinguish this blocking decision from nonblocking uncertainty and findings the reviewer can adjudicate. Keep scope decisions with the user.`;
-var WRITER_CONTINUATION_INSTRUCTIONS = `Incorporate the decisions and changes from our conversation into the artifact and any affected predecessor artifacts. Preserve completed work and verify the updated artifacts. Then provide a fresh response for the reviewer explaining the incorporated decisions, changes, and any remaining evidence-backed pushback. State whether a specific unresolved user decision still blocks progress. Produce an updated reviewer-facing response rather than repeating an outdated reply.`;
+var REVIEWER_RESTATEMENT_INSTRUCTIONS = `The user has responded to your escalation in this conversation. Restate your complete review for the writer with every decision and piece of feedback from that discussion incorporated. The writer has not seen this conversation, so the restated review must stand on its own: record each decision the user settled as binding, update or drop the findings those decisions resolve, and keep every other finding in full. The artifact does not yet reflect these decisions, so keep a finding open wherever the writer still has to apply one. Escalate again only a decision the user left unresolved.`;
 function parseWriterRoute(output) {
-  return parseJudgment(output, ["ready", "incomplete", "human-decision"], "writer");
+  return parseJudgment(output, ["ready", "incomplete"], "writer");
 }
 function parseReviewerRoute(output) {
   return parseJudgment(output, ["complete", "revise", "human-decision"], "reviewer");
@@ -3674,12 +3668,6 @@ function retryWriterPrompt() {
     `Resume the current-state analysis from the current conversation, worktree, and artifact. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and provide a completed response for review. ${WRITER_INPUT_POLICY}`
   );
 }
-function continueWriterPrompt(review) {
-  return withPromptFooter2(`${WRITER_CONTINUATION_INSTRUCTIONS}${review ? `
-
-Review to address:
-${review}` : ""}`);
-}
 function initialReviewerPrompt(input) {
   return withPromptFooter2(`Independently review the current-state analysis from first principles.
 
@@ -3699,6 +3687,13 @@ function writerToReviewerPrompt(writerResponse) {
 ${writerResponse}
 
 Re-review the current artifact from first principles. Verify claimed corrections directly, adjudicate pushback on its merits, and inspect the full artifact for remaining or newly introduced issues. Do not preserve a finding when the writer's evidence resolves it, and do not silently drop an unresolved finding.
+
+${CURRENT_STATE_REVIEW_CONTRACT}
+
+${REVIEWER_ESCALATION_AND_CLOSURE}`);
+}
+function restateReviewPrompt() {
+  return withPromptFooter2(`${REVIEWER_RESTATEMENT_INSTRUCTIONS}
 
 ${CURRENT_STATE_REVIEW_CONTRACT}
 
@@ -3770,6 +3765,7 @@ var AnalyzeCurrentStateGraph = createReviewedArtifactGraph({
     routingReview: "Routing reviewer feedback",
     revising: "Revising current-state analysis",
     rereviewing: "Re-reviewing current-state analysis",
+    restating: "Restating current-state analysis review with your decision",
     recoveringWriter: "Recovering current-state writer",
     complete: "Current-state analysis complete",
     failed: "Analyze current state failed"
@@ -3778,9 +3774,9 @@ var AnalyzeCurrentStateGraph = createReviewedArtifactGraph({
     initialWriter: initialWriterPrompt,
     reviewToWriter: reviewToWriterPrompt,
     retryWriter: retryWriterPrompt,
-    continueWriter: continueWriterPrompt,
     initialReviewer: initialReviewerPrompt,
     writerToReviewer: writerToReviewerPrompt,
+    restateReview: restateReviewPrompt,
     writerRouting: writerRoutingPrompt,
     reviewerRouting: reviewerRoutingPrompt
   },
@@ -3857,12 +3853,6 @@ function retryWriterPrompt2() {
     `Resume the architecture work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and provide a completed response for review. ${WRITER_INPUT_POLICY}`
   );
 }
-function continueWriterPrompt2(review) {
-  return withPromptFooter3(`${WRITER_CONTINUATION_INSTRUCTIONS}${review ? `
-
-Review to address:
-${review}` : ""}`);
-}
 function initialReviewerPrompt2(input) {
   return withPromptFooter3(`Independently review the target architecture from first principles.
 
@@ -3883,6 +3873,13 @@ function writerToReviewerPrompt2(writerResponse) {
 ${writerResponse}
 
 Re-review the current architecture from first principles. Verify claimed corrections directly, adjudicate pushback on its merits, inspect the current-state analysis wherever the architecture depends on it, and review the full architecture for remaining or newly introduced issues. Do not preserve a finding when the writer's evidence resolves it, and do not silently drop an unresolved finding.
+
+${ARCHITECTURE_REVIEW_CONTRACT}
+
+${REVIEWER_ESCALATION_AND_CLOSURE}`);
+}
+function restateReviewPrompt2() {
+  return withPromptFooter3(`${REVIEWER_RESTATEMENT_INSTRUCTIONS}
 
 ${ARCHITECTURE_REVIEW_CONTRACT}
 
@@ -3954,6 +3951,7 @@ var DesignArchitectureGraph = createReviewedArtifactGraph({
     routingReview: "Routing architecture review",
     revising: "Revising architecture",
     rereviewing: "Re-reviewing architecture",
+    restating: "Restating architecture review with your decision",
     recoveringWriter: "Recovering architecture writer",
     complete: "Architecture complete",
     failed: "Design architecture failed"
@@ -3962,9 +3960,9 @@ var DesignArchitectureGraph = createReviewedArtifactGraph({
     initialWriter: initialWriterPrompt2,
     reviewToWriter: reviewToWriterPrompt2,
     retryWriter: retryWriterPrompt2,
-    continueWriter: continueWriterPrompt2,
     initialReviewer: initialReviewerPrompt2,
     writerToReviewer: writerToReviewerPrompt2,
+    restateReview: restateReviewPrompt2,
     writerRouting: writerRoutingPrompt2,
     reviewerRouting: reviewerRoutingPrompt2
   },
@@ -4044,12 +4042,6 @@ function retryWriterPrompt3() {
     `Resume the program-design work from the current conversation, worktree, and artifacts. Reassess the original request against their current state, including whether any commands or delegated work from the previous turn are still running or have now completed. Preserve completed work, finish the requested writing or revision, verify the artifact, and provide a completed response for review. ${WRITER_INPUT_POLICY}`
   );
 }
-function continueWriterPrompt3(review) {
-  return withPromptFooter4(`${WRITER_CONTINUATION_INSTRUCTIONS}${review ? `
-
-Review to address:
-${review}` : ""}`);
-}
 function initialReviewerPrompt3(input) {
   return withPromptFooter4(`Independently review the program design from first principles.
 
@@ -4071,6 +4063,13 @@ function writerToReviewerPrompt3(writerResponse) {
 ${writerResponse}
 
 Re-review the current program design from first principles. Reread the current artifacts, verify claimed corrections directly, adjudicate pushback on its merits, inspect the architecture and current-state analysis wherever the program design depends on them, and review the full design for remaining or newly introduced issues. Do not preserve a finding when the writer's evidence resolves it, and do not silently drop an unresolved finding.
+
+${PROGRAM_REVIEW_CONTRACT}
+
+${REVIEWER_ESCALATION_AND_CLOSURE}`);
+}
+function restateReviewPrompt3() {
+  return withPromptFooter4(`${REVIEWER_RESTATEMENT_INSTRUCTIONS}
 
 ${PROGRAM_REVIEW_CONTRACT}
 
@@ -4144,6 +4143,7 @@ var DesignProgramGraph = createReviewedArtifactGraph({
     routingReview: "Routing program-design review",
     revising: "Revising program design",
     rereviewing: "Re-reviewing program design",
+    restating: "Restating program design review with your decision",
     recoveringWriter: "Recovering program-design writer",
     complete: "Program design complete",
     failed: "Design program failed"
@@ -4152,9 +4152,9 @@ var DesignProgramGraph = createReviewedArtifactGraph({
     initialWriter: initialWriterPrompt3,
     reviewToWriter: reviewToWriterPrompt3,
     retryWriter: retryWriterPrompt3,
-    continueWriter: continueWriterPrompt3,
     initialReviewer: initialReviewerPrompt3,
     writerToReviewer: writerToReviewerPrompt3,
+    restateReview: restateReviewPrompt3,
     writerRouting: writerRoutingPrompt3,
     reviewerRouting: reviewerRoutingPrompt3
   },

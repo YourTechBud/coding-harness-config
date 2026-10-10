@@ -34,6 +34,7 @@ const graph = createReviewedArtifactGraph<Context>({
     routingReview: 'Routing thing review',
     revising: 'Revising thing',
     rereviewing: 'Re-reviewing thing',
+    restating: 'Restating thing review',
     recoveringWriter: 'Recovering thing writer',
     complete: 'Thing complete',
     failed: 'Design thing failed',
@@ -42,9 +43,9 @@ const graph = createReviewedArtifactGraph<Context>({
     initialWriter: (input) => `write ${input.story} at ${input.artifactPath} from ${input.currentStatePath} in ${input.repositoryPath}`,
     reviewToWriter: (review) => `apply ${review}`,
     retryWriter: () => 'finish the writing',
-    continueWriter: (review) => `incorporate our discussion and provide a fresh response for the reviewer${review ? `\n\nReview to address:\n${review}` : ''}`,
     initialReviewer: (input) => `review ${input.artifactPath}`,
     writerToReviewer: (response) => `rereview ${response}`,
+    restateReview: () => 'restate your review with the decision',
     writerRouting: (input) => `route writer ${input.writerResponse} for ${input.artifactPath}; exists=${input.artifactExists}`,
     reviewerRouting: (input) => `route reviewer ${input.review}`,
   },
@@ -59,7 +60,7 @@ const writerGraph = subgraphOf(graph, 'write');
 const reviewGraph = subgraphOf(graph, 'review');
 
 test('the business graph is write, review, revise, finish, and a failure report', () => {
-  assert.deepEqual(Object.keys(graph.nodes), ['write', 'review', 'revise', 'askHuman', 'replay', 'finish', 'reportFailure']);
+  assert.deepEqual(Object.keys(graph.nodes), ['write', 'review', 'revise', 'askHuman', 'restate', 'finish', 'reportFailure']);
   assert.deepEqual([graph.key, writerGraph.key, reviewGraph.key], ['DesignThing', 'DesignThingWriter', 'DesignThingReview']);
   for (const each of [graph, writerGraph, reviewGraph]) assertDestinationsDeclared(each);
 });
@@ -106,10 +107,7 @@ test('unfinished writing automatically recovers once, then waits with the actual
   const asked = await visit(writerGraph, 'askUser', harness.ctx, stillIncomplete.state, { kind: 'user_continue' });
   assert.equal(harness.feedback.at(-1)?.phase, 'The writer needs help finishing the artifact');
   assert.match(harness.feedback.at(-1)?.message ?? '', /ownership section remains unfinished/);
-  assert.equal(asked.to, 'recover');
-  const recovered = await visit(writerGraph, 'recover', harness.ctx, asked.state);
-  assert.equal(recovered.state.recoveryAttempts, 0);
-  assert.equal(recovered.to, 'replay');
+  assert.equal(asked.to, 'nudge');
 });
 
 test('a reported completion cannot bypass a missing, empty, or directory artifact', async () => {
@@ -149,56 +147,36 @@ test('automatic recovery can create the missing artifact and proceed to review',
   assert.equal(writerGraph.outcomes.ready!.output(ready.state).response, history[1].at(-1));
 });
 
-test('run 18: a completed revision requiring U1 waits, then obtains a fresh reviewer-facing reply', async () => {
-  const history = { 1: ['I updated the artifact. It is ready for review, but acceptance needs your U1 scope decision.'] };
-  const harness = workflowHarness(history);
+test('run 18: a writer that reports a needed decision goes to review, because only the reviewer escalates', async () => {
+  const harness = workflowHarness({ 1: ['I updated the artifact. It is ready for review, but acceptance needs your U1 scope decision.'] });
   const written = visitSubgraph(writerGraph, 'prompt', writerGraph.init(destination, { context, writer: writerPane, review: 'Record the explicit U1 scope decision.' }), agentTurnEnded(writerPane));
   const read = await visit(writerGraph, 'readResponse', harness.ctx, written.state);
-  assert.equal(read.state.artifactExists, true);
-  const decision = visitSubgraph(writerGraph, 'judge', read.state, judgedRoute('human-decision', 'U1: preserve pause-based uploads or upload continuous speech?'));
-  assert.equal(decision.to, 'askUser');
-  const asked = await visit(writerGraph, 'askUser', harness.ctx, decision.state, { kind: 'user_continue' });
-  assert.equal(harness.feedback.at(-1)?.phase, 'Waiting for your decision');
-  assert.match(harness.feedback.at(-1)?.message ?? '', /U1: preserve pause-based uploads/);
-  assert.match(asked.result.type === 'suspend' && asked.result.wait.kind === 'user_continue' ? asked.result.wait.label ?? '' : '', /U1/);
-  history[1].push('The user selected pause-based uploads.');
-  const recovered = await visit(writerGraph, 'recover', harness.ctx, asked.state);
-  assert.equal(recovered.to, 'replay');
-  assert.equal(recovered.state.response, read.state.response, 'the discussion is not forwarded as the reviewer response');
-  const turn = subgraphParameters<AgentTurnParameters>(writerGraph, 'replay', recovered.state);
-  assert.deepEqual(turn.session, { kind: 'existing', ...writerPane });
-  assert.match(turn.prompt ?? '', /incorporate our discussion and provide a fresh response/);
-  assert.match(turn.prompt ?? '', /Review to address:/);
-  const replayed = visitSubgraph(writerGraph, 'replay', recovered.state, agentTurnEnded(writerPane));
-  assert.equal(replayed.to, 'readResponse');
-  history[1].push('U1 is incorporated into the artifact. Ready for review.');
-  const updated = await visit(writerGraph, 'readResponse', harness.ctx, replayed.state);
-  const ready = visitSubgraph(writerGraph, 'judge', updated.state, judgedRoute('ready'));
+  const ready = visitSubgraph(writerGraph, 'judge', read.state, judgedRoute('ready'));
   assert.equal(ready.to, 'ready');
-  assert.equal(writerGraph.outcomes.ready!.output(ready.state).response, history[1].at(-1));
+  assert.equal(harness.feedback.length, 0);
 });
 
-test('a human decision takes precedence over missing files and an exhausted recovery budget', async () => {
-  const harness = workflowHarness({ 1: ['Need a scope decision.'] });
-  const written = visitSubgraph(writerGraph, 'prompt', writerGraph.init(destination, { context: { ...context, artifactPath: 'docs/missing.md' }, writer: null, review: null }), agentTurnEnded(writerPane));
+test('Continue after helping a stuck writer asks it to resume, and a still-unfinished writer comes back to the user', async () => {
+  const history = { 1: ['Still drafting.'] };
+  const harness = workflowHarness(history);
+  const written = visitSubgraph(writerGraph, 'prompt', writerGraph.init(destination, { context, writer: writerPane, review: 'review 1' }), agentTurnEnded(writerPane));
   const read = await visit(writerGraph, 'readResponse', harness.ctx, written.state);
-  const decision = visitSubgraph(writerGraph, 'judge', { ...read.state, recoveryAttempts: 1 }, judgedRoute('human-decision', 'Choose the scope.'));
-  assert.equal(decision.to, 'askUser');
-  await visit(writerGraph, 'askUser', harness.ctx, decision.state, { kind: 'user_continue' });
-  assert.equal(harness.feedback.at(-1)?.phase, 'Waiting for your decision');
-  assert.match(harness.feedback.at(-1)?.message ?? '', /Choose the scope/);
-});
-
-test('Continue always requests a fresh writer reply even without a newer conversation turn', async () => {
-  const harness = workflowHarness({ 1: ['Need a decision.'] });
-  const written = visitSubgraph(writerGraph, 'prompt', writerGraph.init(destination, { context, writer: null, review: null }), agentTurnEnded(writerPane));
-  const read = await visit(writerGraph, 'readResponse', harness.ctx, written.state);
-  const asked = await visit(writerGraph, 'askUser', harness.ctx, visitSubgraph(writerGraph, 'judge', read.state, judgedRoute('human-decision')).state, { kind: 'user_continue' });
-  const recovered = await visit(writerGraph, 'recover', harness.ctx, asked.state);
-  assert.equal(recovered.to, 'replay');
-  const replayed = visitSubgraph(writerGraph, 'replay', recovered.state, agentTurnEnded(writerPane));
-  const updated = await visit(writerGraph, 'readResponse', harness.ctx, replayed.state);
-  assert.equal(visitSubgraph(writerGraph, 'judge', updated.state, judgedRoute('human-decision')).to, 'askUser');
+  const stuck = visitSubgraph(writerGraph, 'judge', { ...read.state, recoveryAttempts: 1 }, judgedRoute('incomplete', 'The ownership section remains unfinished.'));
+  assert.equal(stuck.to, 'askUser');
+  const asked = await visit(writerGraph, 'askUser', harness.ctx, stuck.state, { kind: 'user_continue' });
+  assert.equal(harness.feedback.at(-1)?.phase, 'The writer needs help finishing the artifact');
+  assert.match(harness.feedback.at(-1)?.message ?? '', /thing writer/);
+  assert.equal(asked.to, 'nudge');
+  const turn = subgraphParameters<AgentTurnParameters>(writerGraph, 'nudge', asked.state);
+  assert.deepEqual(turn.session, { kind: 'existing', ...writerPane });
+  assert.equal(turn.prompt, 'finish the writing');
+  const resumed = visitSubgraph(writerGraph, 'nudge', asked.state, agentTurnEnded(writerPane));
+  const reread = await visit(writerGraph, 'readResponse', harness.ctx, resumed.state);
+  assert.equal(visitSubgraph(writerGraph, 'judge', reread.state, judgedRoute('incomplete')).to, 'askUser');
+  history[1].push('The artifact is finished and ready for review.');
+  const updated = await visit(writerGraph, 'readResponse', harness.ctx, resumed.state);
+  assert.equal(visitSubgraph(writerGraph, 'judge', updated.state, judgedRoute('ready')).to, 'ready');
+  assert.equal(updated.state.response, history[1].at(-1));
 });
 
 test('a missing reply fails the step so Retry reads the conversation again', async () => {
@@ -239,20 +217,64 @@ test('a reviewer decision waits at the loop, then prompts the writer before revi
   const root = { ...graph.init(destination, context), writer: writerPane };
   const waiting = visitSubgraph(graph, 'review', root, { outcomeId: 'reviewed', outcomeKind: 'success', output: result });
   assert.equal(waiting.to, 'askHuman');
-  const continued = await visit(graph, 'askHuman', harness.ctx, waiting.state, { kind: 'user_continue' });
-  assert.equal(continued.to, 'replay');
+  const asked = await visit(graph, 'askHuman', harness.ctx, waiting.state, { kind: 'user_continue' });
+  assert.equal(asked.to, 'restate');
   assert.match(harness.feedback.at(-1)?.message ?? '', /continuous speech uploads/);
-  assert.match(harness.feedback.at(-1)?.message ?? '', /thing writer/);
-  const parameters = subgraphParameters<any>(graph, 'replay', continued.state);
-  assert.equal(parameters.afterHumanDecision, true);
-  const writerState = writerGraph.init(destination, parameters);
-  const turn = subgraphParameters<AgentTurnParameters>(writerGraph, 'prompt', writerState);
+  assert.match(harness.feedback.at(-1)?.message ?? '', /Resolve it with thing reviewer/);
+  const restatement = { ...result, verdict: 'revise' as const, review: 'Restated: the user chose pause-based uploads. Both agents agree U1 requires the user.' };
+  const continued = visitSubgraph(graph, 'restate', asked.state, { outcomeId: 'reviewed', outcomeKind: 'success', output: restatement });
+  assert.equal(continued.to, 'revise');
+  const turn = subgraphParameters<AgentTurnParameters>(writerGraph, 'prompt', writerGraph.init(destination, subgraphParameters<any>(graph, 'revise', continued.state)));
   assert.deepEqual(turn.session, { kind: 'existing', ...writerPane });
-  assert.match(turn.prompt ?? '', /fresh response for the reviewer/);
-  assert.match(turn.prompt ?? '', /Both agents agree U1/);
-  const replayed = visitSubgraph(graph, 'replay', continued.state, { outcomeId: 'ready', outcomeKind: 'success', output: { outcome: 'ready', writer: writerPane, response: 'Decision incorporated.' } });
-  assert.equal(replayed.to, 'review');
-  assert.deepEqual(subgraphParameters(graph, 'review', replayed.state), { context, reviewer: reviewerPane, writerResponse: 'Decision incorporated.', round: 2 });
+  assert.equal(turn.prompt, `apply ${restatement.review}`);
+  const revised = visitSubgraph(graph, 'revise', continued.state, { outcomeId: 'ready', outcomeKind: 'success', output: { outcome: 'ready', writer: writerPane, response: 'Decision incorporated.' } });
+  assert.equal(revised.to, 'review');
+  assert.deepEqual(subgraphParameters(graph, 'review', revised.state), { context, reviewer: reviewerPane, writerResponse: 'Decision incorporated.', round: 2 });
+});
+
+test('run 26: Continue asks the reviewer to restate its review, and the writer receives that restatement', async () => {
+  const history = { 2: ['Blocker: U1 slug rule needs the user. Concern: bound the sweep.'] };
+  const harness = workflowHarness(history);
+  const reviewed = visitSubgraph(reviewGraph, 'prompt', reviewGraph.init(destination, { context, reviewer: null, writerResponse: null, round: 1 }), agentTurnEnded(reviewerPane));
+  const read = await visit(reviewGraph, 'readReview', harness.ctx, reviewed.state);
+  const decision = visitSubgraph(reviewGraph, 'judge', read.state, judgedRoute('human-decision', 'Choose the U1 slug rule.'));
+  const root = { ...graph.init(destination, context), writer: writerPane };
+  const waiting = visitSubgraph(graph, 'review', root, { outcomeId: 'reviewed', outcomeKind: 'success', output: reviewGraph.outcomes.reviewed!.output(decision.state) });
+  assert.equal(waiting.to, 'askHuman');
+  const asked = await visit(graph, 'askHuman', harness.ctx, waiting.state, { kind: 'user_continue' });
+  assert.equal(asked.to, 'restate');
+
+  // The reviewer is prompted in its own session to restate, within the same round.
+  const restateParameters = subgraphParameters<any>(graph, 'restate', asked.state);
+  assert.deepEqual(restateParameters, { context, reviewer: reviewerPane, writerResponse: null, round: 1, restate: true });
+  assert.equal(graph.nodes.restate!.label?.(asked.state), 'Restate review round 1');
+  const restateStart = reviewGraph.init(destination, restateParameters);
+  assert.equal(reviewGraph.label?.(restateParameters), 'Restate review round 1');
+  assert.deepEqual(subgraphParameters<AgentTurnParameters>(reviewGraph, 'prompt', restateStart), {
+    label: 'Thing reviewer',
+    session: { kind: 'existing', ...reviewerPane },
+    prompt: 'restate your review with the decision',
+    feedback: { phase: 'Restating thing review' },
+    resubmitOnHarnessError: 1,
+  });
+
+  // An unresolved restatement goes back to the user without involving the writer.
+  history[2].push('Escalation required: U1 is still open.');
+  const restated = visitSubgraph(reviewGraph, 'prompt', restateStart, agentTurnEnded(reviewerPane));
+  const stillOpen = visitSubgraph(reviewGraph, 'judge', (await visit(reviewGraph, 'readReview', harness.ctx, restated.state)).state, judgedRoute('human-decision', 'U1 is still open.'));
+  const backToUser = visitSubgraph(graph, 'restate', asked.state, { outcomeId: 'reviewed', outcomeKind: 'success', output: reviewGraph.outcomes.reviewed!.output(stillOpen.state) });
+  assert.equal(backToUser.to, 'askHuman');
+
+  // A settled restatement replaces the stale review and is what the writer addresses.
+  history[2].push('U1 settled by the user: a separator run containing a dot becomes a dot. Concern: bound the sweep.');
+  const settledRead = await visit(reviewGraph, 'readReview', harness.ctx, restated.state);
+  const settled = visitSubgraph(reviewGraph, 'judge', settledRead.state, judgedRoute('revise'));
+  const continued = visitSubgraph(graph, 'restate', backToUser.state, { outcomeId: 'reviewed', outcomeKind: 'success', output: reviewGraph.outcomes.reviewed!.output(settled.state) });
+  assert.equal(continued.to, 'revise');
+  assert.equal(continued.state.reviewRound, 1);
+  const turn = subgraphParameters<AgentTurnParameters>(writerGraph, 'prompt', writerGraph.init(destination, subgraphParameters<any>(graph, 'revise', continued.state)));
+  assert.match(turn.prompt ?? '', /^apply U1 settled by the user/);
+  assert.doesNotMatch(turn.prompt ?? '', /needs the user/);
 });
 
 test('the loop revises until the reviewer completes, then closes both panes and counts rounds', async () => {

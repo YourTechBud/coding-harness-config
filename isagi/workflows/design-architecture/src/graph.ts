@@ -2,7 +2,7 @@ import { createReviewedArtifactGraph, type ReviewedArtifactOutput } from 'isagi-
 
 import { reviewer, reviewerJudgment, writer, writerJudgment } from './constants.js';
 import { latestAssistantTurnText, parseReviewerRoute, parseWriterRoute, reviewerRoutingPrompt, writerRoutingPrompt } from './judgments.js';
-import { continueWriterPrompt, initialReviewerPrompt, initialWriterPrompt, retryWriterPrompt, reviewToWriterPrompt, writerToReviewerPrompt } from './prompts.js';
+import { initialReviewerPrompt, initialWriterPrompt, restateReviewPrompt, retryWriterPrompt, reviewToWriterPrompt, writerToReviewerPrompt } from './prompts.js';
 
 export type DesignArchitectureParameters = {
   readonly story: string;
@@ -28,6 +28,7 @@ export const DesignArchitectureGraph = createReviewedArtifactGraph<DesignArchite
     routingReview: 'Routing architecture review',
     revising: 'Revising architecture',
     rereviewing: 'Re-reviewing architecture',
+    restating: 'Restating architecture review with your decision',
     recoveringWriter: 'Recovering architecture writer',
     complete: 'Architecture complete',
     failed: 'Design architecture failed',
@@ -36,9 +37,9 @@ export const DesignArchitectureGraph = createReviewedArtifactGraph<DesignArchite
     initialWriter: initialWriterPrompt,
     reviewToWriter: reviewToWriterPrompt,
     retryWriter: retryWriterPrompt,
-    continueWriter: continueWriterPrompt,
     initialReviewer: initialReviewerPrompt,
     writerToReviewer: writerToReviewerPrompt,
+    restateReview: restateReviewPrompt,
     writerRouting: writerRoutingPrompt,
     reviewerRouting: reviewerRoutingPrompt,
   },

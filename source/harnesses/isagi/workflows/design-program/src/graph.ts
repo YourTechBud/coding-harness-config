@@ -2,7 +2,7 @@ import { createReviewedArtifactGraph, type ReviewedArtifactOutput } from 'isagi-
 
 import { reviewer, reviewerJudgment, writer, writerJudgment } from './constants.js';
 import { latestAssistantTurnText, parseReviewerRoute, parseWriterRoute, reviewerRoutingPrompt, writerRoutingPrompt } from './judgments.js';
-import { continueWriterPrompt, initialReviewerPrompt, initialWriterPrompt, retryWriterPrompt, reviewToWriterPrompt, writerToReviewerPrompt } from './prompts.js';
+import { initialReviewerPrompt, initialWriterPrompt, restateReviewPrompt, retryWriterPrompt, reviewToWriterPrompt, writerToReviewerPrompt } from './prompts.js';
 
 export type DesignProgramParameters = {
   readonly story: string;
@@ -31,6 +31,7 @@ export const DesignProgramGraph = createReviewedArtifactGraph<DesignProgramParam
     routingReview: 'Routing program-design review',
     revising: 'Revising program design',
     rereviewing: 'Re-reviewing program design',
+    restating: 'Restating program design review with your decision',
     recoveringWriter: 'Recovering program-design writer',
     complete: 'Program design complete',
     failed: 'Design program failed',
@@ -39,9 +40,9 @@ export const DesignProgramGraph = createReviewedArtifactGraph<DesignProgramParam
     initialWriter: initialWriterPrompt,
     reviewToWriter: reviewToWriterPrompt,
     retryWriter: retryWriterPrompt,
-    continueWriter: continueWriterPrompt,
     initialReviewer: initialReviewerPrompt,
     writerToReviewer: writerToReviewerPrompt,
+    restateReview: restateReviewPrompt,
     writerRouting: writerRoutingPrompt,
     reviewerRouting: reviewerRoutingPrompt,
   },

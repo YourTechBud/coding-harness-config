@@ -9,7 +9,7 @@ import { reviewer, reviewerJudgment, writer, writerJudgment } from '../src/const
 import { AnalyzeCurrentStateGraph, type AnalyzeCurrentStateParameters } from '../src/graph.js';
 import workflow from '../src/index.js';
 import { reviewerRoutingPrompt, writerRoutingPrompt } from '../src/judgments.js';
-import { continueWriterPrompt, initialReviewerPrompt, initialWriterPrompt, PROMPT_FOOTER, retryWriterPrompt } from '../src/prompts.js';
+import { initialReviewerPrompt, initialWriterPrompt, PROMPT_FOOTER, restateReviewPrompt, retryWriterPrompt } from '../src/prompts.js';
 
 // The writer/reviewer loop itself is tested in isagi-workflow-common-graphs. These tests prove this
 // workflow hands the loop its own launch form, profiles, skill, prompts, judgments, and wording.
@@ -86,13 +86,14 @@ test('the loop is keyed for this workflow and returns the reviewed artifact', ()
   assert.deepEqual(graph.outcomes.reviewed!.output(finished), { outcome: 'artifact-reviewed', artifactPath: parameters.artifactPath, reviewCount: 2 });
 });
 
-test('Continue uses the shared decision-incorporation prompt with this workflow footer', () => {
-  const pane = { agentSessionId: 11, paneId: 21 };
-  const state = writerGraph.init(destination, { context: parameters, writer: pane, review: 'Choose U1.' });
-  const turn = subgraphParameters<AgentTurnParameters>(writerGraph, 'replay', state);
+test('Continue after an escalation asks the same reviewer to restate its review under this workflow contract', () => {
+  const pane = { agentSessionId: 12, paneId: 22 };
+  const state = reviewGraph.init(destination, { context: parameters, reviewer: pane, writerResponse: null, round: 2, restate: true });
+  const turn = subgraphParameters<AgentTurnParameters>(reviewGraph, 'prompt', state);
   assert.deepEqual(turn.session, { kind: 'existing', ...pane });
-  assert.equal(turn.prompt, continueWriterPrompt('Choose U1.'));
-  assert.match(turn.prompt ?? '', /fresh response for the reviewer/);
-  assert.match(turn.prompt ?? '', /Choose U1/);
+  assert.equal(turn.prompt, restateReviewPrompt());
+  assert.match(turn.prompt ?? '', /Restate your complete review for the writer/);
+  assert.match(turn.prompt ?? '', /Human Escalation section/);
   assert.equal(turn.prompt?.endsWith(PROMPT_FOOTER), true);
+  assert.match(turn.feedback?.phase ?? '', /^Restating .+ review with your decision$/);
 });

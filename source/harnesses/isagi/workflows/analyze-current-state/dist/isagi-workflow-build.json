@@ -10,15 +10,15 @@
     "version": "0.1.1"
   },
   "source": {
-    "sha256": "e060845f18c2267e47d36ffa83b7a42e29eff1a35c45833005f852a89ad462a1"
+    "sha256": "544c793f1a440f231319fd36698cc9e8905c7d8722363e9e328aad99a5192a08"
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "ac4650be8192fa4b668b758dc66d7b3dfb4f80cb9f8b9eac46880e553a4e675b"
+    "sha256": "a9796426d7fdf3e24a4b43e88a251aa82c487ad5afb524cc0ff2bd0ff6e486ae"
   },
   "structure": {
     "descriptorVersion": 2,
-    "sha256": "80c815359ad8a9e218c734628964fea635acb9048b7871cdd4f924e4180e7d0c",
+    "sha256": "568ac7776de266577a7e51a6c756fd38e0a5b80ac984ee1bb91f6759f6d9751a",
     "rootGraphKey": "AnalyzeCurrentState",
     "graphCount": 6
   }

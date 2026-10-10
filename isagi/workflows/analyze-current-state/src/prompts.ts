@@ -1,4 +1,4 @@
-import { REVIEWER_ESCALATION_AND_CLOSURE, WRITER_INPUT_POLICY, WRITER_CONTINUATION_INSTRUCTIONS } from 'isagi-workflow-common-graphs';
+import { REVIEWER_ESCALATION_AND_CLOSURE, REVIEWER_RESTATEMENT_INSTRUCTIONS, WRITER_INPUT_POLICY } from 'isagi-workflow-common-graphs';
 
 export const PROMPT_FOOTER =
   "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
@@ -46,10 +46,6 @@ export function retryWriterPrompt(): string {
   );
 }
 
-export function continueWriterPrompt(review: string | null): string {
-  return withPromptFooter(`${WRITER_CONTINUATION_INSTRUCTIONS}${review ? `\n\nReview to address:\n${review}` : ''}`);
-}
-
 export function initialReviewerPrompt(input: {
   readonly repositoryPath: string;
   readonly story: string;
@@ -74,6 +70,14 @@ export function writerToReviewerPrompt(writerResponse: string): string {
 ${writerResponse}
 
 Re-review the current artifact from first principles. Verify claimed corrections directly, adjudicate pushback on its merits, and inspect the full artifact for remaining or newly introduced issues. Do not preserve a finding when the writer's evidence resolves it, and do not silently drop an unresolved finding.
+
+${CURRENT_STATE_REVIEW_CONTRACT}
+
+${REVIEWER_ESCALATION_AND_CLOSURE}`);
+}
+
+export function restateReviewPrompt(): string {
+  return withPromptFooter(`${REVIEWER_RESTATEMENT_INSTRUCTIONS}
 
 ${CURRENT_STATE_REVIEW_CONTRACT}
 

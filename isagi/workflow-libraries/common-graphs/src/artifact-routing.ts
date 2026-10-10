@@ -1,4 +1,4 @@
-export type WriterRoute = 'ready' | 'incomplete' | 'human-decision';
+export type WriterRoute = 'ready' | 'incomplete';
 export type ReviewerRoute = 'complete' | 'revise' | 'human-decision';
 export type ArtifactJudgment<Route> = { readonly outcome: Route; readonly reason: string };
 
@@ -6,9 +6,8 @@ export const WRITER_ROUTING_INSTRUCTIONS = `Return exactly one JSON object with 
 {"outcome":"ready","reason":"The writing or revision is complete and ready for review."}
 
 Apply this precedence:
-1. Return "human-decision" when the writer identifies a specific unresolved user decision or input that blocks further writing or acceptance. This takes precedence even when the file exists and the writer says it is ready for review. Name the decision in reason. Writer and reviewer agreement does not remove the need for the user's decision.
-2. Return "ready" when the artifact file exists and the writer reports completed writing or revisions for review, including an evidence-backed response that applies some findings and pushes back on others. Ready for review is separate from reviewer acceptance. Findings the reviewer can adjudicate and nonblocking recorded uncertainty do not make a completed turn incomplete.
-3. Return "incomplete" when the artifact file is missing or the writer reports unfinished writing, only intended future work, or no completed artifact turn. Explain what remains in reason.
+1. Return "ready" when the artifact file exists and the writer reports completed writing or revisions for review, including an evidence-backed response that applies some findings and pushes back on others. Ready for review is separate from reviewer acceptance. Findings the reviewer can adjudicate, recorded uncertainty, and decisions the writer says need the user do not make a completed turn incomplete; the reviewer decides what to escalate to the user.
+2. Return "incomplete" when the artifact file is missing or the writer reports unfinished writing, only intended future work, or no completed artifact turn. Explain what remains in reason.
 
 Every outcome is valid on every invocation. Return a concise, nonempty reason and no confidence, commentary, markdown, or extra JSON fields.`;
 
@@ -28,10 +27,10 @@ When no Blocker, Concern, or blocking human decision remains, end with the exact
 
 export const WRITER_INPUT_POLICY = `When a specific user decision or input blocks further writing or acceptance, preserve the completed work and clearly state the decision needed, your recommendation, alternatives, and consequences. Distinguish this blocking decision from nonblocking uncertainty and findings the reviewer can adjudicate. Keep scope decisions with the user.`;
 
-export const WRITER_CONTINUATION_INSTRUCTIONS = `Incorporate the decisions and changes from our conversation into the artifact and any affected predecessor artifacts. Preserve completed work and verify the updated artifacts. Then provide a fresh response for the reviewer explaining the incorporated decisions, changes, and any remaining evidence-backed pushback. State whether a specific unresolved user decision still blocks progress. Produce an updated reviewer-facing response rather than repeating an outdated reply.`;
+export const REVIEWER_RESTATEMENT_INSTRUCTIONS = `The user has responded to your escalation in this conversation. Restate your complete review for the writer with every decision and piece of feedback from that discussion incorporated. The writer has not seen this conversation, so the restated review must stand on its own: record each decision the user settled as binding, update or drop the findings those decisions resolve, and keep every other finding in full. The artifact does not yet reflect these decisions, so keep a finding open wherever the writer still has to apply one. Escalate again only a decision the user left unresolved.`;
 
 export function parseWriterRoute(output: string): ArtifactJudgment<WriterRoute> {
-  return parseJudgment(output, ['ready', 'incomplete', 'human-decision'] as const, 'writer');
+  return parseJudgment(output, ['ready', 'incomplete'] as const, 'writer');
 }
 
 export function parseReviewerRoute(output: string): ArtifactJudgment<ReviewerRoute> {

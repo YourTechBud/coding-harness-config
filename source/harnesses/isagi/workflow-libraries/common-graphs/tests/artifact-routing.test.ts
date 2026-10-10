@@ -4,7 +4,8 @@ import test from 'node:test';
 import { parseReviewerRoute, parseWriterRoute, REVIEWER_ESCALATION_AND_CLOSURE, REVIEWER_ROUTING_INSTRUCTIONS, WRITER_ROUTING_INSTRUCTIONS } from '../src/artifact-routing.js';
 
 test('routing requires an actionable reason and rejects unsupported or ambiguous shapes', () => {
-  for (const parse of [parseWriterRoute, parseReviewerRoute]) {
+  assert.deepEqual(parseWriterRoute('Result: {"reason":" Written. ","outcome":"ready"}'), { outcome: 'ready', reason: 'Written.' });
+  for (const parse of [parseReviewerRoute]) {
     for (const output of [
       '{}',
       '[]',
@@ -19,14 +20,14 @@ test('routing requires an actionable reason and rejects unsupported or ambiguous
     assert.deepEqual(parse('Result: {"reason":" Choose U1. ","outcome":"human-decision"}'), { outcome: 'human-decision', reason: 'Choose U1.' });
   }
   assert.throws(() => parseWriterRoute('{"outcome":"complete","reason":"Accepted."}'));
+  assert.throws(() => parseWriterRoute('{"outcome":"human-decision","reason":"Choose U1."}'), 'only the reviewer escalates');
   assert.throws(() => parseReviewerRoute('{"outcome":"ready","reason":"Written."}'));
 });
 
-test('a completed revision with a blocking decision is routed before readiness or incompleteness', () => {
-  assert.ok(WRITER_ROUTING_INSTRUCTIONS.indexOf('Return "human-decision"') < WRITER_ROUTING_INSTRUCTIONS.indexOf('Return "ready"'));
-  assert.match(WRITER_ROUTING_INSTRUCTIONS, /takes precedence even when the file exists/);
+test('a completed revision that needs a user decision is ready, because the reviewer escalates', () => {
+  assert.doesNotMatch(WRITER_ROUTING_INSTRUCTIONS, /human-decision/);
+  assert.match(WRITER_ROUTING_INSTRUCTIONS, /decisions the writer says need the user do not make a completed turn incomplete/);
   assert.match(WRITER_ROUTING_INSTRUCTIONS, /Ready for review is separate from reviewer acceptance/);
-  assert.match(WRITER_ROUTING_INSTRUCTIONS, /nonblocking recorded uncertainty/);
 });
 
 test('reviewers escalate a required scope decision even when both agents agree or the section says no escalation', () => {

@@ -2,7 +2,7 @@ import { createReviewedArtifactGraph, type ReviewedArtifactOutput } from 'isagi-
 
 import { reviewer, reviewerJudgment, writer, writerJudgment } from './constants.js';
 import { latestAssistantTurnText, parseReviewerRoute, parseWriterRoute, reviewerRoutingPrompt, writerRoutingPrompt } from './judgments.js';
-import { continueWriterPrompt, initialReviewerPrompt, initialWriterPrompt, retryWriterPrompt, reviewToWriterPrompt, writerToReviewerPrompt } from './prompts.js';
+import { initialReviewerPrompt, initialWriterPrompt, restateReviewPrompt, retryWriterPrompt, reviewToWriterPrompt, writerToReviewerPrompt } from './prompts.js';
 
 export type AnalyzeCurrentStateParameters = {
   readonly story: string;
@@ -27,6 +27,7 @@ export const AnalyzeCurrentStateGraph = createReviewedArtifactGraph<AnalyzeCurre
     routingReview: 'Routing reviewer feedback',
     revising: 'Revising current-state analysis',
     rereviewing: 'Re-reviewing current-state analysis',
+    restating: 'Restating current-state analysis review with your decision',
     recoveringWriter: 'Recovering current-state writer',
     complete: 'Current-state analysis complete',
     failed: 'Analyze current state failed',
@@ -35,9 +36,9 @@ export const AnalyzeCurrentStateGraph = createReviewedArtifactGraph<AnalyzeCurre
     initialWriter: initialWriterPrompt,
     reviewToWriter: reviewToWriterPrompt,
     retryWriter: retryWriterPrompt,
-    continueWriter: continueWriterPrompt,
     initialReviewer: initialReviewerPrompt,
     writerToReviewer: writerToReviewerPrompt,
+    restateReview: restateReviewPrompt,
     writerRouting: writerRoutingPrompt,
     reviewerRouting: reviewerRoutingPrompt,
   },

@@ -34,7 +34,7 @@ test('collects every complete assistant message in the latest turn', () => {
 test('parses writer and reviewer decisions with an explanation', () => {
   assert.deepEqual(parseWriterRoute('{"outcome":"ready","reason":"Done."}'), { outcome: 'ready', reason: 'Done.' });
   assert.deepEqual(parseWriterRoute('{"outcome":"incomplete","reason":"Writing remains."}'), { outcome: 'incomplete', reason: 'Writing remains.' });
-  assert.deepEqual(parseWriterRoute('{"outcome":"human-decision","reason":"Choose U1."}'), { outcome: 'human-decision', reason: 'Choose U1.' });
+  assert.throws(() => parseWriterRoute('{"outcome":"human-decision","reason":"Choose U1."}'), 'only the reviewer escalates');
   assert.deepEqual(parseReviewerRoute('{"outcome":"complete","reason":"Accepted."}'), { outcome: 'complete', reason: 'Accepted.' });
   assert.deepEqual(parseReviewerRoute('{"outcome":"revise","reason":"Correct the owner."}'), { outcome: 'revise', reason: 'Correct the owner.' });
   assert.deepEqual(parseReviewerRoute('Result: {"outcome":"human-decision","reason":"Choose U1."}'), { outcome: 'human-decision', reason: 'Choose U1.' });
