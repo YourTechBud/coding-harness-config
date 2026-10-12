@@ -754,6 +754,7 @@ var reviewerJudgment = {
 
 // src/prompts.ts
 var PROMPT_FOOTER = "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
+var SUBAGENT_POLICY = "You may use sub-agents for any part of this work when that helps, and wait for them to finish before you respond.";
 var DESIGN_SCOPE = `The story defines the bounded scope through its acceptance criteria, provided contracts, and explicitly agreed design decisions. Treat initial thinking, plans, and other suggested approaches recorded in the story as strong starting suggestions rather than requirements, except where they record those binding commitments. Treat the current-state analysis as completed predecessor work to build on, correcting substantive factual flaws when necessary. Ground factual constraints in repository evidence. Prefer the simplest architecture that fulfills the binding scope; revise suggested approaches when a simpler one meets it. Keep behavior and edge-case coverage to what that scope requires. Surface any needed scope change as a decision for the user rather than adopting it unattended.`;
 var ARCHITECTURE_REVIEW_CONTRACT = `${DESIGN_SCOPE}
 
@@ -783,7 +784,7 @@ Architecture artifact path: ${input.artifactPath}
 
 ${DESIGN_SCOPE}
 
-Work unattended. Preserve the story, use the current-state analysis and repository as evidence, and converge on one recommended system shape within the binding scope. Finish with the architecture artifact ready for an independent review, making any unresolved user decision explicit. ${WRITER_INPUT_POLICY} If architecture work exposes a substantive flaw in the current-state analysis, correct that predecessor artifact and keep both artifacts coherent.`);
+Work unattended. Preserve the story, use the current-state analysis and repository as evidence, and converge on one recommended system shape within the binding scope. Finish with the architecture artifact ready for an independent review, making any unresolved user decision explicit. ${WRITER_INPUT_POLICY} ${SUBAGENT_POLICY} If architecture work exposes a substantive flaw in the current-state analysis, correct that predecessor artifact and keep both artifacts coherent.`);
 }
 function reviewToWriterPrompt(review) {
   return withPromptFooter(`Here is the review of the target architecture:
@@ -807,7 +808,7 @@ Story: ${input.story}
 Current-state analysis: ${input.currentStatePath}
 Architecture artifact path: ${input.artifactPath}
 
-Inspect the repository and predecessor artifact directly. Give concrete, actionable findings with retrievable evidence. Focus on whether the architecture is the simplest coherent system shape that satisfies the story and gives program design a stable boundary to elaborate.
+Inspect the repository and predecessor artifact directly. Give concrete, actionable findings with retrievable evidence. Focus on whether the architecture is the simplest coherent system shape that satisfies the story and gives program design a stable boundary to elaborate. ${SUBAGENT_POLICY}
 
 ${ARCHITECTURE_REVIEW_CONTRACT}
 

@@ -754,6 +754,7 @@ var reviewerJudgment = {
 
 // src/prompts.ts
 var PROMPT_FOOTER = "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
+var SUBAGENT_POLICY = "You may use sub-agents for any part of this work when that helps, and wait for them to finish before you respond.";
 var CURRENT_STATE_REVIEW_CONTRACT = `Review the artifact through each of these sections:
 
 - **Contradictions:** Claims that conflict with the story, repository behavior, tests, documentation, another part of the artifact, or stronger evidence. Distinguish a false claim from evidence that is merely incomplete.
@@ -775,7 +776,7 @@ Repository: ${input.repositoryPath}
 Story: ${input.story}
 Artifact path: ${input.artifactPath}
 
-Work unattended. Use the repository as evidence, make reasonable evidence-backed decisions when details are uncertain, and finish with the artifact ready for an independent review. ${WRITER_INPUT_POLICY}`);
+Work unattended. Use the repository as evidence, make reasonable evidence-backed decisions when details are uncertain, and finish with the artifact ready for an independent review. ${WRITER_INPUT_POLICY} ${SUBAGENT_POLICY}`);
 }
 function reviewToWriterPrompt(review) {
   return withPromptFooter(`Here is the review of the current-state analysis:
@@ -796,7 +797,7 @@ Repository: ${input.repositoryPath}
 Story: ${input.story}
 Artifact path: ${input.artifactPath}
 
-Inspect the repository directly. Give concrete, actionable findings with retrievable evidence. Focus on whether the artifact is trustworthy and sufficient for downstream architecture work.
+Inspect the repository directly. Give concrete, actionable findings with retrievable evidence. Focus on whether the artifact is trustworthy and sufficient for downstream architecture work. ${SUBAGENT_POLICY}
 
 ${CURRENT_STATE_REVIEW_CONTRACT}
 

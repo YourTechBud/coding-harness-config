@@ -14,7 +14,7 @@
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "b0c8110f576b0997720533667d2ecbfa58e4a74b2ef4f937166271c5d8fb5a20"
+    "sha256": "6e12799bf7f49222ee2166d7892fc21871c35c0231981071e80d5d6304660ce6"
   },
   "structure": {
     "descriptorVersion": 2,

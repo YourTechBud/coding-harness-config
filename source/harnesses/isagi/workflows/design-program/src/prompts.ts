@@ -3,6 +3,8 @@ import { REVIEWER_ESCALATION_AND_CLOSURE, REVIEWER_RESTATEMENT_INSTRUCTIONS, WRI
 export const PROMPT_FOOTER =
   "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
 
+const SUBAGENT_POLICY = "You may use sub-agents for any part of this work when that helps, and wait for them to finish before you respond.";
+
 const DESIGN_SCOPE = `The story defines the bounded scope through its acceptance criteria, provided contracts, and explicitly agreed design decisions. Treat initial thinking, plans, and other suggested approaches recorded in the story as strong starting suggestions rather than requirements, except where they record those binding commitments. The supplied architecture artifact is completed predecessor work to build on, not an initial suggestion to redesign. Preserve its system shape and decisions within the story's scope, correcting substantive flaws when necessary. Ground factual constraints in repository evidence. Prefer the simplest program design that fulfills the story's binding scope within that architecture. Keep behavior and edge-case coverage to what that scope requires. Surface any needed scope change as a decision for the user rather than adopting it unattended.`;
 
 const PROGRAM_REVIEW_CONTRACT = `${DESIGN_SCOPE}
@@ -43,7 +45,7 @@ Program-design artifact path: ${input.artifactPath}
 
 ${DESIGN_SCOPE}
 
-Work unattended. Preserve the story, use the predecessor artifacts and repository as evidence, and converge on one simple, maintainable program design with enough precision to implement the binding scope. Finish with the artifact ready for an independent review, making any unresolved user decision explicit. ${WRITER_INPUT_POLICY} If program design exposes a substantive flaw in the current-state analysis or architecture, update the affected predecessor artifact and keep the artifact set coherent.`);
+Work unattended. Preserve the story, use the predecessor artifacts and repository as evidence, and converge on one simple, maintainable program design with enough precision to implement the binding scope. Finish with the artifact ready for an independent review, making any unresolved user decision explicit. ${WRITER_INPUT_POLICY} ${SUBAGENT_POLICY} If program design exposes a substantive flaw in the current-state analysis or architecture, update the affected predecessor artifact and keep the artifact set coherent.`);
 }
 
 export function reviewToWriterPrompt(review: string): string {
@@ -77,7 +79,7 @@ Current-state analysis: ${input.currentStatePath}
 Architecture: ${input.architecturePath}
 Program-design artifact path: ${input.artifactPath}
 
-Inspect the repository and current artifacts directly. Give concrete, actionable findings with retrievable evidence. Focus on whether this is the simplest exact, coherent program design that fulfills the binding scope and gives implementation planning a stable design to organize within the completed architecture.
+Inspect the repository and current artifacts directly. Give concrete, actionable findings with retrievable evidence. Focus on whether this is the simplest exact, coherent program design that fulfills the binding scope and gives implementation planning a stable design to organize within the completed architecture. ${SUBAGENT_POLICY}
 
 ${PROGRAM_REVIEW_CONTRACT}
 

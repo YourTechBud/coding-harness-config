@@ -3633,6 +3633,7 @@ var reviewerJudgment = {
 
 // ../analyze-current-state/src/prompts.ts
 var PROMPT_FOOTER2 = "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
+var SUBAGENT_POLICY = "You may use sub-agents for any part of this work when that helps, and wait for them to finish before you respond.";
 var CURRENT_STATE_REVIEW_CONTRACT = `Review the artifact through each of these sections:
 
 - **Contradictions:** Claims that conflict with the story, repository behavior, tests, documentation, another part of the artifact, or stronger evidence. Distinguish a false claim from evidence that is merely incomplete.
@@ -3654,7 +3655,7 @@ Repository: ${input.repositoryPath}
 Story: ${input.story}
 Artifact path: ${input.artifactPath}
 
-Work unattended. Use the repository as evidence, make reasonable evidence-backed decisions when details are uncertain, and finish with the artifact ready for an independent review. ${WRITER_INPUT_POLICY}`);
+Work unattended. Use the repository as evidence, make reasonable evidence-backed decisions when details are uncertain, and finish with the artifact ready for an independent review. ${WRITER_INPUT_POLICY} ${SUBAGENT_POLICY}`);
 }
 function reviewToWriterPrompt(review) {
   return withPromptFooter2(`Here is the review of the current-state analysis:
@@ -3675,7 +3676,7 @@ Repository: ${input.repositoryPath}
 Story: ${input.story}
 Artifact path: ${input.artifactPath}
 
-Inspect the repository directly. Give concrete, actionable findings with retrievable evidence. Focus on whether the artifact is trustworthy and sufficient for downstream architecture work.
+Inspect the repository directly. Give concrete, actionable findings with retrievable evidence. Focus on whether the artifact is trustworthy and sufficient for downstream architecture work. ${SUBAGENT_POLICY}
 
 ${CURRENT_STATE_REVIEW_CONTRACT}
 
@@ -3808,6 +3809,7 @@ var reviewerJudgment2 = {
 
 // ../design-architecture/src/prompts.ts
 var PROMPT_FOOTER3 = "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
+var SUBAGENT_POLICY2 = "You may use sub-agents for any part of this work when that helps, and wait for them to finish before you respond.";
 var DESIGN_SCOPE = `The story defines the bounded scope through its acceptance criteria, provided contracts, and explicitly agreed design decisions. Treat initial thinking, plans, and other suggested approaches recorded in the story as strong starting suggestions rather than requirements, except where they record those binding commitments. Treat the current-state analysis as completed predecessor work to build on, correcting substantive factual flaws when necessary. Ground factual constraints in repository evidence. Prefer the simplest architecture that fulfills the binding scope; revise suggested approaches when a simpler one meets it. Keep behavior and edge-case coverage to what that scope requires. Surface any needed scope change as a decision for the user rather than adopting it unattended.`;
 var ARCHITECTURE_REVIEW_CONTRACT = `${DESIGN_SCOPE}
 
@@ -3837,7 +3839,7 @@ Architecture artifact path: ${input.artifactPath}
 
 ${DESIGN_SCOPE}
 
-Work unattended. Preserve the story, use the current-state analysis and repository as evidence, and converge on one recommended system shape within the binding scope. Finish with the architecture artifact ready for an independent review, making any unresolved user decision explicit. ${WRITER_INPUT_POLICY} If architecture work exposes a substantive flaw in the current-state analysis, correct that predecessor artifact and keep both artifacts coherent.`);
+Work unattended. Preserve the story, use the current-state analysis and repository as evidence, and converge on one recommended system shape within the binding scope. Finish with the architecture artifact ready for an independent review, making any unresolved user decision explicit. ${WRITER_INPUT_POLICY} ${SUBAGENT_POLICY2} If architecture work exposes a substantive flaw in the current-state analysis, correct that predecessor artifact and keep both artifacts coherent.`);
 }
 function reviewToWriterPrompt2(review) {
   return withPromptFooter3(`Here is the review of the target architecture:
@@ -3861,7 +3863,7 @@ Story: ${input.story}
 Current-state analysis: ${input.currentStatePath}
 Architecture artifact path: ${input.artifactPath}
 
-Inspect the repository and predecessor artifact directly. Give concrete, actionable findings with retrievable evidence. Focus on whether the architecture is the simplest coherent system shape that satisfies the story and gives program design a stable boundary to elaborate.
+Inspect the repository and predecessor artifact directly. Give concrete, actionable findings with retrievable evidence. Focus on whether the architecture is the simplest coherent system shape that satisfies the story and gives program design a stable boundary to elaborate. ${SUBAGENT_POLICY2}
 
 ${ARCHITECTURE_REVIEW_CONTRACT}
 
@@ -3994,6 +3996,7 @@ var reviewerJudgment3 = {
 
 // ../design-program/src/prompts.ts
 var PROMPT_FOOTER4 = "Do not run any tasks/shell commands in the background, but you are allowed to run tasks and shell commands in the foreground.";
+var SUBAGENT_POLICY3 = "You may use sub-agents for any part of this work when that helps, and wait for them to finish before you respond.";
 var DESIGN_SCOPE2 = `The story defines the bounded scope through its acceptance criteria, provided contracts, and explicitly agreed design decisions. Treat initial thinking, plans, and other suggested approaches recorded in the story as strong starting suggestions rather than requirements, except where they record those binding commitments. The supplied architecture artifact is completed predecessor work to build on, not an initial suggestion to redesign. Preserve its system shape and decisions within the story's scope, correcting substantive flaws when necessary. Ground factual constraints in repository evidence. Prefer the simplest program design that fulfills the story's binding scope within that architecture. Keep behavior and edge-case coverage to what that scope requires. Surface any needed scope change as a decision for the user rather than adopting it unattended.`;
 var PROGRAM_REVIEW_CONTRACT = `${DESIGN_SCOPE2}
 
@@ -4026,7 +4029,7 @@ Program-design artifact path: ${input.artifactPath}
 
 ${DESIGN_SCOPE2}
 
-Work unattended. Preserve the story, use the predecessor artifacts and repository as evidence, and converge on one simple, maintainable program design with enough precision to implement the binding scope. Finish with the artifact ready for an independent review, making any unresolved user decision explicit. ${WRITER_INPUT_POLICY} If program design exposes a substantive flaw in the current-state analysis or architecture, update the affected predecessor artifact and keep the artifact set coherent.`);
+Work unattended. Preserve the story, use the predecessor artifacts and repository as evidence, and converge on one simple, maintainable program design with enough precision to implement the binding scope. Finish with the artifact ready for an independent review, making any unresolved user decision explicit. ${WRITER_INPUT_POLICY} ${SUBAGENT_POLICY3} If program design exposes a substantive flaw in the current-state analysis or architecture, update the affected predecessor artifact and keep the artifact set coherent.`);
 }
 function reviewToWriterPrompt3(review) {
   return withPromptFooter4(`Here is the review of the program design:
@@ -4051,7 +4054,7 @@ Current-state analysis: ${input.currentStatePath}
 Architecture: ${input.architecturePath}
 Program-design artifact path: ${input.artifactPath}
 
-Inspect the repository and current artifacts directly. Give concrete, actionable findings with retrievable evidence. Focus on whether this is the simplest exact, coherent program design that fulfills the binding scope and gives implementation planning a stable design to organize within the completed architecture.
+Inspect the repository and current artifacts directly. Give concrete, actionable findings with retrievable evidence. Focus on whether this is the simplest exact, coherent program design that fulfills the binding scope and gives implementation planning a stable design to organize within the completed architecture. ${SUBAGENT_POLICY3}
 
 ${PROGRAM_REVIEW_CONTRACT}
 
