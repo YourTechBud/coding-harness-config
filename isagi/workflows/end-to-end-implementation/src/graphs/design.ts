@@ -17,7 +17,7 @@ import type { ReviewedArtifactOutput } from 'isagi-workflow-common-graphs';
 import { DesignArchitectureGraph, type DesignArchitectureParameters } from 'isagi-workflow-design-architecture/graph';
 import { DesignProgramGraph, type DesignProgramParameters } from 'isagi-workflow-design-program/graph';
 
-import { designPaths, must, type DesignStepResult, type DesignSummary, type Failed, type Failure } from './context.js';
+import { checkpointStory, designPaths, must, type DesignStepResult, type DesignSummary, type Failed, type Failure } from './context.js';
 
 export type DesignParameters = { readonly story: string };
 export type DesignOutput = { readonly outcome: 'designed'; readonly design: DesignSummary } | Failed;
@@ -40,7 +40,8 @@ const steps: readonly { readonly step: Step; readonly node: string; readonly pat
 ];
 
 // Each design artifact that already exists is reused; the missing ones are written and reviewed in
-// order, each by its own writer/reviewer workflow.
+// order, each by its own writer/reviewer workflow. The story pack is checkpointed after the reuse
+// check and after each written artifact.
 export const DesignGraph = createGraph<State, {}, DesignParameters, DesignOutput>({
   key: 'EndToEndImplementationDesign',
   title: 'Design the story',
@@ -65,6 +66,7 @@ export const DesignGraph = createGraph<State, {}, DesignParameters, DesignOutput
       }
       return complete({ update: reused });
     }, { title: 'Reuse existing design artifacts' }),
+    checkpointExistingDesign: checkpointStory<State>('Checkpoint the existing design'),
 
     analyzeCurrentState: subgraph<State, State, AnalyzeCurrentStateParameters, ReviewedArtifactOutput>({
       graph: AnalyzeCurrentStateGraph,
@@ -72,24 +74,31 @@ export const DesignGraph = createGraph<State, {}, DesignParameters, DesignOutput
       parameters: (state) => ({ story: state.story, artifactPath: designPaths.currentStatePath }),
       onResult: (_state, { output }) => readArtifactResult(steps[0]!, output),
     }),
+    checkpointCurrentState: checkpointStory<State>('Checkpoint the current-state analysis'),
     designArchitecture: subgraph<State, State, DesignArchitectureParameters, ReviewedArtifactOutput>({
       graph: DesignArchitectureGraph,
       title: 'Design the architecture',
       parameters: (state) => ({ story: state.story, currentStatePath: designPaths.currentStatePath, artifactPath: designPaths.architecturePath }),
       onResult: (_state, { output }) => readArtifactResult(steps[1]!, output),
     }),
+    checkpointArchitecture: checkpointStory<State>('Checkpoint the architecture'),
     designProgram: subgraph<State, State, DesignProgramParameters, ReviewedArtifactOutput>({
       graph: DesignProgramGraph,
       title: 'Design the program',
       parameters: (state) => ({ story: state.story, currentStatePath: designPaths.currentStatePath, architecturePath: designPaths.architecturePath, artifactPath: designPaths.programDesignPath }),
       onResult: (_state, { output }) => readArtifactResult(steps[2]!, output),
     }),
+    checkpointProgramDesign: checkpointStory<State>('Checkpoint the program design'),
   },
   edges: {
-    afterCheckArtifacts: edge<State, State>({ from: 'checkArtifacts', to: ['analyzeCurrentState', 'designArchitecture', 'designProgram', 'designed'], choose: nextStep }),
-    afterAnalyzeCurrentState: edge<State, State>({ from: 'analyzeCurrentState', to: ['failed', 'designArchitecture', 'designProgram', 'designed'], choose: nextStep }),
-    afterDesignArchitecture: edge<State, State>({ from: 'designArchitecture', to: ['failed', 'designProgram', 'designed'], choose: nextStep }),
-    afterDesignProgram: edge<State, State>({ from: 'designProgram', to: ['failed', 'designed'], choose: nextStep }),
+    afterCheckArtifacts: edge<State, State>({ from: 'checkArtifacts', to: ['checkpointExistingDesign'], choose: () => ({ to: 'checkpointExistingDesign' }) }),
+    afterCheckpointExistingDesign: edge<State, State>({ from: 'checkpointExistingDesign', to: ['analyzeCurrentState', 'designArchitecture', 'designProgram', 'designed'], choose: nextStep }),
+    afterAnalyzeCurrentState: afterStep('analyzeCurrentState', 'checkpointCurrentState'),
+    afterCheckpointCurrentState: edge<State, State>({ from: 'checkpointCurrentState', to: ['designArchitecture', 'designProgram', 'designed'], choose: nextStep }),
+    afterDesignArchitecture: afterStep('designArchitecture', 'checkpointArchitecture'),
+    afterCheckpointArchitecture: edge<State, State>({ from: 'checkpointArchitecture', to: ['designProgram', 'designed'], choose: nextStep }),
+    afterDesignProgram: afterStep('designProgram', 'checkpointProgramDesign'),
+    afterCheckpointProgramDesign: edge<State, State>({ from: 'checkpointProgramDesign', to: ['designed'], choose: nextStep }),
   },
   outcomes: {
     designed: outcome({
@@ -104,8 +113,11 @@ export const DesignGraph = createGraph<State, {}, DesignParameters, DesignOutput
   },
 });
 
+function afterStep(from: string, checkpointNode: string) {
+  return edge<State, State>({ from, to: ['failed', checkpointNode], choose: (state) => ({ to: state.failure ? 'failed' : checkpointNode }) });
+}
+
 function nextStep(state: State): EdgeDecision<GraphUpdate<State>> {
-  if (state.failure) return { to: 'failed' };
   const next = steps.find(({ step }) => state[step] === null);
   return { to: next ? next.node : 'designed' };
 }

@@ -15,13 +15,14 @@ import {
   rejudged,
   subgraphParameters,
   visit,
+  visitCheckpoint,
   visitSubgraph,
 } from 'isagi-workflow-common-graphs/testing';
 
 import { commitPrompt } from '../src/commit.js';
 import { commitAgent, headlessJudgment, implementerProseHeavy, implementerUiHeavy } from '../src/constants.js';
 import { renderWorkflowStatus } from '../src/feedback.js';
-import { ImplementPhaseWisePlanGraph } from '../src/graph.js';
+import { ImplementPhaseWisePlanGraph, planCheckpoint } from '../src/graph.js';
 import { ChooseImplementerGraph } from '../src/graphs/choose-implementer.js';
 import { CommitGraph } from '../src/graphs/commit-phase.js';
 import { DiscoveryGraph } from '../src/graphs/discovery.js';
@@ -40,17 +41,25 @@ test('the launch form defaults automatic review and commit to yes and needs the 
   assert.throws(() => workflow.parse(origin, { autoCommit: 'maybe' }), /Automatic commit must be yes or no/);
 });
 
-test('the business graph discovers the plan, implements each remaining phase, and finishes', async () => {
+test('the business graph discovers the plan, implements each remaining phase with a checkpoint after each, and finishes', async () => {
   const graph = ImplementPhaseWisePlanGraph;
-  assert.deepEqual(Object.keys(graph.nodes), ['discoverPlan', 'implementPhase', 'finish', 'reportFailure']);
+  assert.deepEqual(Object.keys(graph.nodes), ['discoverPlan', 'checkpointPlan', 'implementPhase', 'checkpointPhase', 'finish', 'reportFailure']);
   const options = { autoCommit: true, autoReview: true, humanInTheLoop: false };
   const plan = { entryPlanPath: 'docs/plan.md', decisionLogPath: 'docs/decisions.md', phases: phases(), currentPhaseIndex: 2 };
-  const discovered = visitSubgraph(graph, 'discoverPlan', graph.init(destination(), { options, plannerSessionId }), { outcomeId: 'found', outcomeKind: 'success', output: { outcome: 'found', plan } });
+  const found = visitSubgraph(graph, 'discoverPlan', graph.init(destination(), { options, plannerSessionId }), { outcomeId: 'found', outcomeKind: 'success', output: { outcome: 'found', plan } });
+  assert.equal(found.to, 'checkpointPlan');
+  const discovered = visitCheckpoint(graph, 'checkpointPlan', found.state);
+  assert.deepEqual(discovered.plan, { capture: [{ scope: 'plan', directory: 'docs' }] });
   assert.equal(discovered.to, 'implementPhase');
   assert.equal(subgraphParameters<{ phaseIndex: number }>(graph, 'implementPhase', discovered.state).phaseIndex, 2);
-  const third = visitSubgraph(graph, 'implementPhase', discovered.state, { outcomeId: 'implemented', outcomeKind: 'success', output: { outcome: 'implemented' } });
-  assert.equal(third.to, 'implementPhase');
-  const fourth = visitSubgraph(graph, 'implementPhase', third.state, { outcomeId: 'implemented', outcomeKind: 'success', output: { outcome: 'implemented' } });
+  const implemented = { outcomeId: 'implemented', outcomeKind: 'success' as const, output: { outcome: 'implemented' } };
+  const third = visitSubgraph(graph, 'implementPhase', discovered.state, implemented);
+  assert.equal(third.to, 'checkpointPhase');
+  assert.equal(graph.nodes.checkpointPhase!.label?.(third.state), 'After phase 3');
+  const afterThird = visitCheckpoint(graph, 'checkpointPhase', third.state);
+  assert.deepEqual(afterThird.plan, { capture: [{ scope: 'plan', directory: 'docs' }] });
+  assert.equal(afterThird.to, 'implementPhase');
+  const fourth = visitCheckpoint(graph, 'checkpointPhase', visitSubgraph(graph, 'implementPhase', afterThird.state, implemented).state);
   assert.equal(fourth.to, 'finish');
   const harness = workflowHarness();
   const finished = await visit(graph, 'finish', harness.ctx, fourth.state);
@@ -58,7 +67,7 @@ test('the business graph discovers the plan, implements each remaining phase, an
   assert.deepEqual(graph.outcomes.implemented!.output(finished.state), { outcome: 'plan-implemented', entryPlanPath: 'docs/plan.md', decisionLogPath: 'docs/decisions.md', phases: phases(), completedPhaseCount: 4 });
 
   const done = visitSubgraph(graph, 'discoverPlan', graph.init(destination(), { options, plannerSessionId }), { outcomeId: 'found', outcomeKind: 'success', output: { outcome: 'found', plan: { ...plan, currentPhaseIndex: 4 } } });
-  assert.equal(done.to, 'finish');
+  assert.equal(visitCheckpoint(graph, 'checkpointPlan', done.state).to, 'finish');
 
   const failure = { message: 'Commit failed for phase 3', diagnostic: 'Commit failed for phase 3: no commit.' };
   const failed = visitSubgraph(graph, 'implementPhase', discovered.state, { outcomeId: 'failed', outcomeKind: 'failure', output: { outcome: 'failed', failure } });
@@ -67,6 +76,17 @@ test('the business graph discovers the plan, implements each remaining phase, an
   assert.deepEqual(harness.feedback.at(-1), renderWorkflowStatus({ kind: 'failed', message: failure.message }));
   assert.deepEqual(graph.outcomes.failed!.output(reported.state), { outcome: 'failed', reason: failure.diagnostic });
   for (const each of [graph, DiscoveryGraph, ChooseImplementerGraph, ImplementerExchangeGraph, PlannerExchangeGraph, CommitGraph]) assertDestinationsDeclared(each);
+});
+
+test('plan checkpoints capture the plan directory, and a decision log kept elsewhere on its own', () => {
+  const plan = { entryPlanPath: 'scratch/plans/current-plan/index.md', decisionLogPath: 'scratch/plans/current-plan/decisions.md', phases: phases(), currentPhaseIndex: 0 };
+  assert.deepEqual(planCheckpoint(plan), { capture: [{ scope: 'plan', directory: 'scratch/plans/current-plan' }] });
+  assert.deepEqual(planCheckpoint({ ...plan, decisionLogPath: 'scratch/decisions.md' }), {
+    capture: [{ scope: 'plan', directory: 'scratch/plans/current-plan' }, { scope: 'decisions', file: 'scratch/decisions.md' }],
+  });
+  assert.deepEqual(planCheckpoint({ ...plan, entryPlanPath: 'plan.md', decisionLogPath: 'decisions.md' }), {
+    capture: [{ scope: 'plan', file: 'plan.md' }, { scope: 'decisions', file: 'decisions.md' }],
+  });
 });
 
 test('plan discovery reads the planner conversation and checks the discovered plan', async () => {

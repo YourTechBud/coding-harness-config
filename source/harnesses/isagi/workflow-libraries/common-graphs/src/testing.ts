@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {
   isWorkflowBranded,
+  type CheckpointPlan,
   type GraphDefinition,
   type NodeEvent,
   type OperationContext,
@@ -52,6 +53,13 @@ export function visitSubgraph<State>(graph: AnyGraph, nodeId: string, state: Sta
   const node = graph.nodes[nodeId];
   assert.ok(node && isWorkflowBranded(node, 'subgraph-node'), `${nodeId} is a subgraph node`);
   return route(graph, nodeId, apply(graph, state, node.onResult(state, result)), { kind: 'subgraph', result });
+}
+
+/** What a checkpoint visit captures and where its single edge routes; the state is unchanged. */
+export function visitCheckpoint<State>(graph: AnyGraph, nodeId: string, state: State): { readonly plan: CheckpointPlan; readonly to: string; readonly state: State } {
+  const node = graph.nodes[nodeId];
+  assert.ok(node && isWorkflowBranded(node, 'checkpoint-node'), `${nodeId} is a checkpoint node`);
+  return { plan: node.plan(state), ...route(graph, nodeId, state, { kind: 'immediate' }) };
 }
 
 export function route<State>(graph: AnyGraph, from: string, state: State, event: NodeEvent): { readonly to: string; readonly state: State } {

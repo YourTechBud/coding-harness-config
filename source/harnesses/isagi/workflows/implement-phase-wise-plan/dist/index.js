@@ -75,6 +75,15 @@ function u(e) {
     onResult: e.onResult
   };
 }
+function d(e) {
+  return {
+    ...i("checkpoint-node"),
+    title: e.title,
+    description: e.description,
+    label: e.label,
+    plan: e.plan
+  };
+}
 function f(e) {
   return {
     ...i("edge"),
@@ -172,6 +181,9 @@ var b = {
     return e.kind === "subgraph";
   }
 };
+
+// src/graph.ts
+import { dirname as dirname2, relative as relative2 } from "node:path";
 
 // src/feedback.ts
 function setWorkflowStatus(ctx, status) {
@@ -2539,6 +2551,10 @@ var ImplementPhaseWisePlanGraph = m({
       parameters: (state) => ({ plannerSessionId: state.plannerSessionId }),
       onResult: (_state, { output }) => ({ plan: output.plan, phaseIndex: output.plan.currentPhaseIndex })
     }),
+    checkpointPlan: d({
+      title: "Checkpoint the plan",
+      plan: (state) => planCheckpoint(must2(state.plan, "plan"))
+    }),
     implementPhase: u({
       graph: PhaseGraph,
       title: "Implement the phase",
@@ -2548,6 +2564,11 @@ var ImplementPhaseWisePlanGraph = m({
         return { plannerSessionId: state.plannerSessionId, options: state.options, entryPlanPath: plan.entryPlanPath, phases: plan.phases, phaseIndex: state.phaseIndex };
       },
       onResult: (state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { phaseIndex: state.phaseIndex + 1 }
+    }),
+    checkpointPhase: d({
+      title: "Checkpoint the phase",
+      label: (state) => `After phase ${must2(state.plan, "plan").phases[state.phaseIndex - 1]?.number ?? state.phaseIndex}`,
+      plan: (state) => planCheckpoint(must2(state.plan, "plan"))
     }),
     finish: l(async (ctx, state) => {
       const plan = must2(state.plan, "plan");
@@ -2563,12 +2584,14 @@ var ImplementPhaseWisePlanGraph = m({
     }, { title: "Report the failure" })
   },
   edges: {
-    afterDiscoverPlan: f({ from: "discoverPlan", to: ["implementPhase", "finish"], choose: nextPhase }),
+    afterDiscoverPlan: f({ from: "discoverPlan", to: ["checkpointPlan"], choose: () => ({ to: "checkpointPlan" }) }),
+    afterCheckpointPlan: f({ from: "checkpointPlan", to: ["implementPhase", "finish"], choose: nextPhase }),
     afterImplementPhase: f({
       from: "implementPhase",
-      to: ["reportFailure", "implementPhase", "finish"],
-      choose: (state) => state.failure ? { to: "reportFailure" } : nextPhase(state)
+      to: ["reportFailure", "checkpointPhase"],
+      choose: (state) => ({ to: state.failure ? "reportFailure" : "checkpointPhase" })
     }),
+    afterCheckpointPhase: f({ from: "checkpointPhase", to: ["implementPhase", "finish"], choose: nextPhase }),
     afterFinish: f({ from: "finish", to: ["implemented"], choose: () => ({ to: "implemented" }) }),
     afterReportFailure: f({ from: "reportFailure", to: ["failed"], choose: () => ({ to: "failed" }) })
   },
@@ -2586,6 +2609,12 @@ var ImplementPhaseWisePlanGraph = m({
 });
 function nextPhase(state) {
   return { to: state.phaseIndex < must2(state.plan, "plan").phases.length ? "implementPhase" : "finish" };
+}
+function planCheckpoint(plan) {
+  const planDirectory = dirname2(plan.entryPlanPath);
+  const plannedFiles = planDirectory === "." ? { scope: "plan", file: plan.entryPlanPath } : { scope: "plan", directory: planDirectory };
+  const decisionLogInPlan = planDirectory !== "." && !relative2(planDirectory, plan.decisionLogPath).startsWith("..");
+  return { capture: decisionLogInPlan ? [plannedFiles] : [plannedFiles, { scope: "decisions", file: plan.decisionLogPath }] };
 }
 
 // src/index.ts

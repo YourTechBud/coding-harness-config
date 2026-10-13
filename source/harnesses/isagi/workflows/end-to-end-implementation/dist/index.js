@@ -75,6 +75,15 @@ function u(e) {
     onResult: e.onResult
   };
 }
+function d(e) {
+  return {
+    ...i("checkpoint-node"),
+    title: e.title,
+    description: e.description,
+    label: e.label,
+    plan: e.plan
+  };
+}
 function f(e) {
   return {
     ...i("edge"),
@@ -325,6 +334,9 @@ var y2 = {
   }
 };
 
+// ../implement-phase-wise-plan/src/graph.ts
+import { dirname as dirname2, relative as relative2 } from "node:path";
+
 // ../implement-phase-wise-plan/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i3(e) {
   return {
@@ -400,6 +412,15 @@ function u3(e) {
     graph: e.graph,
     parameters: e.parameters,
     onResult: e.onResult
+  };
+}
+function d2(e) {
+  return {
+    ...i3("checkpoint-node"),
+    title: e.title,
+    description: e.description,
+    label: e.label,
+    plan: e.plan
   };
 }
 function f3(e) {
@@ -3256,6 +3277,10 @@ var ImplementPhaseWisePlanGraph = m3({
       parameters: (state) => ({ plannerSessionId: state.plannerSessionId }),
       onResult: (_state, { output }) => ({ plan: output.plan, phaseIndex: output.plan.currentPhaseIndex })
     }),
+    checkpointPlan: d2({
+      title: "Checkpoint the plan",
+      plan: (state) => planCheckpoint(must3(state.plan, "plan"))
+    }),
     implementPhase: u3({
       graph: PhaseGraph,
       title: "Implement the phase",
@@ -3265,6 +3290,11 @@ var ImplementPhaseWisePlanGraph = m3({
         return { plannerSessionId: state.plannerSessionId, options: state.options, entryPlanPath: plan.entryPlanPath, phases: plan.phases, phaseIndex: state.phaseIndex };
       },
       onResult: (state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { phaseIndex: state.phaseIndex + 1 }
+    }),
+    checkpointPhase: d2({
+      title: "Checkpoint the phase",
+      label: (state) => `After phase ${must3(state.plan, "plan").phases[state.phaseIndex - 1]?.number ?? state.phaseIndex}`,
+      plan: (state) => planCheckpoint(must3(state.plan, "plan"))
     }),
     finish: l3(async (ctx, state) => {
       const plan = must3(state.plan, "plan");
@@ -3280,12 +3310,14 @@ var ImplementPhaseWisePlanGraph = m3({
     }, { title: "Report the failure" })
   },
   edges: {
-    afterDiscoverPlan: f3({ from: "discoverPlan", to: ["implementPhase", "finish"], choose: nextPhase }),
+    afterDiscoverPlan: f3({ from: "discoverPlan", to: ["checkpointPlan"], choose: () => ({ to: "checkpointPlan" }) }),
+    afterCheckpointPlan: f3({ from: "checkpointPlan", to: ["implementPhase", "finish"], choose: nextPhase }),
     afterImplementPhase: f3({
       from: "implementPhase",
-      to: ["reportFailure", "implementPhase", "finish"],
-      choose: (state) => state.failure ? { to: "reportFailure" } : nextPhase(state)
+      to: ["reportFailure", "checkpointPhase"],
+      choose: (state) => ({ to: state.failure ? "reportFailure" : "checkpointPhase" })
     }),
+    afterCheckpointPhase: f3({ from: "checkpointPhase", to: ["implementPhase", "finish"], choose: nextPhase }),
     afterFinish: f3({ from: "finish", to: ["implemented"], choose: () => ({ to: "implemented" }) }),
     afterReportFailure: f3({ from: "reportFailure", to: ["failed"], choose: () => ({ to: "failed" }) })
   },
@@ -3303,6 +3335,12 @@ var ImplementPhaseWisePlanGraph = m3({
 });
 function nextPhase(state) {
   return { to: state.phaseIndex < must3(state.plan, "plan").phases.length ? "implementPhase" : "finish" };
+}
+function planCheckpoint(plan) {
+  const planDirectory2 = dirname2(plan.entryPlanPath);
+  const plannedFiles = planDirectory2 === "." ? { scope: "plan", file: plan.entryPlanPath } : { scope: "plan", directory: planDirectory2 };
+  const decisionLogInPlan = planDirectory2 !== "." && !relative2(planDirectory2, plan.decisionLogPath).startsWith("..");
+  return { capture: decisionLogInPlan ? [plannedFiles] : [plannedFiles, { scope: "decisions", file: plan.decisionLogPath }] };
 }
 
 // ../implement-story/src/planning.ts
@@ -3572,6 +3610,10 @@ var technicalDepthLevels = ["product", "system-design", "implementation"];
 var deliveryMechanisms = ["presentation", "socratic-walkthrough"];
 var pullRequestChoices = ["yes", "no"];
 var storyRoot = "scratch/story";
+var storyCheckpoint = { capture: [{ scope: "story", directory: storyRoot }] };
+function checkpointStory(title) {
+  return d({ title, plan: () => storyCheckpoint });
+}
 var designPaths = {
   currentStatePath: `${storyRoot}/design/current-state.md`,
   architecturePath: `${storyRoot}/design/architecture.md`,
@@ -4195,30 +4237,38 @@ var DesignGraph = m({
       }
       return g({ update: reused });
     }, { title: "Reuse existing design artifacts" }),
+    checkpointExistingDesign: checkpointStory("Checkpoint the existing design"),
     analyzeCurrentState: u({
       graph: AnalyzeCurrentStateGraph,
       title: "Analyze the current state",
       parameters: (state) => ({ story: state.story, artifactPath: designPaths.currentStatePath }),
       onResult: (_state, { output }) => readArtifactResult(steps[0], output)
     }),
+    checkpointCurrentState: checkpointStory("Checkpoint the current-state analysis"),
     designArchitecture: u({
       graph: DesignArchitectureGraph,
       title: "Design the architecture",
       parameters: (state) => ({ story: state.story, currentStatePath: designPaths.currentStatePath, artifactPath: designPaths.architecturePath }),
       onResult: (_state, { output }) => readArtifactResult(steps[1], output)
     }),
+    checkpointArchitecture: checkpointStory("Checkpoint the architecture"),
     designProgram: u({
       graph: DesignProgramGraph,
       title: "Design the program",
       parameters: (state) => ({ story: state.story, currentStatePath: designPaths.currentStatePath, architecturePath: designPaths.architecturePath, artifactPath: designPaths.programDesignPath }),
       onResult: (_state, { output }) => readArtifactResult(steps[2], output)
-    })
+    }),
+    checkpointProgramDesign: checkpointStory("Checkpoint the program design")
   },
   edges: {
-    afterCheckArtifacts: f({ from: "checkArtifacts", to: ["analyzeCurrentState", "designArchitecture", "designProgram", "designed"], choose: nextStep }),
-    afterAnalyzeCurrentState: f({ from: "analyzeCurrentState", to: ["failed", "designArchitecture", "designProgram", "designed"], choose: nextStep }),
-    afterDesignArchitecture: f({ from: "designArchitecture", to: ["failed", "designProgram", "designed"], choose: nextStep }),
-    afterDesignProgram: f({ from: "designProgram", to: ["failed", "designed"], choose: nextStep })
+    afterCheckArtifacts: f({ from: "checkArtifacts", to: ["checkpointExistingDesign"], choose: () => ({ to: "checkpointExistingDesign" }) }),
+    afterCheckpointExistingDesign: f({ from: "checkpointExistingDesign", to: ["analyzeCurrentState", "designArchitecture", "designProgram", "designed"], choose: nextStep }),
+    afterAnalyzeCurrentState: afterStep("analyzeCurrentState", "checkpointCurrentState"),
+    afterCheckpointCurrentState: f({ from: "checkpointCurrentState", to: ["designArchitecture", "designProgram", "designed"], choose: nextStep }),
+    afterDesignArchitecture: afterStep("designArchitecture", "checkpointArchitecture"),
+    afterCheckpointArchitecture: f({ from: "checkpointArchitecture", to: ["designProgram", "designed"], choose: nextStep }),
+    afterDesignProgram: afterStep("designProgram", "checkpointProgramDesign"),
+    afterCheckpointProgramDesign: f({ from: "checkpointProgramDesign", to: ["designed"], choose: nextStep })
   },
   outcomes: {
     designed: p({
@@ -4232,8 +4282,10 @@ var DesignGraph = m({
     failed: p({ kind: "failure", title: "Design failed", output: (state) => ({ outcome: "failed", failure: must6(state.failure, "failure") }) })
   }
 });
+function afterStep(from, checkpointNode) {
+  return f({ from, to: ["failed", checkpointNode], choose: (state) => ({ to: state.failure ? "failed" : checkpointNode }) });
+}
 function nextStep(state) {
-  if (state.failure) return { to: "failed" };
   const next = steps.find(({ step }) => state[step] === null);
   return { to: next ? next.node : "designed" };
 }
@@ -5333,7 +5385,7 @@ function unique(values, label) {
 
 // ../design-curriculum/src/inputs.ts
 import { existsSync as existsSync6, realpathSync as realpathSync2, statSync as statSync6 } from "node:fs";
-import { basename, extname, isAbsolute as isAbsolute2, relative as relative2, resolve as resolve7 } from "node:path";
+import { basename, extname, isAbsolute as isAbsolute2, relative as relative3, resolve as resolve7 } from "node:path";
 function parseInputs(repositoryPath, variables) {
   const sources = parseSources2(variables.sources);
   for (const source of sources) assertSourceFile(repositoryPath, source.path);
@@ -5382,11 +5434,11 @@ function assertSourceFile(repositoryPath, path) {
   if (!existsSync6(absolute) || !statSync6(absolute).isFile()) throw new Error(`Source Markdown file ${path} does not exist.`);
   const repositoryRealPath = realpathSync2(repositoryPath);
   const sourceRealPath = realpathSync2(absolute);
-  const fromRepository = relative2(repositoryRealPath, sourceRealPath);
+  const fromRepository = relative3(repositoryRealPath, sourceRealPath);
   if (fromRepository === ".." || fromRepository.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute2(fromRepository)) throw new Error(`Source ${path} resolves outside the repository.`);
 }
 function assertInsideRepository(repositoryPath, path, label) {
-  const fromRepository = relative2(resolve7(repositoryPath), resolve7(repositoryPath, path));
+  const fromRepository = relative3(resolve7(repositoryPath), resolve7(repositoryPath, path));
   if (fromRepository === ".." || fromRepository.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute2(fromRepository)) throw new Error(`${label} must stay inside the repository.`);
 }
 function sourceId(path) {
@@ -6809,6 +6861,7 @@ var EndToEndImplementationGraph = m({
       parameters: (state) => ({ story: state.story, familiarity: state.familiarity, technicalDepth: state.technicalDepth, deliveryMechanism: state.deliveryMechanism }),
       onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : { walkthrough: output.walkthrough }
     }),
+    checkpointWalkthrough: checkpointStory("Checkpoint the walkthrough"),
     approveSolution: l(async (ctx, state) => {
       const walkthrough = must6(state.walkthrough, "walkthrough");
       await ctx.setUiFeedback({
@@ -6838,6 +6891,7 @@ var EndToEndImplementationGraph = m({
       parameters: (state) => ({ story: state.story }),
       onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : {}
     }),
+    checkpointUiBrief: checkpointStory("Checkpoint the UI brief"),
     implement: u({
       graph: ImplementStoryGraph,
       title: "Implement the story",
@@ -6850,6 +6904,7 @@ var EndToEndImplementationGraph = m({
       parameters: (state) => ({ story: state.story, decisionLogPath: must6(state.implementation, "implementation").implementation.decisionLogPath }),
       onResult: (_state, { output }) => output.outcome === "failed" ? { failure: output.failure } : {}
     }),
+    checkpointDocumentation: checkpointStory("Checkpoint the documentation"),
     submitPullRequest: u({
       graph: PullRequestGraph,
       title: "Submit the pull request",
@@ -6874,7 +6929,8 @@ var EndToEndImplementationGraph = m({
   },
   edges: {
     afterDesign: afterPhase2("design", "walkthrough"),
-    afterWalkthrough: afterPhase2("walkthrough", "approveSolution"),
+    afterWalkthrough: afterPhase2("walkthrough", "checkpointWalkthrough"),
+    afterCheckpointWalkthrough: f({ from: "checkpointWalkthrough", to: ["approveSolution"], choose: () => ({ to: "approveSolution" }) }),
     afterApproveSolution: f({
       from: "approveSolution",
       to: ["prepareImplementation", "stopSolution"],
@@ -6887,15 +6943,14 @@ var EndToEndImplementationGraph = m({
       }
     }),
     afterStopSolution: f({ from: "stopSolution", to: ["stopped"], choose: () => ({ to: "stopped" }) }),
-    afterPrepareImplementation: afterPhase2("prepareImplementation", "implement"),
+    afterPrepareImplementation: afterPhase2("prepareImplementation", "checkpointUiBrief"),
+    afterCheckpointUiBrief: f({ from: "checkpointUiBrief", to: ["implement"], choose: () => ({ to: "implement" }) }),
     afterImplement: afterPhase2("implement", "document"),
-    afterDocument: f({
-      from: "document",
-      to: ["reportFailure", "submitPullRequest", "finish"],
-      choose: (state) => {
-        if (state.failure) return { to: "reportFailure" };
-        return { to: state.submitPullRequest === "yes" ? "submitPullRequest" : "finish" };
-      }
+    afterDocument: afterPhase2("document", "checkpointDocumentation"),
+    afterCheckpointDocumentation: f({
+      from: "checkpointDocumentation",
+      to: ["submitPullRequest", "finish"],
+      choose: (state) => ({ to: state.submitPullRequest === "yes" ? "submitPullRequest" : "finish" })
     }),
     afterSubmitPullRequest: afterPhase2("submitPullRequest", "finish"),
     afterFinish: f({ from: "finish", to: ["completed"], choose: () => ({ to: "completed" }) }),

@@ -17,6 +17,7 @@ import {
   rejudged,
   subgraphParameters,
   visit,
+  visitCheckpoint,
   visitSubgraph,
 } from 'isagi-workflow-common-graphs/testing';
 import type { ImplementStoryParameters } from 'isagi-workflow-implement-story/graph';
@@ -35,6 +36,7 @@ import {
   planDirectory,
   presentationPath,
   reviewDirectory,
+  storyCheckpoint,
   uiBriefPath,
   type DesignSummary,
   type ImplementationResult,
@@ -63,21 +65,32 @@ test('command and parse capture the complete end-to-end controls', async () => {
 });
 
 test('the business graph shows each delivery phase and every graph is well formed', () => {
-  assert.deepEqual(Object.keys(root.nodes), ['design', 'walkthrough', 'approveSolution', 'stopSolution', 'prepareImplementation', 'implement', 'document', 'submitPullRequest', 'finish', 'reportFailure']);
+  assert.deepEqual(Object.keys(root.nodes), ['design', 'walkthrough', 'checkpointWalkthrough', 'approveSolution', 'stopSolution', 'prepareImplementation', 'checkpointUiBrief', 'implement', 'document', 'checkpointDocumentation', 'submitPullRequest', 'finish', 'reportFailure']);
   for (const graph of [root, DesignGraph, WalkthroughGraph, PrepareImplementationGraph, DocumentationGraph, CheckpointGraph, PullRequestGraph]) assertDestinationsDeclared(graph);
 });
 
-test('missing design artifacts run in order and preserve their reviewed results', async (t) => {
+test('missing design artifacts run in order, each checkpointing the story pack, and preserve their reviewed results', async (t) => {
   const worktreePath = tempWorktree(t);
   const harness = workflowHarness(worktreePath);
   let step: { readonly to: string; readonly state: ReturnType<typeof DesignGraph.init> } = await visit(DesignGraph, 'checkArtifacts', harness.ctx, DesignGraph.init(destination(worktreePath), { story }));
+  assert.equal(step.to, 'checkpointExistingDesign');
+  step = visitCheckpoint(DesignGraph, 'checkpointExistingDesign', step.state);
   assert.equal(step.to, 'analyzeCurrentState');
   assert.deepEqual(subgraphParameters(DesignGraph, 'analyzeCurrentState', step.state), { story, artifactPath: designPaths.currentStatePath });
   step = visitSubgraph(DesignGraph, 'analyzeCurrentState', step.state, reviewed(designPaths.currentStatePath, 2));
+  assert.equal(step.to, 'checkpointCurrentState');
+  step = visitCheckpoint(DesignGraph, 'checkpointCurrentState', step.state);
   assert.equal(step.to, 'designArchitecture');
   assert.deepEqual(subgraphParameters(DesignGraph, 'designArchitecture', step.state), { story, currentStatePath: designPaths.currentStatePath, artifactPath: designPaths.architecturePath });
   step = visitSubgraph(DesignGraph, 'designArchitecture', step.state, reviewed(designPaths.architecturePath, 1));
+  assert.equal(step.to, 'checkpointArchitecture');
+  step = visitCheckpoint(DesignGraph, 'checkpointArchitecture', step.state);
+  assert.equal(step.to, 'designProgram');
   step = visitSubgraph(DesignGraph, 'designProgram', step.state, reviewed(designPaths.programDesignPath, 3));
+  assert.equal(step.to, 'checkpointProgramDesign');
+  const checkpointed = visitCheckpoint(DesignGraph, 'checkpointProgramDesign', step.state);
+  assert.deepEqual(checkpointed.plan, storyCheckpoint);
+  step = checkpointed;
   assert.equal(step.to, 'designed');
   assert.deepEqual(DesignGraph.outcomes.designed!.output(step.state), { outcome: 'designed', design: designResult() });
 });
@@ -87,17 +100,45 @@ test('existing design artifacts are reused and only the missing ones run', async
   writeArtifact(worktreePath, designPaths.currentStatePath, '# Current state');
   const harness = workflowHarness(worktreePath);
   const step = await visit(DesignGraph, 'checkArtifacts', harness.ctx, DesignGraph.init(destination(worktreePath), { story }));
-  assert.equal(step.to, 'designArchitecture');
+  assert.equal(step.to, 'checkpointExistingDesign');
   assert.deepEqual(harness.feedback, [{ phase: 'Current-state analysis ready', message: `Reusing ${designPaths.currentStatePath}.` }]);
   assert.deepEqual(step.state.currentState, { outcome: 'reused' });
+  const checkpointed = visitCheckpoint(DesignGraph, 'checkpointExistingDesign', step.state);
+  assert.deepEqual(checkpointed.plan, storyCheckpoint);
+  assert.equal(checkpointed.to, 'designArchitecture');
+
+  writeArtifact(worktreePath, designPaths.architecturePath, '# Architecture');
+  writeArtifact(worktreePath, designPaths.programDesignPath, '# Program design');
+  const allReused = await visit(DesignGraph, 'checkArtifacts', workflowHarness(worktreePath).ctx, DesignGraph.init(destination(worktreePath), { story }));
+  assert.equal(visitCheckpoint(DesignGraph, 'checkpointExistingDesign', allReused.state).to, 'designed');
 });
 
 test('a failed or misplaced design artifact fails the design with its diagnostic', () => {
   const start = DesignGraph.init(destination(), { story });
   const failed = visitSubgraph(DesignGraph, 'analyzeCurrentState', start, { outcomeId: 'failed', outcomeKind: 'failure', output: { outcome: 'failed', reason: 'Writer session died' } });
   assert.deepEqual(DesignGraph.outcomes.failed!.output(failed.state), { outcome: 'failed', failure: { message: 'Current-state analysis failed', diagnostic: 'analyze-current-state failed: Writer session died' } });
+  assert.equal(failed.to, 'failed');
   const misplaced = visitSubgraph(DesignGraph, 'analyzeCurrentState', start, reviewed('elsewhere.md', 1));
   assert.match(misplaced.state.failure?.diagnostic ?? '', /returned artifact path elsewhere\.md/);
+});
+
+test('the story pack is checkpointed after the walkthrough and the UI brief, and failures skip the checkpoint', () => {
+  const state = { ...root.init(destination(), controls), design: designResult() };
+  const walked = visitSubgraph(root, 'walkthrough', state, { outcomeId: 'walkedThrough', outcomeKind: 'success', output: { outcome: 'walked-through', walkthrough: presentationResult() } });
+  assert.deepEqual(walked.state.walkthrough, presentationResult());
+  assert.equal(walked.to, 'checkpointWalkthrough');
+  const walkthroughCheckpoint = visitCheckpoint(root, 'checkpointWalkthrough', walked.state);
+  assert.deepEqual(walkthroughCheckpoint.plan, storyCheckpoint);
+  assert.equal(walkthroughCheckpoint.to, 'approveSolution');
+
+  const prepared = visitSubgraph(root, 'prepareImplementation', walked.state, { outcomeId: 'ready', outcomeKind: 'success', output: { outcome: 'ready' } });
+  assert.equal(prepared.to, 'checkpointUiBrief');
+  const briefCheckpoint = visitCheckpoint(root, 'checkpointUiBrief', prepared.state);
+  assert.deepEqual(briefCheckpoint.plan, storyCheckpoint);
+  assert.equal(briefCheckpoint.to, 'implement');
+
+  const failure = { message: 'UI brief missing', diagnostic: 'The UI session died.' };
+  assert.equal(visitSubgraph(root, 'prepareImplementation', walked.state, { outcomeId: 'failed', outcomeKind: 'failure', output: { outcome: 'failed', failure } }).to, 'reportFailure');
 });
 
 test('an existing walkthrough HTML skips the presentation child and waits for approval', async (t) => {
@@ -343,8 +384,12 @@ test('documentation brainstorms, waits for Continue, commits normally, and close
 
 test('delivery submits the pull request when asked, or finishes without one', async () => {
   const delivered = { ...root.init(destination(), controls), design: designResult(), walkthrough: presentationResult(), implementation: implementationResult() };
-  assert.equal(visitSubgraph(root, 'document', delivered, { outcomeId: 'ready', outcomeKind: 'success', output: { outcome: 'ready' } }).to, 'submitPullRequest');
-  const skipped = visitSubgraph(root, 'document', { ...delivered, submitPullRequest: 'no' as const }, { outcomeId: 'ready', outcomeKind: 'success', output: { outcome: 'ready' } });
+  const documented = visitSubgraph(root, 'document', delivered, { outcomeId: 'ready', outcomeKind: 'success', output: { outcome: 'ready' } });
+  assert.equal(documented.to, 'checkpointDocumentation');
+  const documentationCheckpoint = visitCheckpoint(root, 'checkpointDocumentation', documented.state);
+  assert.deepEqual(documentationCheckpoint.plan, storyCheckpoint);
+  assert.equal(documentationCheckpoint.to, 'submitPullRequest');
+  const skipped = visitCheckpoint(root, 'checkpointDocumentation', { ...documented.state, submitPullRequest: 'no' as const });
   assert.equal(skipped.to, 'finish');
   const harness = workflowHarness('/workspace');
   const finished = await visit(root, 'finish', harness.ctx, skipped.state);

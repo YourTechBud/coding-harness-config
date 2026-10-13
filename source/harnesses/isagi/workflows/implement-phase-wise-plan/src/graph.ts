@@ -1,4 +1,7 @@
+import { dirname, relative } from 'node:path';
+
 import {
+  checkpoint,
   complete,
   createGraph,
   edge,
@@ -6,6 +9,7 @@ import {
   outcome,
   reduce,
   subgraph,
+  type CheckpointPlan,
 } from '@yourtechbudstudio/isagi-workflow-sdk';
 
 import { setWorkflowStatus } from './feedback.js';
@@ -41,6 +45,7 @@ type State = {
 };
 
 // Business view: discover the plan the planner wrote, then implement each remaining phase in order.
+// The plan files are checkpointed once discovered and again after every completed phase.
 export const ImplementPhaseWisePlanGraph = createGraph<State, {}, ImplementPhaseWisePlanParameters, ImplementPhaseWisePlanOutput>({
   key: 'ImplementPhaseWisePlan',
   title: 'Implement phase-wise plan',
@@ -60,6 +65,10 @@ export const ImplementPhaseWisePlanGraph = createGraph<State, {}, ImplementPhase
       parameters: (state) => ({ plannerSessionId: state.plannerSessionId }),
       onResult: (_state, { output }) => ({ plan: output.plan, phaseIndex: output.plan.currentPhaseIndex }),
     }),
+    checkpointPlan: checkpoint<State>({
+      title: 'Checkpoint the plan',
+      plan: (state) => planCheckpoint(must(state.plan, 'plan')),
+    }),
     implementPhase: subgraph<State, State, PhaseParameters, PhaseOutput>({
       graph: PhaseGraph,
       title: 'Implement the phase',
@@ -69,6 +78,11 @@ export const ImplementPhaseWisePlanGraph = createGraph<State, {}, ImplementPhase
         return { plannerSessionId: state.plannerSessionId, options: state.options, entryPlanPath: plan.entryPlanPath, phases: plan.phases, phaseIndex: state.phaseIndex };
       },
       onResult: (state, { output }) => (output.outcome === 'failed' ? { failure: output.failure } : { phaseIndex: state.phaseIndex + 1 }),
+    }),
+    checkpointPhase: checkpoint<State>({
+      title: 'Checkpoint the phase',
+      label: (state) => `After phase ${must(state.plan, 'plan').phases[state.phaseIndex - 1]?.number ?? state.phaseIndex}`,
+      plan: (state) => planCheckpoint(must(state.plan, 'plan')),
     }),
     finish: operation<State, State>(async (ctx, state) => {
       const plan = must(state.plan, 'plan');
@@ -84,12 +98,14 @@ export const ImplementPhaseWisePlanGraph = createGraph<State, {}, ImplementPhase
     }, { title: 'Report the failure' }),
   },
   edges: {
-    afterDiscoverPlan: edge<State, State>({ from: 'discoverPlan', to: ['implementPhase', 'finish'], choose: nextPhase }),
+    afterDiscoverPlan: edge<State, State>({ from: 'discoverPlan', to: ['checkpointPlan'], choose: () => ({ to: 'checkpointPlan' }) }),
+    afterCheckpointPlan: edge<State, State>({ from: 'checkpointPlan', to: ['implementPhase', 'finish'], choose: nextPhase }),
     afterImplementPhase: edge<State, State>({
       from: 'implementPhase',
-      to: ['reportFailure', 'implementPhase', 'finish'],
-      choose: (state) => (state.failure ? { to: 'reportFailure' } : nextPhase(state)),
+      to: ['reportFailure', 'checkpointPhase'],
+      choose: (state) => ({ to: state.failure ? 'reportFailure' : 'checkpointPhase' }),
     }),
+    afterCheckpointPhase: edge<State, State>({ from: 'checkpointPhase', to: ['implementPhase', 'finish'], choose: nextPhase }),
     afterFinish: edge<State, State>({ from: 'finish', to: ['implemented'], choose: () => ({ to: 'implemented' }) }),
     afterReportFailure: edge<State, State>({ from: 'reportFailure', to: ['failed'], choose: () => ({ to: 'failed' }) }),
   },
@@ -108,4 +124,13 @@ export const ImplementPhaseWisePlanGraph = createGraph<State, {}, ImplementPhase
 
 function nextPhase(state: State) {
   return { to: state.phaseIndex < must(state.plan, 'plan').phases.length ? 'implementPhase' : 'finish' };
+}
+
+// The plan's directory holds its phase files and, usually, the decision log; a decision log kept
+// elsewhere is captured on its own.
+export function planCheckpoint(plan: Plan): CheckpointPlan {
+  const planDirectory = dirname(plan.entryPlanPath);
+  const plannedFiles = planDirectory === '.' ? { scope: 'plan', file: plan.entryPlanPath } : { scope: 'plan', directory: planDirectory };
+  const decisionLogInPlan = planDirectory !== '.' && !relative(planDirectory, plan.decisionLogPath).startsWith('..');
+  return { capture: decisionLogInPlan ? [plannedFiles] : [plannedFiles, { scope: 'decisions', file: plan.decisionLogPath }] };
 }

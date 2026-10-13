@@ -18,6 +18,7 @@ import {
 } from 'isagi-workflow-implement-story/graph';
 
 import {
+  checkpointStory,
   decisionLogPath,
   designPaths,
   entryPlanPath,
@@ -85,6 +86,7 @@ type State = EndToEndImplementationParameters & {
 
 // Business view: design the story, walk the user through the solution, and on approval prepare,
 // implement, document, and optionally submit a pull request. Any phase failure is reported here.
+// The story pack is checkpointed after the walkthrough, the UI brief, and the documentation.
 export const EndToEndImplementationGraph = createGraph<State, {}, EndToEndImplementationParameters, EndToEndImplementationOutput>({
   key: 'EndToEndImplementation',
   title: 'End-to-end implementation',
@@ -116,6 +118,7 @@ export const EndToEndImplementationGraph = createGraph<State, {}, EndToEndImplem
       parameters: (state) => ({ story: state.story, familiarity: state.familiarity, technicalDepth: state.technicalDepth, deliveryMechanism: state.deliveryMechanism }),
       onResult: (_state, { output }) => (output.outcome === 'failed' ? { failure: output.failure } : { walkthrough: output.walkthrough }),
     }),
+    checkpointWalkthrough: checkpointStory<State>('Checkpoint the walkthrough'),
 
     approveSolution: operation<State, State>(async (ctx, state) => {
       const walkthrough = must(state.walkthrough, 'walkthrough');
@@ -150,6 +153,7 @@ export const EndToEndImplementationGraph = createGraph<State, {}, EndToEndImplem
       parameters: (state) => ({ story: state.story }),
       onResult: (_state, { output }) => (output.outcome === 'failed' ? { failure: output.failure } : {}),
     }),
+    checkpointUiBrief: checkpointStory<State>('Checkpoint the UI brief'),
 
     implement: subgraph<State, State, ImplementStoryParameters, ImplementStoryOutput>({
       graph: ImplementStoryGraph,
@@ -164,6 +168,7 @@ export const EndToEndImplementationGraph = createGraph<State, {}, EndToEndImplem
       parameters: (state) => ({ story: state.story, decisionLogPath: must(state.implementation, 'implementation').implementation.decisionLogPath }),
       onResult: (_state, { output }) => (output.outcome === 'failed' ? { failure: output.failure } : {}),
     }),
+    checkpointDocumentation: checkpointStory<State>('Checkpoint the documentation'),
 
     submitPullRequest: subgraph<State, State, PullRequestParameters, PullRequestOutput>({
       graph: PullRequestGraph,
@@ -191,7 +196,8 @@ export const EndToEndImplementationGraph = createGraph<State, {}, EndToEndImplem
   },
   edges: {
     afterDesign: afterPhase('design', 'walkthrough'),
-    afterWalkthrough: afterPhase('walkthrough', 'approveSolution'),
+    afterWalkthrough: afterPhase('walkthrough', 'checkpointWalkthrough'),
+    afterCheckpointWalkthrough: edge<State, State>({ from: 'checkpointWalkthrough', to: ['approveSolution'], choose: () => ({ to: 'approveSolution' }) }),
     afterApproveSolution: edge<State, State>({
       from: 'approveSolution',
       to: ['prepareImplementation', 'stopSolution'],
@@ -204,15 +210,14 @@ export const EndToEndImplementationGraph = createGraph<State, {}, EndToEndImplem
       },
     }),
     afterStopSolution: edge<State, State>({ from: 'stopSolution', to: ['stopped'], choose: () => ({ to: 'stopped' }) }),
-    afterPrepareImplementation: afterPhase('prepareImplementation', 'implement'),
+    afterPrepareImplementation: afterPhase('prepareImplementation', 'checkpointUiBrief'),
+    afterCheckpointUiBrief: edge<State, State>({ from: 'checkpointUiBrief', to: ['implement'], choose: () => ({ to: 'implement' }) }),
     afterImplement: afterPhase('implement', 'document'),
-    afterDocument: edge<State, State>({
-      from: 'document',
-      to: ['reportFailure', 'submitPullRequest', 'finish'],
-      choose: (state) => {
-        if (state.failure) return { to: 'reportFailure' };
-        return { to: state.submitPullRequest === 'yes' ? 'submitPullRequest' : 'finish' };
-      },
+    afterDocument: afterPhase('document', 'checkpointDocumentation'),
+    afterCheckpointDocumentation: edge<State, State>({
+      from: 'checkpointDocumentation',
+      to: ['submitPullRequest', 'finish'],
+      choose: (state) => ({ to: state.submitPullRequest === 'yes' ? 'submitPullRequest' : 'finish' }),
     }),
     afterSubmitPullRequest: afterPhase('submitPullRequest', 'finish'),
     afterFinish: edge<State, State>({ from: 'finish', to: ['completed'], choose: () => ({ to: 'completed' }) }),

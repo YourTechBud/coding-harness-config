@@ -1,3 +1,5 @@
+import { checkpoint, type CheckpointPlan } from '@yourtechbudstudio/isagi-workflow-sdk';
+
 import type { PullRequestResult } from '../pull-request.js';
 
 export type ArtifactPaths = {
@@ -70,6 +72,14 @@ export type PullRequestChoice = (typeof pullRequestChoices)[number];
 
 // The story pack lives at fixed paths so every embedded workflow agrees on them.
 export const storyRoot = 'scratch/story';
+
+// Story checkpoints capture the whole story pack: the walkthrough and UI sessions amend the design
+// documents, and Git does not track the pack.
+export const storyCheckpoint = { capture: [{ scope: 'story', directory: storyRoot }] } satisfies CheckpointPlan;
+
+export function checkpointStory<State>(title: string) {
+  return checkpoint<State>({ title, plan: () => storyCheckpoint });
+}
 
 export const designPaths = {
   currentStatePath: `${storyRoot}/design/current-state.md`,
