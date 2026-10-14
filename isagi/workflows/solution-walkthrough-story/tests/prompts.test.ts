@@ -6,6 +6,7 @@ import {
   genericDeckAssemblyPrompt,
   genericDeckNeighborhoodPrompt,
   genericDeckShellPrompt,
+  genericLessonPlanPrompt,
   genericSocraticPrompt,
   type PromptInput,
 } from '../src/prompts.js';
@@ -58,9 +59,24 @@ test('neighborhood and assembly prompts preserve creator freedom and protocol ma
   assert.match(assembly, /1440×900, 1280×720, and 1024×768/);
 });
 
-test('Socratic prompt teaches toward an approval judgment from the same curriculum', () => {
+test('lesson plan sequences lean stops with interface cards, call triage, and a verified fact sheet', () => {
+  const prompt = genericLessonPlanPrompt(input);
+  assert.match(prompt, /Audience: new to this codebase; wants system-design depth\./);
+  assert.match(prompt, /about five to eight stops/);
+  assert.match(prompt, /Interface card: .*Include it whatever the audience depth/);
+  assert.match(prompt, /Your calls are choices with at least two viable options/);
+  assert.match(prompt, /Fact sheet\./);
+  assert.match(prompt, /Write only review\/\.walkthrough\/lesson-plan\.md/);
+  assert.match(prompt, /Work unattended/);
+});
+
+test('Socratic guide teaches from the lesson plan toward the review calls at a whiteboard pace', () => {
   const prompt = genericSocraticPrompt(input);
-  assert.match(prompt, /self-paced Socratic walkthrough/);
-  assert.match(prompt, /reach their own approval judgment/);
-  assert.match(prompt, /schemas, APIs, events, state transitions/);
+  assert.match(prompt, /Lesson plan: review\/\.walkthrough\/lesson-plan\.md/);
+  assert.match(prompt, /made the real review calls on it/);
+  assert.match(prompt, /Always show the interface layer, whatever the audience depth/);
+  assert.match(prompt, /say continue and I'll record my recommendation as your leaning/);
+  assert.match(prompt, /Show only the rows that changed/);
+  assert.match(prompt, /State at most two such choices in a message/);
+  assert.doesNotMatch(prompt, /Work unattended/);
 });

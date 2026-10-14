@@ -94,9 +94,14 @@ export function deckPlanExists(repositoryPath: string, paths: WalkthroughPaths):
   return artifactExists(repositoryPath, paths.deckPlanPath);
 }
 
+export function lessonPlanExists(repositoryPath: string, paths: WalkthroughPaths): boolean {
+  return artifactExists(repositoryPath, paths.lessonPlanPath);
+}
+
 export type ReusablePlanningArtifacts = {
   readonly curriculum: boolean;
   readonly deckPlan: boolean;
+  readonly lessonPlan: boolean;
 };
 
 export function inspectPlanningArtifacts(
@@ -106,22 +111,24 @@ export function inspectPlanningArtifacts(
   const analysisExists = artifactExists(repositoryPath, paths.curriculumAnalysisPath);
   const curriculumExists = artifactExists(repositoryPath, paths.curriculumPath);
   const planExists = artifactExists(repositoryPath, paths.deckPlanPath);
+  const lessonPlan = lessonPlanExists(repositoryPath, paths);
 
   if (!analysisExists && !curriculumExists) {
     if (planExists) throw new Error('deck plan exists without its curriculum artifacts.');
-    return { curriculum: false, deckPlan: false };
+    if (lessonPlan) throw new Error('lesson plan exists without its curriculum artifacts.');
+    return { curriculum: false, deckPlan: false, lessonPlan: false };
   }
   if (analysisExists !== curriculumExists) throw new Error('curriculum analysis and curriculum must either both exist or both be absent.');
 
   const bundle = readGenericCurriculumBundle(repositoryPath, paths);
-  if (!planExists) return { curriculum: true, deckPlan: false };
+  if (!planExists) return { curriculum: true, deckPlan: false, lessonPlan };
   readArchitectedDeckPlan(repositoryPath, paths, bundle);
-  return { curriculum: true, deckPlan: true };
+  return { curriculum: true, deckPlan: true, lessonPlan };
 }
 
 export function removePlanningArtifacts(repositoryPath: string, paths: WalkthroughPaths): readonly string[] {
   const removed: string[] = [];
-  for (const artifactPath of [paths.curriculumAnalysisPath, paths.curriculumPath, paths.deckPlanPath]) {
+  for (const artifactPath of [paths.curriculumAnalysisPath, paths.curriculumPath, paths.deckPlanPath, paths.lessonPlanPath]) {
     const absolutePath = resolve(repositoryPath, artifactPath);
     if (!existsSync(absolutePath)) continue;
     rmSync(absolutePath, { force: true });

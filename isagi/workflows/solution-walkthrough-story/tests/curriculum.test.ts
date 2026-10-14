@@ -8,7 +8,7 @@ import { assertDestinationsDeclared, subgraphParameters, visit, visitSubgraph } 
 
 import { WalkthroughCurriculumGraph } from '../src/graphs/curriculum.js';
 import type { DeliveryMechanism } from '../src/types.js';
-import { context, destination, sources, withRepository, workflowHarness, write, writeDeckPlan, writeGenericCurriculum } from './fixtures.js';
+import { context, destination, sources, withRepository, workflowHarness, write, writeDeckPlan, writeGenericCurriculum, writeLessonPlan } from './fixtures.js';
 
 const graph = WalkthroughCurriculumGraph;
 const { paths } = context();
@@ -30,6 +30,7 @@ test('fresh runs delegate curriculum design with the complete decision-oriented 
     ]);
     assert.match(child.learningGoal, /approve or reject/);
     assert.match(child.teachingBrief, /exact changed contracts/);
+    assert.match(child.audience.depth, /interface surface is required: APIs and endpoints, database schemas, CLI commands/);
     assert.equal(child.paths.outputDirectory, paths.walkthroughDirectory);
 
     writeGenericCurriculum(repositoryPath);
@@ -70,6 +71,42 @@ test('a partial curriculum pair resets every planning JSON artifact', async () =
     write(repositoryPath, paths.curriculumAnalysisPath, JSON.stringify({ schemaVersion: 3 }));
     write(repositoryPath, paths.deckPlanPath, JSON.stringify({ schemaVersion: 7 }));
     const result = await visit(graph, 'inspectPlanning', workflowHarness(repositoryPath).ctx, state(repositoryPath));
+    assert.equal(result.to, 'designCurriculum');
+    assertPlanningArtifactsRemoved(repositoryPath);
+  });
+});
+
+test('Socratic mode reuses the curriculum and reports whether its lesson plan is reused', async () => {
+  await withRepository(async (repositoryPath) => {
+    writeGenericCurriculum(repositoryPath);
+    const fresh = workflowHarness(repositoryPath);
+    assert.equal((await visit(graph, 'inspectPlanning', fresh.ctx, state(repositoryPath, 'socratic-walkthrough'))).to, 'ready');
+    assert.deepEqual(fresh.feedback, [{ phase: 'Reusing the approved curriculum', message: 'A new lesson plan will be created.' }]);
+
+    writeLessonPlan(repositoryPath);
+    const reused = workflowHarness(repositoryPath);
+    assert.equal((await visit(graph, 'inspectPlanning', reused.ctx, state(repositoryPath, 'socratic-walkthrough'))).to, 'ready');
+    assert.deepEqual(reused.feedback, [{ phase: 'Reusing the approved curriculum', message: 'The approved lesson plan will also be reused.' }]);
+  });
+});
+
+test('a lesson plan without its curriculum resets every planning artifact', async () => {
+  await withRepository(async (repositoryPath) => {
+    writeDesignSources(repositoryPath);
+    writeLessonPlan(repositoryPath);
+    const result = await visit(graph, 'inspectPlanning', workflowHarness(repositoryPath).ctx, state(repositoryPath, 'socratic-walkthrough'));
+    assert.equal(result.to, 'designCurriculum');
+    assertPlanningArtifactsRemoved(repositoryPath);
+  });
+});
+
+test('a stale curriculum also removes its lesson plan', async () => {
+  await withRepository(async (repositoryPath) => {
+    writeDesignSources(repositoryPath);
+    writeGenericCurriculum(repositoryPath);
+    writeLessonPlan(repositoryPath);
+    write(repositoryPath, paths.curriculumPath, JSON.stringify({ schemaVersion: 0 }));
+    const result = await visit(graph, 'inspectPlanning', workflowHarness(repositoryPath).ctx, state(repositoryPath, 'socratic-walkthrough'));
     assert.equal(result.to, 'designCurriculum');
     assertPlanningArtifactsRemoved(repositoryPath);
   });
@@ -139,7 +176,7 @@ function writeDesignSources(repositoryPath: string): void {
 }
 
 function assertPlanningArtifactsRemoved(repositoryPath: string): void {
-  for (const artifactPath of [paths.curriculumAnalysisPath, paths.curriculumPath, paths.deckPlanPath]) {
+  for (const artifactPath of [paths.curriculumAnalysisPath, paths.curriculumPath, paths.deckPlanPath, paths.lessonPlanPath]) {
     assert.equal(existsSync(join(repositoryPath, artifactPath)), false);
   }
 }

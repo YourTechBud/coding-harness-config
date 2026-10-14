@@ -123,6 +123,10 @@ export function writeDeckPlan(repositoryPath: string): void {
   write(repositoryPath, walkthroughPaths(reviewDirectory).deckPlanPath, JSON.stringify(plan()));
 }
 
+export function writeLessonPlan(repositoryPath: string): void {
+  write(repositoryPath, walkthroughPaths(reviewDirectory).lessonPlanPath, '# Lesson plan\n');
+}
+
 export function assembledHtml(momentId = 'system-contract'): string {
   return `<!doctype html>
 <html>

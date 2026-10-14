@@ -8,6 +8,7 @@ export function walkthroughPaths(reviewDirectory: string): WalkthroughPaths {
     curriculumAnalysisPath: `${walkthroughDirectory}/curriculum-analysis.json`,
     curriculumPath: `${walkthroughDirectory}/curriculum.json`,
     deckPlanPath: `${walkthroughDirectory}/deck-plan.json`,
+    lessonPlanPath: `${walkthroughDirectory}/lesson-plan.md`,
     htmlPath: `${reviewDirectory}/walkthrough.html`,
   };
 }

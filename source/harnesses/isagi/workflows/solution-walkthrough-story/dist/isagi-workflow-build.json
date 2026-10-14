@@ -10,15 +10,15 @@
     "version": "0.1.1"
   },
   "source": {
-    "sha256": "960b1fc584ad5c8f182ac234587ed40f7a5538d9e58af95949329bfe12e62d3e"
+    "sha256": "47161b154f010924c12a4b006957e085069d812e0dfc251acf97077d1c43140b"
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "6ff8e4b8de7985c9309162857261c81d2e5002fa004395336fce6697b197a1a1"
+    "sha256": "4691899d7e56075f463fd07dd6e413a143643781b3c260014dc85562555df139"
   },
   "structure": {
     "descriptorVersion": 2,
-    "sha256": "516357676c52648d8475be61583e5dc137aec15a72a16b06e55790d9e5242d2a",
+    "sha256": "3247a825711fca6d7cf75c9b7cd0e251507f8bbfde5769c689c9853fabf2ff5c",
     "rootGraphKey": "SolutionWalkthroughStory",
     "graphCount": 8
   }

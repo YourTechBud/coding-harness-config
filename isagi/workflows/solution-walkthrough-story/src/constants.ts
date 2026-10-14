@@ -18,6 +18,12 @@ export const guide = {
   effort: 'medium',
 } satisfies AgentProfile;
 
+export const lessonPlanner = {
+  harness: 'claude',
+  model: 'opus',
+  effort: 'high',
+} satisfies AgentProfile;
+
 export const deckArchitect = {
   harness: 'claude',
   model: 'opus',

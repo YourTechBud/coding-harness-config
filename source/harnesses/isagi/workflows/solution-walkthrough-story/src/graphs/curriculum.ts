@@ -66,7 +66,7 @@ export const WalkthroughCurriculumGraph = createGraph<State, {}, CurriculumParam
         try {
           const removed = removePlanningArtifacts(state.repositoryPath, paths);
           await ctx.log('warning', `Reset walkthrough planning artifacts after deterministic validation failed: ${errorText(error)} Removed: ${removed.join(', ') || 'none'}.`);
-          reusableArtifacts = { curriculum: false, deckPlan: false };
+          reusableArtifacts = { curriculum: false, deckPlan: false, lessonPlan: false };
         } catch (removalError) {
           return failStep(ctx, { phase: 'Solution walkthrough failed', message: 'Invalid walkthrough planning artifacts could not be reset.' }, errorText(removalError));
         }
@@ -75,7 +75,7 @@ export const WalkthroughCurriculumGraph = createGraph<State, {}, CurriculumParam
       if (reusableArtifacts.curriculum) {
         const deckMessage = state.deliveryMechanism === 'presentation'
           ? reusableArtifacts.deckPlan ? 'The approved deck plan will also be reused.' : 'A new deck plan will be created.'
-          : 'Continuing directly to Socratic learning.';
+          : reusableArtifacts.lessonPlan ? 'The approved lesson plan will also be reused.' : 'A new lesson plan will be created.';
         await ctx.log('info', `Reusing existing curriculum ${paths.curriculumPath}; curriculum design is skipped.`);
         await ctx.setUiFeedback({ phase: 'Reusing the approved curriculum', message: deckMessage });
         return complete({ update: { curriculumReusable: true } });
@@ -153,13 +153,16 @@ function curriculumFamiliarity(profile: AudienceProfile): string {
     : 'The audience is familiar with this codebase; emphasize consequential changes and include context only when it changes evaluation of the proposal.';
 }
 
+// The user-level seams reach every audience, whatever depth they chose.
+const INTERFACE_SURFACE = 'Whatever the depth, the interface surface is required: APIs and endpoints, database schemas, CLI commands, configuration shape, and events or wire formats that cross a boundary, with exact names and shapes.';
+
 function curriculumDepth(profile: AudienceProfile): string {
   switch (profile.technicalDepth) {
     case 'product':
-      return 'Explain behavior, user and operational consequences, and tradeoffs while keeping exact technical evidence available for inspection.';
+      return `Explain behavior, user and operational consequences, and tradeoffs while keeping exact technical evidence available for inspection. ${INTERFACE_SURFACE}`;
     case 'system-design':
-      return 'Explain system boundaries, ownership, flows, state changes, tradeoffs, and the consequential contracts needed to evaluate the design.';
+      return `Explain system boundaries, ownership, flows, state changes, tradeoffs, and the consequential contracts needed to evaluate the design. ${INTERFACE_SURFACE}`;
     case 'implementation':
-      return 'Explain system intent together with implementation mechanics, exact changed contracts, failure behavior, and migration consequences.';
+      return `Explain system intent together with implementation mechanics, exact changed contracts, failure behavior, and migration consequences. ${INTERFACE_SURFACE}`;
   }
 }

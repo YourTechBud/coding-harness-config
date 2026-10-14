@@ -32,5 +32,6 @@ export type WalkthroughPaths = {
   readonly curriculumAnalysisPath: string;
   readonly curriculumPath: string;
   readonly deckPlanPath: string;
+  readonly lessonPlanPath: string;
   readonly htmlPath: string;
 };
