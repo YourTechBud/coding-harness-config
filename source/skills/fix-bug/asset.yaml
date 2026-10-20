@@ -1,0 +1,15 @@
+kind: skill
+frontmatter:
+  description: |
+    Take a described bug through subagent reproduction, class-versus-instance fix analysis, a user decision, and verification against the original reproduction. Invoke only when explicitly asked to fix a bug with this process.
+targets:
+  opencode: {}
+  pi:
+    frontmatter:
+      disable-model-invocation: true
+  claude:
+    frontmatter:
+      disable-model-invocation: true
+  codex:
+    policy:
+      allow_implicit_invocation: false
