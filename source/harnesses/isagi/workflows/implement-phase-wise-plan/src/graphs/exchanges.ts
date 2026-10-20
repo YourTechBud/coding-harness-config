@@ -59,7 +59,6 @@ type ImplementerState = {
 
 const purposeLabels: Record<TurnPurpose, string> = {
   alignment: 'Align with the planner',
-  confirmation: 'Confirm alignment',
   implementation: 'Implement the phase',
   'before-review': 'Report completion before review',
   'after-review': 'Report completion after review',

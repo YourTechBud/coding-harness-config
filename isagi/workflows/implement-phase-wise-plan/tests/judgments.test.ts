@@ -72,11 +72,12 @@ test('implementer outcome prompt requires an explicit request for further verifi
   assert.match(prompt, /explicitly identifies outstanding required human verification/);
   assert.match(prompt, /actual current-phase blocker takes precedence/);
   assert.match(prompt, /Optional verification suggestions and checks reported as completed do not count/);
-  assert.match(prompt, /"planner-questions":.*any question or requests a decision, confirmation, or ratification/);
+  assert.match(prompt, /"planner-questions":.*a question about the plan or the work, or asks the planner to decide, confirm, or ratify something about the plan or the work/);
   assert.match(prompt, /takes precedence over every completion or readiness claim.*non-blocking, optional.*proposed default/);
   assert.match(prompt, /"please confirm" without a question mark/);
   assert.match(prompt, /Historical questions already resolved.*rhetorical questions/);
-  assert.match(prompt, /Reporting readiness and awaiting normal workflow approval.*is not a planner question/);
+  assert.match(prompt, /Asking for approval to start or continue implementation is not a planner question/);
+  assert.match(prompt, /"Alignment is established, no questions\. I'll begin once you approve" is not planner-questions/);
   assert.match(prompt, /non-blocking question about where future syntax variants belong" is planner-questions/);
   assert.match(prompt, /Earlier progress notes about work subsequently completed do not reopen it/);
   assert.match(prompt, /required receipt validation is still missing/);

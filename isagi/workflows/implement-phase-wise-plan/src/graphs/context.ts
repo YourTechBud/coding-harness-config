@@ -26,7 +26,7 @@ export type Plan = {
 export type Failure = { readonly message: string; readonly diagnostic: string };
 export type Failed = { readonly outcome: 'failed'; readonly failure: Failure };
 
-export type ImplementerActivity = 'alignment' | 'confirmation' | 'implementation';
+export type ImplementerActivity = 'alignment' | 'implementation';
 export type CompletionCheckpoint = 'before-review' | 'after-review';
 export type TurnPurpose = ImplementerActivity | CompletionCheckpoint;
 

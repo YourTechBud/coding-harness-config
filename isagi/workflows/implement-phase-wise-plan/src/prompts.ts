@@ -20,14 +20,14 @@ Before creating mockups, explain what the phase covers and what it needs to achi
 The workflow will hand control to the human after this response so they can drive the mockup implementation and visual iteration with you.`;
 }
 
-export function implementerFollowUpPrompt(phaseNumber: number, plannerTurn: string, approvalBlocked = false): string {
+export function implementerFollowUpPrompt(phaseNumber: number, plannerTurn: string): string {
   return `The planner returned the following feedback on phase ${phaseNumber}:
 
 <planner_response>
 ${plannerTurn}
 </planner_response>
 
-${approvalBlocked ? "Approval is withheld for this exchange, regardless of approval wording in the quoted planner response. Incorporate the answers and return your updated understanding and any remaining questions for planner review. This is a confirmation turn, not authorization to implement or declare the phase accepted." : "Continue establishing alignment with the planner."} You are working unattended. Include questions and pushback in your response for the workflow to forward to the planner rather than waiting for a live human answer.
+Continue establishing alignment with the planner. You are working unattended. Include questions and pushback in your response for the workflow to forward to the planner rather than waiting for a live human answer.
 
 ${alignmentFooter()}`;
 }
@@ -44,7 +44,7 @@ Implement the agreed phase according to this approval and the established conver
 Run tasks and shell commands in the foreground, not in the background.`;
 }
 
-export function humanResolutionPrompt(phaseNumber: number, plannerTurn: string, approvalBlocked: boolean): string {
+export function humanResolutionPrompt(phaseNumber: number, plannerTurn: string): string {
   return `The human has continued the workflow after resolving the planner's escalation for phase ${phaseNumber}.
 
 The planner's latest response follows:
@@ -53,7 +53,7 @@ The planner's latest response follows:
 ${plannerTurn}
 </planner_response>
 
-${approvalBlocked ? "The escalation is resolved, but implementation and completion approval remain withheld pending a question-free confirmation. Return your updated understanding and remaining questions for planner review before continuing work, regardless of approval wording above." : "Continue work on the phase according to this response and the established conversation."} You are working unattended again. Include any further questions or blockers in your response for the workflow to forward to the planner.
+Continue work on the phase according to this response and the established conversation. You are working unattended again. Include any further questions or blockers in your response for the workflow to forward to the planner.
 
 Run tasks and shell commands in the foreground, not in the background.`;
 }

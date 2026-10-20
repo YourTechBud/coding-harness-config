@@ -98,17 +98,8 @@ test('planner approval is attributed without the alignment footer and reopens re
   assert.equal(approved.state.reviewComplete, false);
 });
 
-for (const result of ['approved', 'completion-approved', 'feedback'] as const) {
-  test(`planner ${result} requires confirmation while the question gate is closed`, () => {
-    const request = nextImplementerRequest(plannerTurn({ ...start(), approvalBlocked: true }, result, 'Yes, omit the barrier. I approve implementation and phase completion.'));
-    assert.equal(request.turnPurpose, 'confirmation');
-    assert.match(request.prompt, /Approval is withheld.*regardless of approval wording/);
-    assert.match(request.prompt, /Yes, omit the barrier/);
-  });
-}
-
 for (const checkpoint of ['alignment', 'before-review', 'after-review'] as const) {
-  test(`${checkpoint} questions block approval until a question-free confirmation is reviewed`, () => {
+  test(`${checkpoint} questions go to the planner, whose approval is authoritative`, () => {
     const report = 'Phase complete. One non-blocking question: may I drop the barrier?';
     const first = checkpoint === 'alignment'
       ? { kind: 'start' as const }
@@ -116,38 +107,29 @@ for (const checkpoint of ['alignment', 'before-review', 'after-review'] as const
     const state = { ...start({ autoReview: true }), reviewComplete: checkpoint === 'after-review' };
     const pending = implementerTurn(state, 'planner-questions', report, first);
     assert.equal(pending.to, 'exchangeWithPlanner');
-    assert.equal(pending.state.approvalBlocked, true);
 
-    const confirming = plannerTurn(pending.state, 'approved', 'Yes. I approve.');
-    assert.equal(nextImplementerRequest(confirming).turnPurpose, 'confirmation');
+    const approved = nextImplementerRequest(plannerTurn(pending.state, 'approved', 'Yes, drop the barrier. I approve implementation.'));
+    assert.equal(approved.turnPurpose, 'implementation');
+    assert.match(approved.prompt, /^The planner has approved implementation of phase 2/);
+    assert.doesNotMatch(approved.prompt, /withheld/);
 
-    // Another question keeps the gate closed; even a completion claim must return to the planner.
-    const moreQuestions = implementerTurn(confirming.state, 'planner-questions');
-    assert.equal(moreQuestions.to, 'exchangeWithPlanner');
-    assert.equal(moreQuestions.state.approvalBlocked, true);
-    const questionFree = implementerTurn(confirming.state, 'phase-complete');
-    assert.equal(questionFree.to, 'exchangeWithPlanner');
-    assert.equal(questionFree.state.approvalBlocked, false);
-
-    const accepted = nextImplementerRequest(plannerTurn(questionFree.state, 'completion-approved', 'Completion accepted.'));
+    const accepted = nextImplementerRequest(plannerTurn(pending.state, 'completion-approved', 'Completion accepted.'));
     assert.equal(accepted.turnPurpose, checkpoint === 'after-review' ? 'after-review' : 'before-review');
     assert.match(accepted.prompt, /^The planner accepted phase completion\./);
   });
 }
 
-for (const approvalBlocked of [false, true]) {
-  test(`human escalation continuation preserves question gate ${String(approvalBlocked)}`, () => {
-    const severe = '## Human Escalation\n\nEscalation required: this changes the persistence boundary; the human must approve that change.';
-    const resumed = plannerTurn({ ...start(), approvalBlocked, reviewComplete: true }, 'severe-flag-resolved', severe);
-    const request = nextImplementerRequest(resumed);
-    assert.match(request.prompt, /^The human has continued the workflow/);
-    assert.ok(request.prompt.includes(`<planner_response>\n${severe}\n</planner_response>`));
-    assert.match(request.prompt, /working unattended again/);
-    assert.equal(request.turnPurpose, approvalBlocked ? 'confirmation' : 'implementation');
-    if (approvalBlocked) assert.match(request.prompt, /approval remain withheld pending a question-free confirmation/);
-    assert.equal(resumed.state.reviewComplete, approvalBlocked);
-  });
-}
+test('human escalation continuation resumes work and reopens review', () => {
+  const severe = '## Human Escalation\n\nEscalation required: this changes the persistence boundary; the human must approve that change.';
+  const resumed = plannerTurn({ ...start(), reviewComplete: true }, 'severe-flag-resolved', severe);
+  const request = nextImplementerRequest(resumed);
+  assert.match(request.prompt, /^The human has continued the workflow/);
+  assert.ok(request.prompt.includes(`<planner_response>\n${severe}\n</planner_response>`));
+  assert.match(request.prompt, /working unattended again/);
+  assert.doesNotMatch(request.prompt, /withheld/);
+  assert.equal(request.turnPurpose, 'implementation');
+  assert.equal(resumed.state.reviewComplete, false);
+});
 
 test('completion approval before the first review still requires review', () => {
   const report = plannerTurn(start({ autoReview: true }), 'completion-approved', 'Accepted.');

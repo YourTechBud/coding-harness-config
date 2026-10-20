@@ -63,9 +63,9 @@ export type PhaseOutput = { readonly outcome: 'implemented' } | Failed;
 // What the implementer is asked next. The exchange's prompt, feedback, and purpose follow from it.
 type ImplementerRequest =
   | { readonly kind: 'start' }
-  | { readonly kind: 'follow-up'; readonly plannerTurn: string; readonly approvalBlocked: boolean }
+  | { readonly kind: 'follow-up'; readonly plannerTurn: string }
   | { readonly kind: 'approval'; readonly plannerTurn: string }
-  | { readonly kind: 'human-resolution'; readonly plannerTurn: string; readonly approvalBlocked: boolean }
+  | { readonly kind: 'human-resolution'; readonly plannerTurn: string }
   | { readonly kind: 'completion-report'; readonly checkpoint: CompletionCheckpoint; readonly plannerTurn: string | null };
 
 type State = {
@@ -80,8 +80,6 @@ type State = {
   readonly request: ImplementerRequest | null;
   readonly implementerExchange: ImplementerExchanged | null;
   readonly plannerExchange: PlannerExchanged | null;
-  /** The implementer's last turn asked questions, so the planner cannot approve this exchange. */
-  readonly approvalBlocked: boolean;
   /** Automatic review has completed for the current implementation. */
   readonly reviewComplete: boolean;
   readonly requiresHumanVerification: boolean;
@@ -107,7 +105,6 @@ export const PhaseGraph = createGraph<State, {}, PhaseParameters, PhaseOutput>({
     request: null,
     implementerExchange: null,
     plannerExchange: null,
-    approvalBlocked: false,
     reviewComplete: false,
     requiresHumanVerification: false,
     failure: null,
@@ -124,7 +121,6 @@ export const PhaseGraph = createGraph<State, {}, PhaseParameters, PhaseOutput>({
     request: reduce.replace<ImplementerRequest | null>(),
     implementerExchange: reduce.replace<ImplementerExchanged | null>(),
     plannerExchange: reduce.replace<PlannerExchanged | null>(),
-    approvalBlocked: reduce.replace<boolean>(),
     reviewComplete: reduce.replace<boolean>(),
     requiresHumanVerification: reduce.replace<boolean>(),
     failure: reduce.replace<Failure | null>(),
@@ -263,25 +259,22 @@ export const PhaseGraph = createGraph<State, {}, PhaseParameters, PhaseOutput>({
 });
 
 // After an implementer turn: alignment turns without questions move to the completion report; turns
-// with questions, and every confirmation turn, go to the planner. Completion reports move through
-// review, final approval, and commit, or back to the planner when work remains.
+// that need the planner go to the planner. Completion reports move through review, final approval,
+// and commit, or back to the planner when work remains.
 function routeImplementerExchange(state: State): EdgeDecision<GraphUpdate<State>> {
   if (state.failure) return { to: 'failed' };
   const { result } = must(state.implementerExchange, 'implementer exchange');
   const request = must(state.request, 'implementer request');
   const plannerNeeded = result === 'planner-response-needed' || result === 'planner-questions';
-  const approvalBlocked = result === 'planner-questions';
 
   if (request.kind !== 'completion-report') {
-    if (!plannerNeeded && turnPurpose(request) !== 'confirmation') {
-      return { to: 'exchangeWithImplementer', update: { request: completionReport(state, 'before-review') } };
-    }
-    return { to: 'exchangeWithPlanner', update: { approvalBlocked } };
+    if (!plannerNeeded) return { to: 'exchangeWithImplementer', update: { request: completionReport(state, 'before-review') } };
+    return { to: 'exchangeWithPlanner' };
   }
 
   if (plannerNeeded) {
     const reviewComplete = request.checkpoint === 'after-review' && state.options.autoReview ? true : state.reviewComplete;
-    return { to: 'exchangeWithPlanner', update: { approvalBlocked, reviewComplete } };
+    return { to: 'exchangeWithPlanner', update: { reviewComplete } };
   }
   if (request.checkpoint === 'before-review') {
     if (state.options.autoReview) return { to: 'review' };
@@ -292,22 +285,18 @@ function routeImplementerExchange(state: State): EdgeDecision<GraphUpdate<State>
   return { to: state.options.autoCommit ? 'commit' : 'closeImplementer' };
 }
 
-// After a planner turn: a resolved severe flag goes back with human-resolution framing; a blocked
-// approval is returned as feedback; accepted completion asks for the completion report; approval
-// starts implementation; anything else is alignment feedback.
+// After a planner turn: the planner's verdict is authoritative. A resolved severe flag goes back with
+// human-resolution framing; accepted completion asks for the completion report; approval starts
+// implementation; anything else is alignment feedback.
 function routePlannerExchange(state: State): EdgeDecision<GraphUpdate<State>> {
   if (state.failure) return { to: 'failed' };
   const { plannerTurn, result } = must(state.plannerExchange, 'planner exchange');
   if (result === 'severe-flag-resolved') {
-    return {
-      to: 'exchangeWithImplementer',
-      update: { request: { kind: 'human-resolution', plannerTurn, approvalBlocked: state.approvalBlocked }, ...(state.approvalBlocked ? {} : { reviewComplete: false }) },
-    };
+    return { to: 'exchangeWithImplementer', update: { request: { kind: 'human-resolution', plannerTurn }, reviewComplete: false } };
   }
-  if (state.approvalBlocked) return { to: 'exchangeWithImplementer', update: { request: { kind: 'follow-up', plannerTurn, approvalBlocked: true } } };
   if (result === 'completion-approved') return { to: 'exchangeWithImplementer', update: { request: completionReport(state, 'before-review', plannerTurn) } };
   if (result === 'approved') return { to: 'exchangeWithImplementer', update: { request: { kind: 'approval', plannerTurn }, reviewComplete: false } };
-  return { to: 'exchangeWithImplementer', update: { request: { kind: 'follow-up', plannerTurn, approvalBlocked: false } } };
+  return { to: 'exchangeWithImplementer', update: { request: { kind: 'follow-up', plannerTurn } } };
 }
 
 // A completed review always moves the completion report to its after-review checkpoint.
@@ -320,11 +309,10 @@ function turnPurpose(request: ImplementerRequest): TurnPurpose {
     case 'start':
       return 'alignment';
     case 'follow-up':
-      return request.approvalBlocked ? 'confirmation' : 'alignment';
+      return 'alignment';
     case 'approval':
-      return 'implementation';
     case 'human-resolution':
-      return request.approvalBlocked ? 'confirmation' : 'implementation';
+      return 'implementation';
     case 'completion-report':
       return request.checkpoint;
   }
@@ -349,11 +337,11 @@ function implementerExchangeParameters(state: State): ImplementerExchangeParamet
   const session = { kind: 'existing' as const, ...must(state.implementer, 'implementer') };
   switch (request.kind) {
     case 'follow-up':
-      return { ...common, session, prompt: implementerFollowUpPrompt(phaseNumber, request.plannerTurn, request.approvalBlocked), feedback: status('implementer-aligning') };
+      return { ...common, session, prompt: implementerFollowUpPrompt(phaseNumber, request.plannerTurn), feedback: status('implementer-aligning') };
     case 'approval':
       return { ...common, session, prompt: implementerApprovalPrompt(phaseNumber, request.plannerTurn), feedback: status('implementing') };
     case 'human-resolution':
-      return { ...common, session, prompt: humanResolutionPrompt(phaseNumber, request.plannerTurn, request.approvalBlocked), feedback: status(request.approvalBlocked ? 'implementer-aligning' : 'implementing') };
+      return { ...common, session, prompt: humanResolutionPrompt(phaseNumber, request.plannerTurn), feedback: status('implementing') };
     case 'completion-report':
       return {
         ...common,
