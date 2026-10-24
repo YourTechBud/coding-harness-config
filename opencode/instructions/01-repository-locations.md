@@ -4,7 +4,6 @@ When the user asks you to refer to one of these projects, use its corresponding 
 
 - Isagi: `$HOME/work/projects/Isagi`
 - Toph: `$HOME/work/projects/Toph`
-- Raphael: `$HOME/work/projects/Raphael`
 - Fluidcast: `$HOME/work/projects/Fluidcast`
 - Coding Harness Config: `$HOME/work/ai/coding-harness-config`
 
