@@ -1,4 +1,4 @@
-// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i(e) {
   return {
     isagiContract: 5,
@@ -109,7 +109,7 @@ function g(e) {
 import { mkdirSync } from "node:fs";
 import { resolve as resolve3 } from "node:path";
 
-// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i2(e) {
   return {
     isagiContract: 5,
@@ -947,6 +947,7 @@ var index_default = h({
   command: () => ({
     title: "Design Curriculum",
     description: "Create a focused curriculum from one or more Markdown sources.",
+    hidden: true,
     inputs: [
       { kind: "text", key: "sources", label: "Markdown source paths, one per line", placeholder: "docs/source-one.md\ndocs/source-two.md" },
       { kind: "text", key: "learningGoal", label: "What should the audience understand or be able to decide?" },

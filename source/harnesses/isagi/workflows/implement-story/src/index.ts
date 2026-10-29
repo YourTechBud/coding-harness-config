@@ -7,6 +7,7 @@ export default defineWorkflow({
   command: () => ({
     title: 'Implement Story',
     description: 'Create an implementation plan from a designed story and implement it phase by phase.',
+    hidden: true,
     inputs: [
       { kind: 'text', key: 'story', label: 'Story or story URL' },
       { kind: 'text', key: 'currentStatePath', label: 'Current-state source path', default: defaults.currentStatePath },

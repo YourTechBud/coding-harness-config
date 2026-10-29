@@ -6,6 +6,7 @@ export default defineWorkflow({
   command: () => ({
     title: 'Design Program',
     description: 'Create and independently review a story-scoped program design.',
+    hidden: true,
     inputs: [
       {
         kind: 'text',

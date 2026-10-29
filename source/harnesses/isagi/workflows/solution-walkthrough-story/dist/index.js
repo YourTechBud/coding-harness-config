@@ -1,4 +1,4 @@
-// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i(e) {
   return {
     isagiContract: 5,
@@ -182,7 +182,7 @@ function errorText(value) {
   return String(value);
 }
 
-// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i2(e) {
   return {
     isagiContract: 5,
@@ -423,7 +423,7 @@ async function failStep(ctx, feedback, diagnostic) {
 import { mkdirSync } from "node:fs";
 import { resolve as resolve3 } from "node:path";
 
-// ../design-curriculum/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// ../design-curriculum/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i3(e) {
   return {
     isagiContract: 5,
@@ -2284,6 +2284,7 @@ var index_default = h({
   command: () => ({
     title: "Solution Walkthrough Story",
     description: "Reuse or create the curriculum and deck plan, then build a presentation or start a Socratic walkthrough.",
+    hidden: true,
     inputs: [
       { kind: "text", key: "story", label: "Story or story URL" },
       { kind: "text", key: "currentStatePath", label: "Current-state source path", default: "scratch/story/design/current-state.md" },

@@ -3,18 +3,18 @@
   "workflowContractVersion": 5,
   "sdk": {
     "name": "@yourtechbudstudio/isagi-workflow-sdk",
-    "version": "0.1.1"
+    "version": "0.1.2"
   },
   "verifier": {
     "name": "@yourtechbudstudio/isagi-workflow-verifier",
-    "version": "0.1.1"
+    "version": "0.1.2"
   },
   "source": {
-    "sha256": "0d21f74ab8e23e671de8ce5969097cab91a1ca34858b40c17f4db5c1c377de76"
+    "sha256": "1b2f3511c51c82e5db3e3246d24f4149b6b6762aeefbfa16efe12dd9345b1c29"
   },
   "artifact": {
     "entry": "dist/index.js",
-    "sha256": "e2b1f637f1da274575ebab9c9aa2ce1955a5d570c1f564ba7adf3e0cd92906c5"
+    "sha256": "664346fe36f999bf9b06c751155bc762e343ec396e9015b3545c994deb21f687"
   },
   "structure": {
     "descriptorVersion": 2,

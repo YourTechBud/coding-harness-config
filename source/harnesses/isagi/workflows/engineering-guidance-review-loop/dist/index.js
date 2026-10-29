@@ -1,4 +1,4 @@
-// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i(e) {
   return {
     isagiContract: 5,
@@ -156,7 +156,7 @@ var y = {
   }
 };
 
-// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i2(e) {
   return {
     isagiContract: 5,

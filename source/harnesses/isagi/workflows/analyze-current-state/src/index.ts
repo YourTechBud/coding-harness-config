@@ -6,6 +6,7 @@ export default defineWorkflow({
   command: () => ({
     title: 'Analyze Current State',
     description: 'Create and independently review a story-scoped current-state analysis.',
+    hidden: true,
     inputs: [
       {
         kind: 'text',

@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@yourtechbudstudio/isagi-workflow-sdk':
-        specifier: 0.1.1
-        version: 0.1.1
+        specifier: 0.1.2
+        version: 0.1.2
     devDependencies:
       '@types/node':
         specifier: 24.10.1
@@ -303,8 +303,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@yourtechbudstudio/isagi-workflow-sdk@0.1.1':
-    resolution: {integrity: sha512-0sAJvhtdqIIblGgmz+Ir5Cktk7PQ8+nTlRUJTvAW3QWdJb+XzM2Za9vTYT5bqkPzlL8VDWq3M4tlXYdwsO93Fw==}
+  '@yourtechbudstudio/isagi-workflow-sdk@0.1.2':
+    resolution: {integrity: sha512-T6m+plFTBkK6mzl568FkUOCkw1FWWK+DoNF4I+7uVVPACLe4bq+1PxSHvBHO9mGZXx9RDQwLtGE48SVZ/NxQUA==}
     engines: {node: '>=22'}
 
   esbuild@0.27.7:
@@ -480,7 +480,7 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  '@yourtechbudstudio/isagi-workflow-sdk@0.1.1': {}
+  '@yourtechbudstudio/isagi-workflow-sdk@0.1.2': {}
 
   esbuild@0.27.7:
     optionalDependencies:

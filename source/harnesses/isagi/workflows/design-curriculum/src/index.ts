@@ -6,6 +6,7 @@ export default defineWorkflow({
   command: () => ({
     title: 'Design Curriculum',
     description: 'Create a focused curriculum from one or more Markdown sources.',
+    hidden: true,
     inputs: [
       { kind: 'text', key: 'sources', label: 'Markdown source paths, one per line', placeholder: 'docs/source-one.md\ndocs/source-two.md' },
       { kind: 'text', key: 'learningGoal', label: 'What should the audience understand or be able to decide?' },

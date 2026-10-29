@@ -6,6 +6,7 @@ export default defineWorkflow({
   command: () => ({
     title: 'Design Architecture',
     description: 'Create and independently review a story-scoped target architecture.',
+    hidden: true,
     inputs: [
       {
         kind: 'text',

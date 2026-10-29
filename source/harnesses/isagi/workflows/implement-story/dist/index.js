@@ -1,4 +1,4 @@
-// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i(e) {
   return {
     isagiContract: 5,
@@ -159,7 +159,7 @@ var y = {
 // ../implement-phase-wise-plan/src/graph.ts
 import { dirname as dirname2, relative as relative2 } from "node:path";
 
-// ../implement-phase-wise-plan/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// ../implement-phase-wise-plan/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i2(e) {
   return {
     isagiContract: 5,
@@ -448,7 +448,7 @@ function assertNever(value) {
   throw new Error(`Unsupported workflow status: ${String(value)}`);
 }
 
-// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// ../../workflow-libraries/common-graphs/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i3(e) {
   return {
     isagiContract: 5,
@@ -1343,7 +1343,7 @@ ${text}`;
   }).filter((entry) => entry.length > 0).join("\n\n");
 }
 
-// ../engineering-guidance-review-loop/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.1/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
+// ../engineering-guidance-review-loop/node_modules/.pnpm/@yourtechbudstudio+isagi-workflow-sdk@0.1.2/node_modules/@yourtechbudstudio/isagi-workflow-sdk/dist/index.js
 function i4(e) {
   return {
     isagiContract: 5,
@@ -3054,6 +3054,7 @@ var index_default = h({
   command: () => ({
     title: "Implement Story",
     description: "Create an implementation plan from a designed story and implement it phase by phase.",
+    hidden: true,
     inputs: [
       { kind: "text", key: "story", label: "Story or story URL" },
       { kind: "text", key: "currentStatePath", label: "Current-state source path", default: defaults.currentStatePath },

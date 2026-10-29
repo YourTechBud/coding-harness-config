@@ -22,6 +22,7 @@ export default defineWorkflow({
   command: () => ({
     title: 'Solution Walkthrough Story',
     description: 'Reuse or create the curriculum and deck plan, then build a presentation or start a Socratic walkthrough.',
+    hidden: true,
     inputs: [
       { kind: 'text', key: 'story', label: 'Story or story URL' },
       { kind: 'text', key: 'currentStatePath', label: 'Current-state source path', default: 'scratch/story/design/current-state.md' },
