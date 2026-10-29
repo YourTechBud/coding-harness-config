@@ -1,7 +1,7 @@
 kind: skill
 frontmatter:
   description: |
-    Explain a bounded subject from supplied source material and a comprehension objective with concise diagrams, code-shape sketches, and focused representations. Invoke only when explicitly asked to show or explain something visually.
+    Explain a bounded subject with concise diagrams, code-shape sketches, and focused representations such as Mermaid, pseudocode, and call or file trees. Use when the user asks to show or explain something visually, says they don't understand something, asks for a simpler explanation, or is struggling with an explanation that has become dense or hard to follow.
 targets:
   opencode: {}
   pi: {}
