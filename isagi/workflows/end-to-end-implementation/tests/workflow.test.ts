@@ -60,7 +60,7 @@ const controls = { story, familiarity: 'familiar', technicalDepth: 'implementati
 test('command and parse capture the complete end-to-end controls', async () => {
   const manifest = await workflow.command(origin);
   assert.deepEqual(manifest.inputs?.map(({ key }) => key), ['story', 'familiarity', 'technicalDepth', 'deliveryMechanism', 'submitPullRequest']);
-  assert.deepEqual(await workflow.parse(origin, { story: ` ${story} ` }), { story, familiarity: 'new', technicalDepth: 'system-design', deliveryMechanism: 'presentation', submitPullRequest: 'yes' });
+  assert.deepEqual(await workflow.parse(origin, { story: ` ${story} ` }), { story, familiarity: 'new', technicalDepth: 'system-design', deliveryMechanism: 'socratic-walkthrough', submitPullRequest: 'yes' });
   assert.throws(() => workflow.parse(origin, { story, submitPullRequest: 'maybe' }), /submitPullRequest must be one of yes, no/);
 });
 

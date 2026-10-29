@@ -35,7 +35,7 @@ const phase = phases()[1]!;
 test('the launch form defaults automatic review and commit to yes and needs the planner pane', async () => {
   const origin = { worktreeId: 1, worktreePath: '/workspace', surfaceId: 7, agentSessionId: 11 };
   assert.deepEqual((await workflow.command(origin)).inputs?.map(({ key }) => key), ['humanInTheLoop', 'autoReview', 'autoCommit']);
-  assert.deepEqual(await workflow.parse(origin, {}), { options: { autoCommit: true, autoReview: true, humanInTheLoop: true }, plannerSessionId: 11 });
+  assert.deepEqual(await workflow.parse(origin, {}), { options: { autoCommit: true, autoReview: true, humanInTheLoop: false }, plannerSessionId: 11 });
   assert.deepEqual(await workflow.parse(origin, { autoCommit: 'no', autoReview: 'no', humanInTheLoop: 'no' }), { options: { autoCommit: false, autoReview: false, humanInTheLoop: false }, plannerSessionId: 11 });
   assert.throws(() => workflow.parse({ ...origin, agentSessionId: null }, {}), /Start this workflow from the planner agent pane/);
   assert.throws(() => workflow.parse(origin, { autoCommit: 'maybe' }), /Automatic commit must be yes or no/);

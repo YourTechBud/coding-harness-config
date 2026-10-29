@@ -2635,7 +2635,7 @@ var humanInTheLoopInput = {
     { value: "yes", label: "Yes, pause after each phase" },
     { value: "no", label: "No, run through phases" }
   ],
-  default: "yes"
+  default: "no"
 };
 var index_default = h({
   command: () => ({
@@ -2659,7 +2659,7 @@ var index_default = h({
   graph: ImplementPhaseWisePlanGraph
 });
 function parseHumanInTheLoop(value) {
-  if (value === void 0) return "yes";
+  if (value === void 0) return "no";
   if (value === "yes" || value === "no") return value;
   throw new Error("Human in the loop must be yes or no.");
 }

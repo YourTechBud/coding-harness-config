@@ -43,10 +43,10 @@ export default defineWorkflow({
         key: 'deliveryMechanism',
         label: 'Walkthrough delivery mechanism?',
         options: [
-          { value: 'presentation', label: 'Presentation' },
           { value: 'socratic-walkthrough', label: 'Socratic walkthrough' },
+          { value: 'presentation', label: 'Presentation' },
         ],
-        default: 'presentation',
+        default: 'socratic-walkthrough',
       },
       {
         kind: 'select',
@@ -69,7 +69,7 @@ function parseVariables(variables: Variables): EndToEndImplementationParameters 
     story: parseStory(variables.story),
     familiarity: parseEnum(variables.familiarity, 'familiarity', familiarityLevels, 'new'),
     technicalDepth: parseEnum(variables.technicalDepth, 'technicalDepth', technicalDepthLevels, 'system-design'),
-    deliveryMechanism: parseEnum(variables.deliveryMechanism, 'deliveryMechanism', deliveryMechanisms, 'presentation'),
+    deliveryMechanism: parseEnum(variables.deliveryMechanism, 'deliveryMechanism', deliveryMechanisms, 'socratic-walkthrough'),
     submitPullRequest: parseEnum(variables.submitPullRequest, 'submitPullRequest', pullRequestChoices, 'yes'),
   };
 }

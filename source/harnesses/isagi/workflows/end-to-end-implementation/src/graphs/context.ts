@@ -64,7 +64,7 @@ export type Familiarity = (typeof familiarityLevels)[number];
 export const technicalDepthLevels = ['product', 'system-design', 'implementation'] as const;
 export type TechnicalDepth = (typeof technicalDepthLevels)[number];
 
-export const deliveryMechanisms = ['presentation', 'socratic-walkthrough'] as const;
+export const deliveryMechanisms = ['socratic-walkthrough', 'presentation'] as const;
 export type DeliveryMechanism = (typeof deliveryMechanisms)[number];
 
 export const pullRequestChoices = ['yes', 'no'] as const;

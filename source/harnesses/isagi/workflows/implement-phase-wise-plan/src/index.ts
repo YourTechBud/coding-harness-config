@@ -32,7 +32,7 @@ const humanInTheLoopInput = {
     { value: "yes", label: "Yes, pause after each phase" },
     { value: "no", label: "No, run through phases" },
   ],
-  default: "yes",
+  default: "no",
 };
 
 export default defineWorkflow({
@@ -59,7 +59,7 @@ export default defineWorkflow({
 });
 
 function parseHumanInTheLoop(value: unknown): "yes" | "no" {
-  if (value === undefined) return "yes";
+  if (value === undefined) return "no";
   if (value === "yes" || value === "no") return value;
   throw new Error("Human in the loop must be yes or no.");
 }

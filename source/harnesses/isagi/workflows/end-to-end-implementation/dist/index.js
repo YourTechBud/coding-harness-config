@@ -3596,7 +3596,7 @@ function readImplementedPlan(output, expectedEntryPlanPath) {
 // src/graphs/context.ts
 var familiarityLevels = ["new", "familiar"];
 var technicalDepthLevels = ["product", "system-design", "implementation"];
-var deliveryMechanisms = ["presentation", "socratic-walkthrough"];
+var deliveryMechanisms = ["socratic-walkthrough", "presentation"];
 var pullRequestChoices = ["yes", "no"];
 var storyRoot = "scratch/story";
 var storyCheckpoint = { capture: [{ scope: "story", directory: storyRoot }] };
@@ -7155,10 +7155,10 @@ var index_default = h({
         key: "deliveryMechanism",
         label: "Walkthrough delivery mechanism?",
         options: [
-          { value: "presentation", label: "Presentation" },
-          { value: "socratic-walkthrough", label: "Socratic walkthrough" }
+          { value: "socratic-walkthrough", label: "Socratic walkthrough" },
+          { value: "presentation", label: "Presentation" }
         ],
-        default: "presentation"
+        default: "socratic-walkthrough"
       },
       {
         kind: "select",
@@ -7180,7 +7180,7 @@ function parseVariables2(variables) {
     story: parseStory(variables.story),
     familiarity: parseEnum(variables.familiarity, "familiarity", familiarityLevels, "new"),
     technicalDepth: parseEnum(variables.technicalDepth, "technicalDepth", technicalDepthLevels, "system-design"),
-    deliveryMechanism: parseEnum(variables.deliveryMechanism, "deliveryMechanism", deliveryMechanisms, "presentation"),
+    deliveryMechanism: parseEnum(variables.deliveryMechanism, "deliveryMechanism", deliveryMechanisms, "socratic-walkthrough"),
     submitPullRequest: parseEnum(variables.submitPullRequest, "submitPullRequest", pullRequestChoices, "yes")
   };
 }
