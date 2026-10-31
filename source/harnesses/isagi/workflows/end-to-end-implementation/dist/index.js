@@ -4329,7 +4329,7 @@ ${response}
 Return exactly one JSON object with exactly these fields:
 {"outcome":"pending","reason":"The user has not chosen between the two empty-state layouts."}
 
-Return "pending" when the agent names anything still open for the user, such as an unmade decision, an unsettled UI piece, or an unanswered question, and name the open items in reason. Return "ready" when the agent reports that nothing is open. Updates to the design documents or the UI brief are not open items.
+Return "pending" when the agent names anything still open for the user, such as an unmade decision, an unsettled UI piece, or an unanswered question, and name the open items in reason. Return "ready" when the agent reports that nothing is open. Updates to the design documents or the UI brief, including whether or where to make them, are not open items.
 
 Return a concise, nonempty reason and no commentary, markdown, or extra JSON fields.`;
 }
@@ -4382,14 +4382,18 @@ function uiDiscoveryPrompt(input) {
 
 ${designContext(input)}
 
-Read these documents and explore the relevant existing UI and code to ground the discussion. We will work together to create throwaway, presentation-only mocks using standalone HTML files or temporary routes in the relevant frontend environment.
+Read these documents and explore the relevant existing UI and code to ground the discussion.
+
+A piece is worth mocking when it adds a new UI state or changes the experience in a way a user would notice immediately, such as a new screen, panel, flow, layout, or interaction. Copy and wording changes, small styling tweaks, and changes that follow an existing pattern rarely need a mock; mention them briefly rather than proposing mocks for them. When a piece is borderline, include it so I can decide.
+
+We will work together to create throwaway, presentation-only mocks inside the existing app so they reuse its real components, such as a temporary mock route or fixtures that we remove later. Use standalone HTML files only when the app offers no safe way to host the mock.
 
 Start with a concise assessment of the UI pieces worth exploring and any questions that would help me decide what to do. Keep this opening turn focused on discovery; I will steer the scope and subsequent mock creation.`;
 }
 function uiReadinessPrompt() {
   return `Before we wrap up this session, check whether anything is still open: a decision I haven't made, a UI piece we raised but haven't mocked or settled, or a question you need answered before implementation planning.
 
-List what is open, or say that nothing is. Answer without changing any files.`;
+After you answer, this session will record its decisions in the architecture and program design documents and write a UI brief, so whether and where to record them is already settled. Apart from that, list what is open, or say that nothing is. Answer without changing any files.`;
 }
 function uiDesignAmendmentPrompt(input) {
   return `Amend ${input.architecturePath} and ${input.programDesignPath} with the decisions we made in this session so they remain the source of truth for implementation. Make targeted edits that fit each document's existing structure. If the session changed nothing they cover, leave them unchanged and say so.`;

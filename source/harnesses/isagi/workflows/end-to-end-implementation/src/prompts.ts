@@ -17,7 +17,11 @@ export function uiDiscoveryPrompt(input: DesignInputs): string {
 
 ${designContext(input)}
 
-Read these documents and explore the relevant existing UI and code to ground the discussion. We will work together to create throwaway, presentation-only mocks using standalone HTML files or temporary routes in the relevant frontend environment.
+Read these documents and explore the relevant existing UI and code to ground the discussion.
+
+A piece is worth mocking when it adds a new UI state or changes the experience in a way a user would notice immediately, such as a new screen, panel, flow, layout, or interaction. Copy and wording changes, small styling tweaks, and changes that follow an existing pattern rarely need a mock; mention them briefly rather than proposing mocks for them. When a piece is borderline, include it so I can decide.
+
+We will work together to create throwaway, presentation-only mocks inside the existing app so they reuse its real components, such as a temporary mock route or fixtures that we remove later. Use standalone HTML files only when the app offers no safe way to host the mock.
 
 Start with a concise assessment of the UI pieces worth exploring and any questions that would help me decide what to do. Keep this opening turn focused on discovery; I will steer the scope and subsequent mock creation.`;
 }
@@ -25,7 +29,7 @@ Start with a concise assessment of the UI pieces worth exploring and any questio
 export function uiReadinessPrompt(): string {
   return `Before we wrap up this session, check whether anything is still open: a decision I haven't made, a UI piece we raised but haven't mocked or settled, or a question you need answered before implementation planning.
 
-List what is open, or say that nothing is. Answer without changing any files.`;
+After you answer, this session will record its decisions in the architecture and program design documents and write a UI brief, so whether and where to record them is already settled. Apart from that, list what is open, or say that nothing is. Answer without changing any files.`;
 }
 
 export function uiDesignAmendmentPrompt(input: Pick<DesignInputs, 'architecturePath' | 'programDesignPath'>): string {

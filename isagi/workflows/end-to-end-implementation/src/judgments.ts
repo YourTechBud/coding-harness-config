@@ -11,7 +11,7 @@ ${response}
 Return exactly one JSON object with exactly these fields:
 {"outcome":"pending","reason":"The user has not chosen between the two empty-state layouts."}
 
-Return "pending" when the agent names anything still open for the user, such as an unmade decision, an unsettled UI piece, or an unanswered question, and name the open items in reason. Return "ready" when the agent reports that nothing is open. Updates to the design documents or the UI brief are not open items.
+Return "pending" when the agent names anything still open for the user, such as an unmade decision, an unsettled UI piece, or an unanswered question, and name the open items in reason. Return "ready" when the agent reports that nothing is open. Updates to the design documents or the UI brief, including whether or where to make them, are not open items.
 
 Return a concise, nonempty reason and no commentary, markdown, or extra JSON fields.`;
 }

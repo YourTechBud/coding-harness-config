@@ -30,7 +30,7 @@ test('parses UI readiness with its reason and rejects anything else', () => {
 test('UI readiness judgment carries the agent response and leaves document updates out of open items', () => {
   const prompt = uiReadinessJudgmentPrompt('Nothing is open.');
   assert.match(prompt, /Agent response:\nNothing is open\./);
-  assert.match(prompt, /Updates to the design documents or the UI brief are not open items/);
+  assert.match(prompt, /Updates to the design documents or the UI brief, including whether or where to make them, are not open items/);
 });
 
 function message(role: WorkflowConversationMessage['role'], text: string): WorkflowConversationMessage {
